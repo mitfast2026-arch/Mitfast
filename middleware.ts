@@ -157,6 +157,7 @@ export const config = {
     '/admin/:path*',
     '/supplier/:path*',
     '/customer/:path*',
+    '/auth',
     '/auth/:path*',
   ],
 };
