@@ -1,0 +1,436 @@
+/*
+ * Enquiry page — spatial structure from the contact layout reference.
+ * Tokens, type, and copy stay MITFAST. No reference palette or branding.
+ */
+
+.enquiry-page {
+  --enq-text: #111315;
+  --enq-muted: #6b7280;
+  --enq-line: #d7d9dc;
+  --enq-line-hover: #9ca3af;
+  --enq-focus: #111315;
+  --enq-danger: #b91c1c;
+  --enq-ok: #15803d;
+  --enq-surface: #ffffff;
+
+  background: var(--enq-surface);
+  color: var(--enq-text);
+  min-height: 100dvh;
+  padding-top: clamp(64px, 10vh, 110px);
+  padding-bottom: clamp(64px, 10vh, 120px);
+}
+
+.contact-layout {
+  width: 90%;
+  max-width: 1000px;
+  margin-inline: auto;
+  display: grid;
+  grid-template-columns: 1fr;
+  row-gap: 48px;
+}
+
+.contact-intro {
+  min-width: 0;
+}
+
+.contact-intro h1 {
+  margin: 0;
+  font-family: var(--font-instrument), sans-serif;
+  font-weight: 700;
+  font-size: clamp(2.5rem, 8vw, 4.25rem);
+  line-height: 1.02;
+  letter-spacing: -0.045em;
+  color: var(--enq-text);
+  text-wrap: balance;
+  max-width: 9ch;
+}
+
+.contact-intro__meta {
+  margin-top: 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  max-width: 28ch;
+}
+
+.contact-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.contact-meta__label {
+  margin: 0;
+  font-family: var(--font-inter), sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--enq-text);
+}
+
+.contact-meta__value {
+  margin: 0;
+  font-family: var(--font-inter), sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--enq-muted);
+}
+
+.contact-meta__value a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.contact-meta__value a:hover {
+  color: var(--enq-text);
+  border-bottom-color: var(--enq-text);
+}
+
+.contact-form {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+}
+
+.contact-form__group {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+}
+
+.contact-form__legend {
+  margin: 0;
+  font-family: var(--font-inter), sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--enq-muted);
+}
+
+.name-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  width: 100%;
+}
+
+.field,
+.textarea-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.field__label {
+  font-family: var(--font-inter), sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--enq-muted);
+}
+
+.field__control {
+  position: relative;
+  width: 100%;
+}
+
+.field__input,
+.field__select,
+.field__textarea {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 8px 0 10px;
+  border: 0;
+  border-bottom: 1px solid var(--enq-line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--enq-text);
+  font-family: var(--font-inter), sans-serif;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.4;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: border-color 0.2s ease;
+}
+
+  .field__select {
+    padding-right: 28px;
+    cursor: pointer;
+    background-color: transparent;
+    background-image: none;
+  }
+
+  .field__select::-ms-expand {
+    display: none;
+  }
+
+.field__textarea {
+  min-height: 148px;
+  padding-top: 12px;
+  padding-bottom: 16px;
+  resize: none;
+  line-height: 1.55;
+}
+
+.field__input::placeholder,
+.field__textarea::placeholder {
+  color: #9ca3af;
+}
+
+.field__input:hover,
+.field__select:hover,
+.field__textarea:hover {
+  border-bottom-color: var(--enq-line-hover);
+}
+
+.field__input:focus,
+.field__select:focus,
+.field__textarea:focus {
+  outline: none;
+  border-bottom-color: var(--enq-focus);
+  border-bottom-width: 1.5px;
+}
+
+.field__input:focus-visible,
+.field__select:focus-visible,
+.field__textarea:focus-visible,
+.checkbox-field__input:focus-visible,
+.contact-form__submit:focus-visible,
+.enquiry-success__action:focus-visible {
+  outline: 2px solid var(--enq-focus);
+  outline-offset: 3px;
+}
+
+.field__chevron {
+  position: absolute;
+  right: 0;
+  bottom: 12px;
+  width: 16px;
+  height: 16px;
+  color: var(--enq-text);
+  pointer-events: none;
+}
+
+.checkbox-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  margin-top: -4px;
+}
+
+.checkbox-field__input {
+  width: 15px;
+  height: 15px;
+  margin: 2px 0 0;
+  flex-shrink: 0;
+  accent-color: var(--enq-text);
+  cursor: pointer;
+}
+
+.checkbox-field__label {
+  font-family: var(--font-inter), sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--enq-muted);
+  cursor: pointer;
+}
+
+.contact-form__error {
+  margin: 0;
+  font-family: var(--font-inter), sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--enq-danger);
+}
+
+.contact-form__submit {
+  align-self: flex-start;
+  margin-top: 8px;
+  padding: 10px 22px;
+  border: 0;
+  border-radius: 8px;
+  background: #111315;
+  color: #ffffff;
+  font-family: var(--font-inter), sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.15s ease;
+}
+
+.contact-form__submit:hover:not(:disabled) {
+  background: #1f2429;
+}
+
+.contact-form__submit:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.contact-form__submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.enquiry-success {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 8px;
+  max-width: 40ch;
+}
+
+.enquiry-success__title {
+  margin: 0;
+  font-family: var(--font-instrument), sans-serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--enq-text);
+}
+
+.enquiry-success__body,
+.enquiry-success__track {
+  margin: 0;
+  font-family: var(--font-inter), sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--enq-muted);
+}
+
+.enquiry-success__track a {
+  color: var(--enq-text);
+  word-break: break-all;
+}
+
+.enquiry-success__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px 20px;
+  margin-top: 8px;
+}
+
+.enquiry-success__action {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 22px;
+  border-radius: 8px;
+  background: #111315;
+  color: #ffffff;
+  font-family: var(--font-inter), sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.2s ease;
+}
+
+.enquiry-success__action:hover {
+  background: #1f2429;
+}
+
+.enquiry-success__link,
+.enquiry-success__reset {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-family: var(--font-inter), sans-serif;
+  font-size: 13px;
+  color: var(--enq-muted);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.enquiry-success__link:hover,
+.enquiry-success__reset:hover {
+  color: var(--enq-text);
+}
+
+.enquiry-fallback {
+  min-height: 50dvh;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-inter), sans-serif;
+  font-size: 13px;
+  color: var(--enq-muted);
+}
+
+@media (min-width: 640px) {
+  .name-row {
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+  }
+}
+
+@media (min-width: 768px) {
+  .contact-layout {
+    grid-template-columns: minmax(0, 42fr) minmax(0, 58fr);
+    column-gap: 6%;
+    row-gap: 0;
+    align-items: start;
+  }
+
+  .contact-intro h1 {
+    font-size: clamp(2.75rem, 5.4vw, 3.75rem);
+  }
+
+  .contact-form,
+  .enquiry-success {
+    padding-top: 40px;
+  }
+
+  .field__input,
+  .field__select,
+  .field__textarea {
+    font-size: 15px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .contact-layout {
+    column-gap: 8%;
+  }
+
+  .contact-intro h1 {
+    font-size: clamp(3.5rem, 5.5vw, 4.75rem);
+  }
+
+  .contact-form,
+  .enquiry-success {
+    padding-top: 56px;
+  }
+}
+
+@media (max-width: 767px) {
+  .contact-intro h1 {
+    max-width: none;
+  }
+
+  .contact-intro__meta {
+    margin-top: 32px;
+    max-width: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .field__input,
+  .field__select,
+  .field__textarea,
+  .contact-form__submit,
+  .enquiry-success__action,
+  .contact-meta__value a {
+    transition: none;
+  }
+}

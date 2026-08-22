@@ -1,0 +1,372 @@
+/* Categories page — exact reference geometry */
+
+.pageShell {
+  position: relative;
+  width: 100%;
+  background: #f5f6f7;
+  overflow: hidden;
+}
+
+.page {
+  position: relative;
+  width: 100%;
+  max-width: 1270px;
+  margin-inline: auto;
+  padding: 40px 16px 72px;
+  z-index: 1;
+}
+
+@media (min-width: 768px) {
+  .page {
+    padding: 44px 32px 80px;
+  }
+}
+
+@media (min-width: 1400px) {
+  .page {
+    padding: 44px 0 88px;
+  }
+}
+
+/* ── Decorative hero (upper-right, behind content) ─────── */
+
+.decorative {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: min(640px, 52vw);
+  height: 360px;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.decorative img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 70% center;
+  opacity: 0.32;
+  filter: grayscale(0.25) contrast(1.05) brightness(1.08);
+}
+
+.decorative::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    #f5f6f7 0%,
+    #f5f6f7 22%,
+    rgba(245, 246, 247, 0.85) 42%,
+    rgba(245, 246, 247, 0.35) 68%,
+    transparent 100%
+  );
+}
+
+@media (max-width: 767px) {
+  .decorative {
+    width: 70%;
+    height: 220px;
+  }
+
+  .decorative img {
+    opacity: 0.14;
+  }
+}
+
+/* ── Intro ─────────────────────────────────────────────── */
+
+.intro {
+  position: relative;
+  z-index: 1;
+  max-width: 720px;
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 16px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-secondary);
+  font-family: var(--font-chivo-mono), ui-monospace, monospace;
+  font-weight: 500;
+}
+
+.breadcrumb a {
+  color: inherit;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.breadcrumb a:hover {
+  color: var(--text-primary);
+}
+
+.breadcrumbSep {
+  opacity: 0.55;
+}
+
+.breadcrumbCurrent {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.title {
+  margin-top: 16px;
+  font-family: var(--font-instrument), system-ui, sans-serif;
+  font-size: 42px;
+  line-height: 1.05;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+}
+
+.description {
+  margin-top: 12px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  max-width: 560px;
+}
+
+@media (max-width: 767px) {
+  .title {
+    font-size: 28px;
+  }
+}
+
+/* ── Grid ──────────────────────────────────────────────── */
+
+.grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1fr;
+  column-gap: 12px;
+  row-gap: 12px;
+  margin-top: 32px;
+}
+
+@media (min-width: 768px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1200px) {
+  .grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.skeleton {
+  height: 210px;
+  border-radius: 15px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-secondary);
+  box-shadow: 0 1px 2px rgba(17, 19, 21, 0.04);
+}
+
+@media (max-width: 767px) {
+  .skeleton {
+    height: 180px;
+  }
+}
+
+/* ── Card ──────────────────────────────────────────────── */
+
+.card {
+  position: relative;
+  display: block;
+  height: 210px;
+  padding: 20px 20px 18px 22px;
+  border-radius: 15px;
+  border: 1px solid var(--border-hairline);
+  background: #ffffff;
+  box-shadow:
+    0 1px 2px rgba(17, 19, 21, 0.04),
+    0 8px 24px rgba(17, 19, 21, 0.04);
+  text-decoration: none;
+  color: inherit;
+  overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.card:hover {
+  border-color: #c8ccd2;
+  box-shadow:
+    0 2px 4px rgba(17, 19, 21, 0.05),
+    0 12px 28px rgba(17, 19, 21, 0.07);
+}
+
+.card:hover .arrow {
+  background: var(--text-primary);
+  color: #ffffff;
+  border-color: var(--text-primary);
+}
+
+@media (max-width: 767px) {
+  .card {
+    height: 180px;
+    padding: 16px 16px 14px 18px;
+  }
+}
+
+.index {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 29px;
+  height: 29px;
+  border-radius: 5px;
+  background: #f0f1f3;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-secondary);
+  font-family: var(--font-chivo-mono), ui-monospace, monospace;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.copy {
+  position: relative;
+  z-index: 2;
+  width: 52%;
+  max-width: 210px;
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+}
+
+.categoryTitle {
+  max-width: 190px;
+  font-family: var(--font-instrument), system-ui, sans-serif;
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.22;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.rule {
+  display: block;
+  width: 28px;
+  height: 1.5px;
+  margin-top: 18px;
+  background: #d4d7dc;
+  border: none;
+  flex-shrink: 0;
+}
+
+.count {
+  position: absolute;
+  z-index: 2;
+  left: 22px;
+  bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 20px;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--text-secondary);
+}
+
+.countIcon {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.imageFrame {
+  position: absolute;
+  right: 18px;
+  top: 28px;
+  width: 47%;
+  height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.imageFrame img {
+  max-width: 90%;
+  max-height: 90%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  object-position: center;
+  /* Soften studio grey plate so product reads as cutout on white card */
+  mix-blend-mode: multiply;
+}
+
+.arrow {
+  position: absolute;
+  right: 20px;
+  bottom: 18px;
+  z-index: 3;
+  width: 34px;
+  height: 34px;
+  border-radius: 9999px;
+  border: 1px solid var(--border-hairline);
+  background: #ffffff;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 2px rgba(17, 19, 21, 0.05);
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  pointer-events: none;
+}
+
+.arrowIcon {
+  width: 15px;
+  height: 15px;
+}
+
+@media (max-width: 767px) {
+  .categoryTitle {
+    font-size: 17px;
+    max-width: 150px;
+  }
+
+  .copy {
+    margin-top: 12px;
+    width: 48%;
+  }
+
+  .rule {
+    margin-top: 12px;
+  }
+
+  .count {
+    left: 18px;
+    bottom: 16px;
+  }
+
+  .imageFrame {
+    right: 12px;
+    top: 24px;
+    width: 48%;
+    height: 120px;
+  }
+
+  .arrow {
+    right: 14px;
+    bottom: 14px;
+    width: 30px;
+    height: 30px;
+  }
+}

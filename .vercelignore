@@ -1,0 +1,16 @@
+node_modules/
+.next/
+reference/
+references/
+.cursor/
+.gemini/
+IMAGE/
+scratch_*
+test_*.js
+debug_*.js
+scripts_seed_and_verify.js
+scripts_setup_storage.js
+*.html
+scratch_*.json
+scratch_*.js
+test_*.js

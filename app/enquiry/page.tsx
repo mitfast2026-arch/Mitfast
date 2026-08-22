@@ -1,0 +1,432 @@
+"use client";
+
+import React, { Suspense, useEffect, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { ChevronDown } from "lucide-react";
+import { createBrowserClient } from "@/lib/supabase/client";
+import "./enquiry.css";
+
+const ENQUIRY_TYPE_COPY: Record<
+  string,
+  { heading: string; metaLabel: string; metaValue: string; message: string }
+> = {
+  sourcing: {
+    heading: "Sourcing enquiry",
+    metaLabel: "Sourcing",
+    metaValue: "Sourcing development for parts, alloys, and certified mills.",
+    message:
+      "Sourcing request: describe the parts, materials, target volumes, and any preferred origin or certification requirements.",
+  },
+  procurement: {
+    heading: "Procurement enquiry",
+    metaLabel: "Procurement",
+    metaValue: "Off-catalog procurement requests, volumes, and factory-direct terms.",
+    message:
+      "Procurement request: describe required SKUs, quantity, delivery timeline, and any quality or packing requirements.",
+  },
+  dispatch: {
+    heading: "Dispatch enquiry",
+    metaLabel: "Dispatch",
+    metaValue: "Freight, packing, and dispatch for a live or upcoming order.",
+    message:
+      "Dispatch request: include order or RFQ reference if you have one, destination, and required dispatch date.",
+  },
+  custom: {
+    heading: "Send an enquiry",
+    metaLabel: "Scope",
+    metaValue: "Custom specification, CAD inquiry, and volume production quotes.",
+    message: "",
+  },
+};
+
+const SERVICE_OPTIONS = [
+  { value: "custom", label: "Custom specification" },
+  { value: "sourcing", label: "Sourcing development" },
+  { value: "procurement", label: "Off-catalog procurement" },
+  { value: "dispatch", label: "Freight and dispatch" },
+] as const;
+
+type ServiceValue = (typeof SERVICE_OPTIONS)[number]["value"];
+
+function splitFullName(fullName: string) {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  return {
+    firstName: parts[0] || "",
+    lastName: parts.slice(1).join(" "),
+  };
+}
+
+function EnquiryContent() {
+  const searchParams = useSearchParams();
+  const preselectedProductId = searchParams.get("product");
+  const initialType = (searchParams.get("type") || "").toLowerCase();
+  const initialService: ServiceValue = ENQUIRY_TYPE_COPY[initialType]
+    ? (initialType as ServiceValue)
+    : "custom";
+
+  const [product, setProduct] = useState<{ id: string; name: string } | null>(
+    null,
+  );
+  const [profile, setProfile] = useState<{ id: string; full_name?: string } | null>(
+    null,
+  );
+
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [serviceType, setServiceType] = useState<ServiceValue>(initialService);
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [hasDrawing, setHasDrawing] = useState(false);
+  const [drawingFile, setDrawingFile] = useState<File | null>(null);
+  const [message, setMessage] = useState(
+    ENQUIRY_TYPE_COPY[initialService]?.message || "",
+  );
+  const [messageDirty, setMessageDirty] = useState(false);
+
+  const [loading, setLoading] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [trackingToken, setTrackingToken] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const typeCopy = ENQUIRY_TYPE_COPY[serviceType] || ENQUIRY_TYPE_COPY.custom;
+
+  useEffect(() => {
+    async function init() {
+      const supabase = createBrowserClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user) {
+        const { data: prof } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("user_id", user.id)
+          .single();
+        if (prof) {
+          setProfile(prof);
+          const names = splitFullName(prof.full_name || "");
+          setFirstName(names.firstName);
+          setLastName(names.lastName);
+          setEmail(prof.email || "");
+          setPhone(prof.phone || "");
+        }
+      }
+
+      if (preselectedProductId) {
+        const res = await fetch(`/api/products/${preselectedProductId}`);
+        const json = await res.json();
+        if (json.success && json.data.product) {
+          setProduct(json.data.product);
+        }
+      }
+    }
+
+    init();
+  }, [preselectedProductId]);
+
+  function handleServiceChange(next: ServiceValue) {
+    setServiceType(next);
+    if (!messageDirty) {
+      setMessage(ENQUIRY_TYPE_COPY[next]?.message || "");
+    }
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setErrorMsg("");
+
+    const fullName = `${firstName} ${lastName}`.trim();
+
+    if (!firstName.trim() || !email.trim() || !phone.trim()) {
+      setErrorMsg(
+        "Name, email, and phone are required so we can book and track this enquiry.",
+      );
+      return;
+    }
+
+    if (!message.trim()) {
+      setErrorMsg("Please enter your inquiry specifications.");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const formData = new FormData();
+      if (product?.id) formData.set("productId", product.id);
+      formData.set("message", message.trim());
+      if (profile?.id) formData.set("customerId", profile.id);
+      formData.set("name", fullName || profile?.full_name || "");
+      formData.set("email", email.trim());
+      formData.set("phone", phone.trim());
+      formData.set("guestName", fullName);
+      formData.set("guestEmail", email.trim());
+      formData.set("guestPhone", phone.trim());
+      if (hasDrawing && drawingFile) {
+        formData.set("attachment", drawingFile);
+      }
+
+      const res = await fetch("/api/enquiries", {
+        method: "POST",
+        body: formData,
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        setErrorMsg(json.error?.message || "Failed to submit enquiry");
+      } else {
+        setSubmitted(true);
+        setTrackingToken(json.data?.trackingToken || "");
+      }
+    } catch (err: unknown) {
+      const fallback = "Server error";
+      setErrorMsg(err instanceof Error ? err.message : fallback);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const trackingHref = trackingToken ? `/track/enquiry/${trackingToken}` : "";
+
+  return (
+    <section className="enquiry-page">
+      <div className="contact-layout">
+        <div className="contact-intro">
+          <h1>{typeCopy.heading}</h1>
+          <div className="contact-intro__meta">
+            <div className="contact-meta">
+              <p className="contact-meta__label">{typeCopy.metaLabel}</p>
+              <p className="contact-meta__value">{typeCopy.metaValue}</p>
+            </div>
+            {product && (
+              <div className="contact-meta">
+                <p className="contact-meta__label">Referenced part</p>
+                <p className="contact-meta__value">{product.name}</p>
+              </div>
+            )}
+            <div className="contact-meta">
+              <p className="contact-meta__label">Operations</p>
+              <p className="contact-meta__value">
+                <a href="mailto:support@mitfast.com">support@mitfast.com</a>
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {submitted ? (
+          <div className="enquiry-success" role="status">
+            <h2 className="enquiry-success__title">Enquiry received</h2>
+            <p className="enquiry-success__body">
+              Procurement will review the specifications and follow up at {email}.
+            </p>
+            {trackingToken && (
+              <p className="enquiry-success__track">
+                Track this enquiry without signing in:{" "}
+                <Link href={trackingHref}>{trackingHref}</Link>
+              </p>
+            )}
+            <div className="enquiry-success__actions">
+              <Link href="/products" className="enquiry-success__action">
+                Return to catalog
+              </Link>
+              <Link
+                href="/auth?role=buyer&mode=register"
+                className="enquiry-success__link"
+              >
+                Create procurement account
+              </Link>
+              <button
+                type="button"
+                className="enquiry-success__reset"
+                onClick={() => {
+                  setSubmitted(false);
+                  setMessage(typeCopy.message || "");
+                  setMessageDirty(false);
+                }}
+              >
+                Submit another
+              </button>
+            </div>
+          </div>
+        ) : (
+          <form className="contact-form" onSubmit={handleSubmit} noValidate>
+            <div className="contact-form__group">
+              <p className="contact-form__legend" id="enquiry-name-legend">
+                Contact name
+              </p>
+              <div className="name-row" role="group" aria-labelledby="enquiry-name-legend">
+                <div className="field">
+                  <label className="field__label" htmlFor="enquiry-first-name">
+                    First name
+                  </label>
+                  <input
+                    id="enquiry-first-name"
+                    className="field__input"
+                    type="text"
+                    name="firstName"
+                    autoComplete="given-name"
+                    required
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                  />
+                </div>
+                <div className="field">
+                  <label className="field__label" htmlFor="enquiry-last-name">
+                    Last name
+                  </label>
+                  <input
+                    id="enquiry-last-name"
+                    className="field__input"
+                    type="text"
+                    name="lastName"
+                    autoComplete="family-name"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="field">
+              <label className="field__label" htmlFor="enquiry-service">
+                Enquiry type
+              </label>
+              <div className="field__control">
+                <select
+                  id="enquiry-service"
+                  className="field__select"
+                  name="service"
+                  value={serviceType}
+                  onChange={(e) =>
+                    handleServiceChange(e.target.value as ServiceValue)
+                  }
+                >
+                  {SERVICE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="field__chevron" aria-hidden="true" />
+              </div>
+            </div>
+
+            <div className="field">
+              <label className="field__label" htmlFor="enquiry-email">
+                Work email
+              </label>
+              <input
+                id="enquiry-email"
+                className="field__input"
+                type="email"
+                name="email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+
+            <div className="field">
+              <label className="field__label" htmlFor="enquiry-phone">
+                Phone
+              </label>
+              <input
+                id="enquiry-phone"
+                className="field__input"
+                type="tel"
+                name="phone"
+                autoComplete="tel"
+                required
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+              />
+            </div>
+
+            <div className="checkbox-field">
+              <input
+                id="enquiry-has-drawing"
+                className="checkbox-field__input"
+                type="checkbox"
+                checked={hasDrawing}
+                onChange={(e) => {
+                  setHasDrawing(e.target.checked);
+                  if (!e.target.checked) setDrawingFile(null);
+                }}
+              />
+              <label
+                className="checkbox-field__label"
+                htmlFor="enquiry-has-drawing"
+              >
+                I have a CAD or drawing file
+              </label>
+            </div>
+
+            {hasDrawing && (
+              <div className="field">
+                <label className="field__label" htmlFor="enquiry-drawing">
+                  CAD / drawing file
+                </label>
+                <input
+                  id="enquiry-drawing"
+                  className="field__input"
+                  type="file"
+                  name="attachment"
+                  accept=".pdf,.dwg,.dxf,.step,.stp,.iges,.igs,.png,.jpg,.jpeg,.zip"
+                  onChange={(e) => setDrawingFile(e.target.files?.[0] || null)}
+                />
+              </div>
+            )}
+
+            <div className="textarea-field">
+              <label className="field__label" htmlFor="enquiry-message">
+                Specifications
+              </label>
+              <textarea
+                id="enquiry-message"
+                className="field__textarea"
+                name="message"
+                required
+                value={message}
+                onChange={(e) => {
+                  setMessage(e.target.value);
+                  setMessageDirty(true);
+                }}
+              />
+            </div>
+
+            {errorMsg && (
+              <p className="contact-form__error" role="alert">
+                {errorMsg}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              className="contact-form__submit"
+              disabled={loading}
+            >
+              {loading ? "Sending" : "Send enquiry"}
+            </button>
+          </form>
+        )}
+      </div>
+    </section>
+  );
+}
+
+export default function EnquiryPage() {
+  return (
+    <Suspense
+      fallback={
+        <section className="enquiry-page">
+          <div className="enquiry-fallback">Loading enquiry form</div>
+        </section>
+      }
+    >
+      <EnquiryContent />
+    </Suspense>
+  );
+}
