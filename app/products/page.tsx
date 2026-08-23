@@ -20,6 +20,8 @@ import {
   Star,
 } from "lucide-react";
 import { RemoteImage } from "@/components/ui/RemoteImage";
+import { CountryFlag } from "@/components/ui/CountryFlag";
+import { resolveSupplierCountry } from "@/lib/country-origin";
 import "./products-catalog.css";
 
 /* ── Types ──────────────────────────────────────────────── */
@@ -149,96 +151,6 @@ function getProductRating(product: Product): number | null {
   if (typeof product.rating === "number" && product.rating > 0) {
     return Math.min(5, Math.max(0, product.rating));
   }
-  return null;
-}
-
-type CountryOrigin = { code: string; label: string };
-
-function countryOrigin(code: string, label: string): CountryOrigin {
-  return { code, label };
-}
-
-function resolveSupplierCountry(product: Product): CountryOrigin | null {
-  const countryField = String(
-    product.supplier_country || product.supplier?.country || ""
-  )
-    .trim()
-    .toLowerCase();
-  const addressField = String(product.supplier?.address || "")
-    .trim()
-    .toLowerCase();
-  const raw = [countryField, addressField].filter(Boolean).join(" ");
-
-  if (!raw.trim()) {
-    return null;
-  }
-
-  // ISO / name from country field first (avoid matching English "in" inside addresses)
-  if (
-    countryField === "in" ||
-    countryField === "ind" ||
-    countryField === "india" ||
-    /\bindia\b|\bindian\b/.test(raw)
-  ) {
-    return countryOrigin("IN", "India");
-  }
-  if (
-    countryField === "cn" ||
-    countryField === "chn" ||
-    countryField === "china" ||
-    /\bchina\b|chinese|\bprc\b/.test(raw)
-  ) {
-    return countryOrigin("CN", "China");
-  }
-  if (
-    countryField === "de" ||
-    countryField === "deu" ||
-    countryField === "germany" ||
-    /\bgermany\b|german/.test(raw)
-  ) {
-    return countryOrigin("DE", "Germany");
-  }
-  if (
-    countryField === "us" ||
-    countryField === "usa" ||
-    countryField === "united states" ||
-    /\bunited states\b|\busa\b|american/.test(raw)
-  ) {
-    return countryOrigin("US", "United States");
-  }
-  if (
-    countryField === "jp" ||
-    countryField === "japan" ||
-    /\bjapan\b|japanese/.test(raw)
-  ) {
-    return countryOrigin("JP", "Japan");
-  }
-  if (
-    countryField === "kr" ||
-    countryField === "korea" ||
-    countryField === "south korea" ||
-    /\bkorea\b|korean/.test(raw)
-  ) {
-    return countryOrigin("KR", "South Korea");
-  }
-  if (countryField === "tw" || countryField === "taiwan" || /\btaiwan\b/.test(raw)) {
-    return countryOrigin("TW", "Taiwan");
-  }
-  if (
-    countryField === "gb" ||
-    countryField === "uk" ||
-    countryField === "united kingdom" ||
-    /\bunited kingdom\b|\bbritain\b|\bengland\b/.test(raw)
-  ) {
-    return countryOrigin("GB", "United Kingdom");
-  }
-  if (countryField === "vn" || countryField === "vietnam" || /\bvietnam\b/.test(raw)) {
-    return countryOrigin("VN", "Vietnam");
-  }
-  if (countryField === "th" || countryField === "thailand" || /\bthailand\b/.test(raw)) {
-    return countryOrigin("TH", "Thailand");
-  }
-
   return null;
 }
 
@@ -627,22 +539,15 @@ function ProductsCatalogContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ productId: product.id, quantity: qty }),
       });
-      if (res.status === 401) {
-        router.push(
-          `/auth?role=buyer&mode=signin&redirect=${encodeURIComponent(
-            `/cart?product=${product.id}&qty=${qty}`,
-          )}`,
-        );
-        return;
-      }
       const json = await res.json();
       if (!res.ok || !json.success) {
-        setCartError(json.error?.message || "Failed to add line item to RFQ workspace");
+        setCartError(json.error?.message || "Failed to add to cart");
         return;
       }
+      window.dispatchEvent(new Event("cart-updated"));
       router.push("/cart");
     } catch {
-      setCartError("Failed to add line item to RFQ workspace");
+      setCartError("Failed to add to cart");
     } finally {
       setAddingId(null);
     }
@@ -752,22 +657,12 @@ function ProductsCatalogContent() {
 
             <span
               className={`pc-card__flag-slot ${origin ? "has-flag" : ""}`}
-              title={origin?.label || undefined}
-              aria-label={origin ? `Supplier country: ${origin.label}` : undefined}
             >
-              {origin ? (
-                // eslint-disable-next-line @next/next/no-img-element -- small CDN flag; emoji fails on Windows
-                <img
-                  className="pc-card__flag-img"
-                  src={`https://flagcdn.com/w40/${origin.code.toLowerCase()}.png`}
-                  srcSet={`https://flagcdn.com/w80/${origin.code.toLowerCase()}.png 2x`}
-                  width={20}
-                  height={15}
-                  alt=""
-                  loading="lazy"
-                  decoding="async"
-                />
-              ) : null}
+              <CountryFlag
+                origin={origin}
+                className="pc-card__flag-slot-inner"
+                imgClassName="pc-card__flag-img"
+              />
             </span>
           </div>
         </div>
@@ -794,6 +689,7 @@ function ProductsCatalogContent() {
   function renderListRow(product: Product) {
     const unit = product.unit || "piece";
     const imageUrl = getProductImageUrl(product);
+    const origin = resolveSupplierCountry(product);
     const rfqHref = `/rfq?product=${product.id}&qty=${product.moq && product.moq > 0 ? product.moq : 1}`;
     return (
       <div key={product.id} className="pc-list-row">
@@ -817,6 +713,15 @@ function ProductsCatalogContent() {
           <div className="pc-card__moq">
             MOQ: {product.moq} {unit}
           </div>
+          {origin ? (
+            <div className="pc-list-row__origin">
+              <CountryFlag
+                origin={origin}
+                imgClassName="pc-card__flag-img"
+              />
+              <span>{origin.label}</span>
+            </div>
+          ) : null}
         </div>
         <div className="pc-list-row__actions">
           {(() => {

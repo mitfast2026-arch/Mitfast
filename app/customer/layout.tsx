@@ -19,6 +19,8 @@ import {
 import { createBrowserClient } from '@/lib/supabase/client';
 import PortalNavLink from '@/components/portal/PortalNavLink';
 
+import { signOutTo } from '@/lib/client/sign-out';
+
 export default function CustomerLayout({
   children,
 }: {
@@ -58,10 +60,8 @@ export default function CustomerLayout({
     checkAuth();
   }, [router]);
 
-  async function handleSignOut() {
-    const supabase = createBrowserClient();
-    await supabase.auth.signOut();
-    router.push('/auth?role=buyer&mode=signin');
+  function handleSignOut() {
+    signOutTo('/auth?role=buyer&mode=signin');
   }
 
   const navItems = [

@@ -13,7 +13,7 @@ export type ProductImageActor = {
 
 type ProductRow = {
   id: string;
-  supplier_id: string;
+  supplier_id: string | null;
 };
 
 async function getMaxProductImages(): Promise<number> {
@@ -118,7 +118,7 @@ export async function addProductImage(
     }
 
     const uploadResult = await uploadProductImage(
-      product.supplier_id,
+      product.supplier_id ?? 'internal',
       productId,
       input.fileName,
       input.buffer,

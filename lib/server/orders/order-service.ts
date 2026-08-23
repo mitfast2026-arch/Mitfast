@@ -166,6 +166,16 @@ export async function convertRfqToOrder(formData: unknown): Promise<ServerResult
       })
       .eq('id', rfqId);
 
+    if (rfq.enquiry_id) {
+      await adminClient
+        .from('enquiries')
+        .update({
+          status: 'converted_to_order',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', rfq.enquiry_id);
+    }
+
     return {
       success: true,
       data: {
@@ -697,6 +707,7 @@ export async function getOrdersForAdmin(params: {
   paymentStatus?: PaymentStatus;
   supplierId?: string;
   search?: string;
+  convertedOnly?: boolean;
 }): Promise<ServerResult<{ orders: any[]; total: number; page: number; limit: number }>> {
   try {
     const adminClient = createAdminClient();
@@ -709,11 +720,17 @@ export async function getOrdersForAdmin(params: {
       .select(`
         *,
         customer:profiles(id, full_name, email, phone),
+        enquiry:enquiries(id, guest_name, guest_email, guest_phone, country, enquiry_type),
+        rfq:rfqs(id, rfq_number, enquiry_id),
         items:order_items(
           *,
           supplier:suppliers(id, company_name)
         )
       `, { count: 'exact' });
+
+    if (params.convertedOnly) {
+      query = query.or('enquiry_id.not.is.null,rfq_id.not.is.null');
+    }
 
     if (params.status) query = query.eq('status', params.status);
     if (params.paymentStatus) query = query.eq('payment_status', params.paymentStatus);

@@ -378,6 +378,33 @@
   font-variant-numeric: tabular-nums;
 }
 
+.pdp-origin {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pdp-origin__flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(17, 19, 21, 0.08);
+}
+
+.pdp-origin__flag-img {
+  display: block;
+  width: 20px;
+  height: 15px;
+  object-fit: cover;
+  border-radius: 2px;
+}
+
+.pdp-origin--table {
+  gap: 8px;
+}
+
 .pdp-desc {
   margin: 16px 0 0;
   font-size: 14px;

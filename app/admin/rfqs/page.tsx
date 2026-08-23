@@ -1,45 +1,84 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  FileText, 
-  Search, 
-  Check, 
-  RefreshCw, 
-  ShoppingCart, 
-  DollarSign, 
-  MapPin, 
+import Link from 'next/link';
+import {
+  Search,
+  Check,
+  RefreshCw,
+  ShoppingCart,
+  DollarSign,
+  MapPin,
   MessageSquare,
   XCircle,
-  Loader2,
+  ArrowRight,
 } from 'lucide-react';
-import { apiGet, apiPost } from '@/lib/client/api-client';
+import { apiPost } from '@/lib/client/api-client';
+import {
+  cachedApiGet,
+  markPortalContentReady,
+  peekPortalCache,
+} from '@/lib/client/portal-data-cache';
+import { PORTAL_PAGE_LIMIT } from '@/lib/client/portal-nav-prefetch';
 import { useMutation, mutationKey } from '@/lib/client/use-mutation';
+import { notifyDashboardChanged } from '@/components/portal/ApprovalsCountContext';
+import { SalesWorkflowBar, ContactGrid } from '@/components/admin/SalesWorkflow';
+import AdminPageHeader from '@/components/admin/AdminPageHeader';
+import AdminToolbar from '@/components/admin/AdminToolbar';
+import AdminSplitView from '@/components/admin/AdminSplitView';
+import {
+  rfqContact,
+  rfqStatusBadgeClass,
+  formatStatusLabel,
+} from '@/lib/admin/sales-workflow';
+
+const RFQ_STATUS_TABS = ['all', 'submitted', 'under_review', 'accepted', 'rejected', 'converted_to_order'] as const;
 
 export default function AdminRfqsPage() {
   const [rfqs, setRfqs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedRfq, setSelectedRfq] = useState<any>(null);
-
-  // Negotiation state
   const [negotiatedPrices, setNegotiatedPrices] = useState<Record<string, number>>({});
   const [actionError, setActionError] = useState<string | null>(null);
   const { isPending, run } = useMutation();
   const [rejectReason, setRejectReason] = useState('');
   const [showReject, setShowReject] = useState(false);
   const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
+  const [convertSuccess, setConvertSuccess] = useState('');
 
   const loadRfqs = useCallback(async (showLoading = true) => {
-    if (showLoading) setLoading(true);
+    const statusParam = statusFilter === 'all' ? '' : `&status=${statusFilter}`;
+    const url = `/api/rfqs?search=${encodeURIComponent(searchTerm)}&page=${page}&limit=${PORTAL_PAGE_LIMIT}${statusParam}`;
+    const existing = peekPortalCache<{ rfqs: any[]; total: number }>(url);
+    if (existing) {
+      const list = existing.data.rfqs || [];
+      setRfqs(list);
+      setSelectedRfq((prev: any) => {
+        if (prev) {
+          const updated = list.find((r: any) => r.id === prev.id);
+          if (updated) {
+            initNegotiationPrices(updated);
+            return updated;
+          }
+        }
+        if (list[0]) {
+          initNegotiationPrices(list[0]);
+          return list[0];
+        }
+        return prev;
+      });
+      setLoading(false);
+    } else if (showLoading) {
+      setLoading(true);
+    }
     try {
-      const result = await apiGet<{ rfqs: any[]; total: number }>(
-        `/api/rfqs?search=${encodeURIComponent(searchTerm)}&page=${page}&limit=50`
-      );
+      const result = await cachedApiGet<{ rfqs: any[]; total: number }>(url, {
+        force: showLoading && !existing,
+      });
       if (result.ok) {
         const list = result.data.rfqs || [];
-        setTotal(result.data.total || list.length);
         setRfqs(list);
         setSelectedRfq((prev: any) => {
           if (prev) {
@@ -55,13 +94,14 @@ export default function AdminRfqsPage() {
           }
           return prev;
         });
+        markPortalContentReady('/admin/rfqs');
       }
     } catch (err) {
       console.error('Failed to load RFQs:', err);
     } finally {
-      if (showLoading) setLoading(false);
+      setLoading(false);
     }
-  }, [searchTerm, page]);
+  }, [searchTerm, page, statusFilter]);
 
   useEffect(() => {
     loadRfqs();
@@ -69,19 +109,21 @@ export default function AdminRfqsPage() {
 
   function initNegotiationPrices(rfq: any) {
     const map: Record<string, number> = {};
-    if (rfq && rfq.items) {
+    if (rfq?.items) {
       for (const itm of rfq.items) {
         map[itm.id] = itm.final_unit_price ?? itm.original_unit_price;
       }
     }
     setNegotiatedPrices(map);
+    setShowReject(false);
+    setRejectReason('');
+    setActionError(null);
+    setConvertSuccess('');
   }
 
   function handleSelectRfq(rfq: any) {
     setSelectedRfq(rfq);
     initNegotiationPrices(rfq);
-    setShowReject(false);
-    setRejectReason('');
   }
 
   function patchRfq(rfqId: string, patch: Record<string, unknown>) {
@@ -95,15 +137,17 @@ export default function AdminRfqsPage() {
     const itemsPayload = selectedRfq.items.map((itm: any) => ({
       rfqItemId: itm.id,
       finalUnitPrice: negotiatedPrices[itm.id] ?? itm.original_unit_price,
-      finalQuantity: itm.original_quantity,
+      finalQuantity: itm.final_quantity ?? itm.original_quantity,
     }));
 
     await run(
-      () =>
-        apiPost(`/api/rfqs/${selectedRfq.id}/negotiate`, { items: itemsPayload }),
+      () => apiPost(`/api/rfqs/${selectedRfq.id}/negotiate`, { items: itemsPayload }),
       {
         key: mutationKey(selectedRfq.id, 'negotiate'),
-        onSuccess: () => patchRfq(selectedRfq.id, { status: 'under_review' }),
+        onSuccess: () => {
+          patchRfq(selectedRfq.id, { status: 'under_review' });
+          notifyDashboardChanged();
+        },
         onError: (msg) => setActionError(msg),
       }
     );
@@ -114,7 +158,10 @@ export default function AdminRfqsPage() {
     setActionError(null);
     await run(() => apiPost(`/api/rfqs/${selectedRfq.id}/accept`), {
       key: mutationKey(selectedRfq.id, 'accept'),
-      onSuccess: () => patchRfq(selectedRfq.id, { status: 'accepted' }),
+      onSuccess: () => {
+        patchRfq(selectedRfq.id, { status: 'accepted' });
+        notifyDashboardChanged();
+      },
       onError: (msg) => setActionError(msg),
     });
   }
@@ -135,6 +182,7 @@ export default function AdminRfqsPage() {
           patchRfq(selectedRfq.id, { status: 'rejected' });
           setShowReject(false);
           setRejectReason('');
+          notifyDashboardChanged();
         },
         onError: (msg) => setActionError(msg),
       }
@@ -144,9 +192,14 @@ export default function AdminRfqsPage() {
   async function handleConvertToOrder() {
     if (!selectedRfq) return;
     setActionError(null);
+    setConvertSuccess('');
     await run(() => apiPost(`/api/rfqs/${selectedRfq.id}/convert-to-order`), {
       key: mutationKey(selectedRfq.id, 'convert'),
-      onSuccess: () => patchRfq(selectedRfq.id, { status: 'converted' }),
+      onSuccess: (data) => {
+        patchRfq(selectedRfq.id, { status: 'converted_to_order' });
+        setConvertSuccess((data as { orderNumber?: string })?.orderNumber || 'Order created');
+        notifyDashboardChanged();
+      },
       onError: (msg) => setActionError(msg),
     });
   }
@@ -158,267 +211,240 @@ export default function AdminRfqsPage() {
       isPending(mutationKey(selectedRfq.id, 'convert'))
     : false;
 
+  const contact = selectedRfq ? rfqContact(selectedRfq) : null;
+
   return (
     <div className="space-y-6 w-full">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="type-page">
-            Volume RFQs
-          </h1>
-          <p className="type-subtitle">
-            Review bulk quotation requests, set negotiated pricing margins, and convert accepted quotes to official orders.
-          </p>
-        </div>
+      <AdminPageHeader
+        title="RFQs"
+        description="Quotation requests — review products, negotiate pricing, accept, then convert to order."
+        actions={
+          <button onClick={() => loadRfqs()} className="saas-btn-secondary gap-2">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        }
+      />
 
-        <button 
-          onClick={() => loadRfqs()} 
-          className="saas-neu-button text-xs py-2 px-3.5 flex items-center gap-2 self-start sm:self-auto"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 text-[#6B7280] ${loading ? 'animate-spin' : ''}`} />
-          <span>Refresh RFQs</span>
-        </button>
-      </div>
+      <SalesWorkflowBar active="rfqs" />
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* RFQ List (4 cols) */}
-        <div className="lg:col-span-4 space-y-3">
-          <div className="saas-panel p-3">
-            <div className="relative">
-              <input 
-                type="text"
-                placeholder="Search by RFQ number or buyer..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="saas-input pl-8 text-xs"
-              />
-              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[#6B7280]" />
-            </div>
+      <AdminToolbar>
+        <div className="flex flex-col lg:flex-row gap-3 lg:items-center w-full">
+          <div className="saas-search-field w-full sm:max-w-xs">
+            <Search className="saas-search-icon" />
+            <input
+              type="text"
+              placeholder="Search RFQ number or notes…"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="saas-input w-full"
+            />
           </div>
+          <div className="saas-segmented overflow-x-auto flex-nowrap">
+            {RFQ_STATUS_TABS.map((st) => (
+              <button
+                key={st}
+                onClick={() => setStatusFilter(st)}
+                className={`shrink-0 ${statusFilter === st ? 'saas-tab-active' : 'saas-tab-inactive'}`}
+              >
+                {formatStatusLabel(st)}
+              </button>
+            ))}
+          </div>
+        </div>
+      </AdminToolbar>
 
-          <div className="space-y-2.5 max-h-[720px] overflow-y-auto pr-1">
-            {rfqs.length === 0 ? (
-              <div className="saas-panel p-12 text-center text-xs text-[#6B7280]">
-                No quotation requests found.
-              </div>
-            ) : (
-              rfqs.map((r) => {
-                const isSelected = selectedRfq?.id === r.id;
-                return (
-                  <div
-                    key={r.id}
-                    onClick={() => handleSelectRfq(r)}
-                    className={`saas-panel p-4 cursor-pointer transition-all space-y-2 ${
-                      isSelected 
-                        ? 'ring-2 ring-amber-500 shadow-md' 
-                        : 'hover:bg-[#F7F7F8]/70'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="type-id text-xs text-[#111315]">{r.rfq_number}</span>
-                      <span className={
-                        r.status === 'accepted' 
-                          ? 'saas-badge-success' 
-                          : r.status === 'converted_to_order' 
-                          ? 'saas-badge-cyan' 
-                          : r.status === 'rejected'
-                          ? 'saas-badge-danger'
-                          : 'saas-badge-gold'
-                      }>
-                        {r.status.toUpperCase()}
-                      </span>
-                    </div>
-
-                    <div className="text-xs text-[#6B7280]">
-                      Buyer: <span className="text-[#111315] font-medium">{r.customer?.full_name || 'Procurement Buyer'}</span>
-                    </div>
-
-                    <div className="flex items-center justify-between text-xs pt-2 border-t border-[#E2E4E8]">
-                      <span className="text-[#6B7280]">{r.items?.length || 0} line items</span>
-                      <span className="type-metric text-[#111315]">
-                        ₹{(r.final_total ?? r.original_total)?.toLocaleString('en-IN')}
-                      </span>
-                    </div>
+      <AdminSplitView
+        listCols={5}
+        detailCols={7}
+        list={
+          rfqs.length === 0 ? (
+            <div className="saas-panel p-10 text-center text-sm text-portal-muted">No RFQs found.</div>
+          ) : (
+            rfqs.map((r) => {
+              const c = rfqContact(r);
+              const isSelected = selectedRfq?.id === r.id;
+              return (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => handleSelectRfq(r)}
+                  className={`saas-list-item space-y-1.5 ${isSelected ? 'saas-list-item-selected' : ''}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="type-id">{r.rfq_number}</span>
+                    <span className={rfqStatusBadgeClass(r.status)}>{formatStatusLabel(r.status)}</span>
                   </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-
-        {/* Selected RFQ Detail & Price Negotiation Matrix (8 cols) */}
-        <div className="lg:col-span-8">
-          {selectedRfq ? (
-            <div className="saas-panel p-6 space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#E2E4E8] pb-4">
+                  <div className="text-sm font-medium text-portal-text truncate">{c.name}</div>
+                  <div className="flex justify-between text-xs text-portal-muted font-mono pt-1 border-t border-portal-border">
+                    <span>{r.items?.length || 0} items</span>
+                    <span>₹{(r.final_total ?? r.original_total)?.toLocaleString('en-IN')}</span>
+                  </div>
+                </button>
+              );
+            })
+          )
+        }
+        detail={
+          selectedRfq ? (
+            <div className="saas-panel p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b border-portal-border pb-3">
                 <div>
-                  <div className="flex items-center gap-3">
-                    <h2 className="type-section type-id">
-                      {selectedRfq.rfq_number}
-                    </h2>
-                    <span className="saas-badge-gold">{selectedRfq.status.toUpperCase()}</span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="type-section type-id">{selectedRfq.rfq_number}</h2>
+                    <span className={rfqStatusBadgeClass(selectedRfq.status)}>
+                      {formatStatusLabel(selectedRfq.status)}
+                    </span>
                   </div>
-                  <div className="text-xs text-[#6B7280] mt-1">
-                    Submitted {new Date(selectedRfq.created_at).toLocaleDateString()} • Buyer: <b className="text-[#111315]">{selectedRfq.customer?.full_name}</b>
-                  </div>
+                  <p className="text-xs text-portal-muted mt-1">
+                    Submitted {new Date(selectedRfq.created_at).toLocaleDateString()}
+                    {selectedRfq.enquiry_id && (
+                      <>
+                        {' · '}
+                        <Link href="/admin/enquiries" className="underline">
+                          From enquiry
+                        </Link>
+                      </>
+                    )}
+                  </p>
                 </div>
-
-                <div className="flex gap-2 self-start sm:self-auto shrink-0">
+                <div className="flex flex-wrap gap-2">
                   {selectedRfq.status === 'accepted' && (
-                    <button 
+                    <button
                       onClick={handleConvertToOrder}
                       disabled={rfqBusy}
                       className="saas-btn-gold text-xs py-2 px-4 flex items-center gap-1.5"
                     >
                       <ShoppingCart className="w-3.5 h-3.5" />
-                      <span>Convert to Order</span>
+                      Convert to order
                     </button>
                   )}
                   {(selectedRfq.status === 'submitted' || selectedRfq.status === 'under_review') && (
                     <>
-                      <button 
-                        onClick={handleSaveNegotiation}
-                        disabled={rfqBusy}
-                        className="saas-btn-secondary text-xs py-2 px-3.5 flex items-center gap-1.5"
-                      >
-                        <DollarSign className="w-3.5 h-3.5 text-[#111315]" />
-                        <span>Save Prices</span>
+                      <button onClick={handleSaveNegotiation} disabled={rfqBusy} className="saas-btn-secondary text-xs py-2 px-3 flex items-center gap-1.5">
+                        <DollarSign className="w-3.5 h-3.5" />
+                        Save prices
                       </button>
-                      <button 
-                        onClick={handleAcceptRfq}
-                        disabled={rfqBusy}
-                        className="saas-btn-primary text-xs py-2 px-4 flex items-center gap-1.5"
-                      >
+                      <button onClick={handleAcceptRfq} disabled={rfqBusy} className="saas-btn-primary text-xs py-2 px-4 flex items-center gap-1.5">
                         <Check className="w-3.5 h-3.5" />
-                        <span>Accept Quote</span>
+                        Accept
                       </button>
-                      <button
-                        onClick={() => setShowReject((v) => !v)}
-                        disabled={rfqBusy}
-                        className="saas-btn-secondary text-xs py-2 px-3.5 flex items-center gap-1.5 text-[#B91C1C]"
-                      >
+                      <button onClick={() => setShowReject((v) => !v)} disabled={rfqBusy} className="saas-btn-secondary text-xs py-2 px-3 text-portal-danger flex items-center gap-1.5">
                         <XCircle className="w-3.5 h-3.5" />
-                        <span>Reject</span>
+                        Reject
                       </button>
                     </>
                   )}
                 </div>
               </div>
 
+              {contact && (
+                <ContactGrid
+                  name={contact.name}
+                  email={contact.email}
+                  phone={contact.phone}
+                  country={contact.country}
+                  company={contact.company}
+                />
+              )}
+
+              {actionError && <p className="text-xs text-portal-danger bg-portal-danger-soft p-2 rounded-lg">{actionError}</p>}
+              {convertSuccess && (
+                <p className="text-xs text-portal-success">
+                  {convertSuccess} —{' '}
+                  <Link href="/admin/orders" className="underline inline-flex items-center gap-1">
+                    View orders <ArrowRight className="w-3 h-3" />
+                  </Link>
+                </p>
+              )}
+
               {showReject && (selectedRfq.status === 'submitted' || selectedRfq.status === 'under_review') && (
-                <div className="space-y-2 p-3 rounded-xl bg-[#FEF2F2] border border-[#FECACA]">
-                  <label className="type-meta text-[#B91C1C]">Rejection reason (required)</label>
-                  <textarea
-                    className="saas-input text-xs min-h-[72px]"
-                    value={rejectReason}
-                    onChange={(e) => setRejectReason(e.target.value)}
-                    placeholder="Explain why this RFQ is being rejected"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleRejectRfq}
-                    disabled={rfqBusy}
-                    className="saas-btn-primary text-xs py-1.5 px-3 bg-rose-700"
-                  >
+                <div className="space-y-2 p-3 rounded-xl bg-portal-danger-soft border border-portal-danger/30">
+                  <label className="type-meta text-portal-danger">Rejection reason</label>
+                  <textarea className="saas-input text-xs min-h-[72px]" value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} />
+                  <button type="button" onClick={handleRejectRfq} disabled={rfqBusy} className="saas-btn-primary text-xs py-1.5 px-3 bg-rose-700">
                     Confirm reject
                   </button>
                 </div>
               )}
 
               {selectedRfq.status === 'rejected' && selectedRfq.rejection_reason && (
-                <p className="text-xs text-[#B91C1C] bg-[#FEF2F2] p-3 rounded-xl">
-                  Rejected: {selectedRfq.rejection_reason}
-                </p>
+                <p className="text-xs text-portal-danger bg-portal-danger-soft p-3 rounded-xl">Rejected: {selectedRfq.rejection_reason}</p>
               )}
 
-              {/* Items Table */}
-              <div className="space-y-2">
-                <div className="type-section">
-                  Line items & quotation pricing
-                </div>
+              <div className="saas-table-container">
+                <table className="saas-table text-xs">
+                  <thead>
+                    <tr>
+                      <th>Product</th>
+                      <th>Qty</th>
+                      <th>Listed</th>
+                      <th>Negotiated unit</th>
+                      <th className="text-right">Line total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedRfq.items?.map((item: any) => {
+                      const negotiatedPrice = negotiatedPrices[item.id] ?? (item.final_unit_price ?? item.original_unit_price);
+                      const qty = item.final_quantity ?? item.original_quantity;
+                      const lineTotal = qty * negotiatedPrice;
+                      const locked = selectedRfq.status === 'converted_to_order' || selectedRfq.status === 'rejected';
 
-                <div className="saas-table-container">
-                  <table className="saas-table text-xs">
-                    <thead>
-                      <tr>
-                        <th>Component</th>
-                        <th>Quantity</th>
-                        <th>Original price</th>
-                        <th>Official quote unit</th>
-                        <th className="text-right">LINE TOTAL</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {selectedRfq.items?.map((item: any) => {
-                        const originalPrice = item.original_unit_price;
-                        const negotiatedPrice = negotiatedPrices[item.id] ?? (item.final_unit_price ?? originalPrice);
-                        const lineTotal = item.original_quantity * negotiatedPrice;
-
-                        return (
-                          <tr key={item.id}>
-                            <td className="font-medium text-[#111315] text-xs">
-                              {item.product_name_snapshot}
-                            </td>
-                            <td className="type-metric text-[#111315]">{item.original_quantity} Units</td>
-                            <td className="type-metric text-[#6B7280]">
-                              ₹{originalPrice?.toLocaleString('en-IN')}
-                            </td>
-                            <td>
-                              {selectedRfq.status === 'converted_to_order' ? (
-                                <span className="type-metric text-[#111315]">₹{negotiatedPrice?.toLocaleString('en-IN')}</span>
-                              ) : (
-                                <input 
-                                  type="number"
-                                  value={negotiatedPrice}
-                                  onChange={(e) => {
-                                    const val = parseFloat(e.target.value) || 0;
-                                    setNegotiatedPrices(prev => ({ ...prev, [item.id]: val }));
-                                  }}
-                                  className="saas-input type-metric w-28 py-1 px-2 text-[#111315] text-xs"
-                                />
-                              )}
-                            </td>
-                            <td className="type-metric text-right text-[#111315]">
-                              ₹{lineTotal.toLocaleString('en-IN')}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                      return (
+                        <tr key={item.id}>
+                          <td className="font-medium">{item.product_name_snapshot}</td>
+                          <td className="type-metric">{qty}</td>
+                          <td className="type-metric text-portal-muted">₹{item.original_unit_price?.toLocaleString('en-IN')}</td>
+                          <td>
+                            {locked ? (
+                              <span className="type-metric">₹{negotiatedPrice?.toLocaleString('en-IN')}</span>
+                            ) : (
+                              <input
+                                type="number"
+                                value={negotiatedPrice}
+                                onChange={(e) => {
+                                  const val = parseFloat(e.target.value) || 0;
+                                  setNegotiatedPrices((prev) => ({ ...prev, [item.id]: val }));
+                                }}
+                                className="saas-input type-metric w-28 py-1 px-2 text-xs"
+                              />
+                            )}
+                          </td>
+                          <td className="type-metric text-right">₹{lineTotal.toLocaleString('en-IN')}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
 
-              {/* Delivery address & buyer notes */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs bg-[#F7F7F8] p-4 rounded-xl">
-                <div className="space-y-1">
-                  <div className="type-meta text-[#6B7280] flex items-center gap-1">
-                    <MapPin className="w-3 h-3 text-[#6B7280]" />
-                    <span>Delivery destination</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-portal-inset p-3 rounded-xl">
+                <div>
+                  <div className="type-meta text-portal-muted flex items-center gap-1 mb-1">
+                    <MapPin className="w-3 h-3" /> Delivery address
                   </div>
-                  <div className="text-[#111315] leading-relaxed font-medium">
-                    {selectedRfq.delivery_address_snapshot?.address_line_1 || 'Standard Factory Delivery'}<br />
-                    {selectedRfq.delivery_address_snapshot?.city}, {selectedRfq.delivery_address_snapshot?.state} - {selectedRfq.delivery_address_snapshot?.postal_code}
+                  <div className="text-portal-text leading-relaxed">
+                    {selectedRfq.delivery_address_snapshot?.address_line_1}<br />
+                    {selectedRfq.delivery_address_snapshot?.city}, {selectedRfq.delivery_address_snapshot?.state}{' '}
+                    {selectedRfq.delivery_address_snapshot?.postal_code}<br />
+                    {selectedRfq.delivery_address_snapshot?.country}
                   </div>
                 </div>
-                <div className="space-y-1">
-                  <div className="type-meta text-[#6B7280] flex items-center gap-1">
-                    <MessageSquare className="w-3 h-3 text-[#6B7280]" />
-                    <span>Buyer notes</span>
+                <div>
+                  <div className="type-meta text-portal-muted flex items-center gap-1 mb-1">
+                    <MessageSquare className="w-3 h-3" /> Notes
                   </div>
-                  <div className="text-[#6B7280] leading-relaxed">
-                    {selectedRfq.customer_message || 'No additional commercial terms attached.'}
-                  </div>
+                  <div className="text-portal-muted">{selectedRfq.customer_message || '—'}</div>
                 </div>
               </div>
             </div>
           ) : (
-            <div className="saas-panel p-16 text-center text-xs text-[#6B7280]">
-              Select an RFQ from the list to view line items and negotiate prices.
+            <div className="saas-panel p-16 text-center text-sm text-portal-muted">
+              Select an RFQ to negotiate pricing and manage status.
             </div>
-          )}
-        </div>
-      </div>
+          )
+        }
+      />
     </div>
   );
 }

@@ -26,8 +26,9 @@ yarn-error.log*
 .env*.local
 .env.local
 
-# Vercel
+# Vercel (do not link this repo with `vercel link` while logged in as mithronadmin@gmail.com)
 .vercel
+.env.vercel.*
 
 # TypeScript
 *.tsbuildinfo

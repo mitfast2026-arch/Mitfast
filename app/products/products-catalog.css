@@ -973,6 +973,12 @@
   box-shadow: 0 0 0 1px rgba(17, 19, 21, 0.08);
 }
 
+.pc-card__flag-slot-inner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .pc-card__flag-img {
   display: block;
   width: 20px;
@@ -1108,6 +1114,15 @@
   font-size: 12px;
   color: var(--pc-muted);
   margin-bottom: 4px;
+}
+
+.pc-list-row__origin {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--pc-muted);
 }
 
 .pc-list-row__actions {

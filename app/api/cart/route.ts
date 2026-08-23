@@ -6,17 +6,40 @@ import {
   removeCartItem,
   clearCustomerCart,
 } from '@/lib/server/cart/cart-service';
-import { requireCustomer } from '@/lib/server/auth/get-session';
+import {
+  getGuestCart,
+  addToGuestCart,
+  updateGuestCartItemQuantity,
+  removeGuestCartItem,
+  clearGuestCart,
+} from '@/lib/server/guest/guest-cart';
+import { ensureGuestSessionId } from '@/lib/server/guest/session';
+import { getServerSession } from '@/lib/server/auth/get-session';
+
+async function resolveCartActor() {
+  const session = await getServerSession();
+  if (session?.profile.role === 'customer') {
+    return { kind: 'customer' as const, customerId: session.profile.id };
+  }
+  const guestSessionId = await ensureGuestSessionId();
+  return { kind: 'guest' as const, guestSessionId };
+}
 
 export async function GET() {
   try {
-    const auth = await requireCustomer();
-    if (!auth.ok) return auth.response;
+    const actor = await resolveCartActor();
+    const result =
+      actor.kind === 'customer'
+        ? await getCustomerCart(actor.customerId)
+        : await getGuestCart(actor.guestSessionId);
 
-    const result = await getCustomerCart(auth.session.profile.id);
     if (!result.success) return NextResponse.json(result, { status: 400 });
-    return NextResponse.json(result);
+    return NextResponse.json({
+      ...result,
+      data: { ...result.data, isGuest: actor.kind === 'guest' },
+    });
   } catch (error) {
+    console.error('[GET /api/cart]', error);
     return NextResponse.json(
       { success: false, error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } },
       { status: 500 }
@@ -26,9 +49,6 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireCustomer();
-    if (!auth.ok) return auth.response;
-
     const body = await request.json();
     const { productId, quantity } = body;
 
@@ -39,10 +59,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await addToCart(auth.session.profile.id, productId, quantity || 1);
+    const actor = await resolveCartActor();
+    const result =
+      actor.kind === 'customer'
+        ? await addToCart(actor.customerId, productId, quantity || 1)
+        : await addToGuestCart(actor.guestSessionId, productId, quantity || 1);
+
     if (!result.success) return NextResponse.json(result, { status: 400 });
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
+    console.error('[POST /api/cart]', error);
     return NextResponse.json(
       { success: false, error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } },
       { status: 500 }
@@ -52,9 +78,6 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const auth = await requireCustomer();
-    if (!auth.ok) return auth.response;
-
     const body = await request.json();
     const { cartItemId, quantity } = body;
 
@@ -65,13 +88,19 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const result = await updateCartItemQuantity(auth.session.profile.id, cartItemId, quantity);
+    const actor = await resolveCartActor();
+    const result =
+      actor.kind === 'customer'
+        ? await updateCartItemQuantity(actor.customerId, cartItemId, quantity)
+        : await updateGuestCartItemQuantity(actor.guestSessionId, cartItemId, quantity);
+
     if (!result.success) {
       const status = result.error?.code === 'FORBIDDEN' ? 403 : 400;
       return NextResponse.json(result, { status });
     }
     return NextResponse.json(result);
   } catch (error) {
+    console.error('[PUT /api/cart]', error);
     return NextResponse.json(
       { success: false, error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } },
       { status: 500 }
@@ -81,15 +110,17 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const auth = await requireCustomer();
-    if (!auth.ok) return auth.response;
-
     const { searchParams } = new URL(request.url);
     const cartItemId = searchParams.get('cartItemId');
     const clearAll = searchParams.get('clear');
+    const actor = await resolveCartActor();
 
     if (cartItemId) {
-      const result = await removeCartItem(auth.session.profile.id, cartItemId);
+      const result =
+        actor.kind === 'customer'
+          ? await removeCartItem(actor.customerId, cartItemId)
+          : await removeGuestCartItem(actor.guestSessionId, cartItemId);
+
       if (!result.success) {
         const status = result.error?.code === 'FORBIDDEN' ? 403 : 400;
         return NextResponse.json(result, { status });
@@ -98,7 +129,8 @@ export async function DELETE(request: NextRequest) {
     }
 
     if (clearAll === '1' || clearAll === 'true') {
-      await clearCustomerCart(auth.session.profile.id);
+      if (actor.kind === 'customer') await clearCustomerCart(actor.customerId);
+      else await clearGuestCart(actor.guestSessionId);
       return NextResponse.json({ success: true, data: { cleared: true } });
     }
 
@@ -107,6 +139,7 @@ export async function DELETE(request: NextRequest) {
       { status: 400 }
     );
   } catch (error) {
+    console.error('[DELETE /api/cart]', error);
     return NextResponse.json(
       { success: false, error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } },
       { status: 500 }

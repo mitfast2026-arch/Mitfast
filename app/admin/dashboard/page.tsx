@@ -1,23 +1,82 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import {
-  Package,
-  Building2,
-  FileText,
-  ShoppingCart,
-  Mail,
-  CheckSquare,
-  Clock,
   RefreshCw,
-  ShieldCheck,
-  Check,
+  ArrowRight,
+  CheckCircle2,
+  Mail,
+  Package,
+  ShoppingCart,
   AlertCircle,
+  Database,
 } from 'lucide-react';
-import { apiGet, apiPost } from '@/lib/client/api-client';
-import { useMutation, mutationKey } from '@/lib/client/use-mutation';
-import { notifyApprovalsChanged } from '@/components/portal/ApprovalsCountContext';
+import {
+  cachedApiGet,
+  markPortalContentReady,
+  peekPortalCache,
+} from '@/lib/client/portal-data-cache';
+import AdminPageHeader from '@/components/admin/AdminPageHeader';
+import { onDashboardChanged } from '@/components/portal/ApprovalsCountContext';
+import {
+  HeroKpiCard,
+  KpiCard,
+  DataTable,
+  StatusPill,
+  SkeletonCard,
+  SkeletonTableRows,
+  EmptyState,
+  ChartCard,
+  PortalBarChart,
+  PortalPieChart,
+  type DataTableColumn,
+} from '@/components/portal/ds';
+import { selectChart } from '@/lib/portal/chart-selection';
+
+type AttentionItem = {
+  id: string;
+  type: string;
+  typeLabel: string;
+  entity: string;
+  party: string;
+  timestamp: string;
+  href: string;
+  status: 'pending' | 'in_progress';
+};
+
+type ActivityItem = {
+  id: string;
+  type: string;
+  title: string;
+  description: string;
+  timestamp: string;
+  entityId: string;
+};
+
+type DashboardMetrics = {
+  pendingItemsCount: number;
+  pendingSuppliersCount: number;
+  totalProducts: number;
+  totalSuppliers: number;
+  newEnquiriesCount: number;
+  pendingRfqsCount: number;
+  activeOrdersCount: number;
+  productsAwaitingApprovalCount: number;
+  dataSource: 'live';
+};
+
+type DashboardPayload = {
+  metrics: DashboardMetrics;
+  activity: ActivityItem[];
+  attention: AttentionItem[];
+  dataSource: 'live';
+};
+
+const SHOW_DATA_SOURCE_BADGE =
+  process.env.NODE_ENV === 'development' ||
+  process.env.NEXT_PUBLIC_APP_ENV === 'staging' ||
+  process.env.NEXT_PUBLIC_APP_ENV === 'development';
 
 function formatTime(ts?: string) {
   if (!ts) return '';
@@ -33,30 +92,100 @@ function formatTime(ts?: string) {
   }
 }
 
+function statusLabel(status: string) {
+  switch (status) {
+    case 'pending':
+      return 'Pending';
+    case 'in_progress':
+      return 'In Progress';
+    default:
+      return status.replace(/_/g, ' ');
+  }
+}
+
+function activityHref(type: string) {
+  if (
+    type === 'supplier_registered' ||
+    type === 'product_submitted' ||
+    type === 'product_update_submitted'
+  ) {
+    return '/admin/approvals';
+  }
+  if (type === 'new_rfq' || type === 'rfq_accepted') return '/admin/rfqs';
+  if (type === 'order_created') return '/admin/orders';
+  if (type === 'new_enquiry') return '/admin/enquiries';
+  return '/admin/dashboard';
+}
+
+function activityTone(type: string): 'pending' | 'completed' | 'in_progress' {
+  if (type === 'order_created' || type === 'rfq_accepted') return 'completed';
+  if (
+    type === 'supplier_registered' ||
+    type === 'product_submitted' ||
+    type === 'product_update_submitted' ||
+    type === 'new_enquiry' ||
+    type === 'new_rfq'
+  ) {
+    return 'pending';
+  }
+  return 'in_progress';
+}
+
+function dedupeActivities(items: ActivityItem[]): ActivityItem[] {
+  const out: ActivityItem[] = [];
+  for (const item of items) {
+    const prev = out[out.length - 1];
+    if (
+      prev &&
+      prev.type === item.type &&
+      prev.entityId === item.entityId &&
+      prev.title === item.title
+    ) {
+      continue;
+    }
+    out.push(item);
+  }
+  return out;
+}
+
+function liveNumber(value: number | undefined | null): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
 export default function AdminDashboardPage() {
-  const [data, setData] = useState<any>(null);
-  const [approvalsData, setApprovalsData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'suppliers' | 'products'>('suppliers');
-  const [actionError, setActionError] = useState<string | null>(null);
-  const { isPending, run } = useMutation();
+  const cached = peekPortalCache<DashboardPayload>('/api/admin/dashboard');
+  const [data, setData] = useState<DashboardPayload | null>(cached?.data ?? null);
+  const [loading, setLoading] = useState(!cached);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadDashboard = useCallback(async (showLoading = true) => {
-    if (showLoading) setLoading(true);
+    const existing = peekPortalCache<DashboardPayload>('/api/admin/dashboard');
+    if (existing) {
+      setData(existing.data);
+      setLoading(false);
+    } else if (showLoading) {
+      setLoading(true);
+    }
+    setLoadError(null);
     try {
-      const [dashRes, appRes] = await Promise.all([
-        apiGet<{ metrics: any; activity: any[] }>('/api/admin/dashboard'),
-        apiGet<{ pendingSuppliers: any[]; newProductRequests: any[]; productUpdateRequests: any[] }>(
-          '/api/admin/approvals'
-        ),
-      ]);
+      const dashRes = await cachedApiGet<DashboardPayload>('/api/admin/dashboard', {
+        force: showLoading && !existing,
+      });
 
-      if (dashRes.ok) setData(dashRes.data);
-      if (appRes.ok) setApprovalsData(appRes.data);
+      if (dashRes.ok) {
+        setData(dashRes.data);
+        markPortalContentReady('/admin/dashboard');
+      } else {
+        // Do not keep stale numbers on failed refresh when we had no cache
+        if (!existing) setData(null);
+        setLoadError(dashRes.message || 'Failed to load live dashboard data');
+      }
     } catch (err) {
       console.error('Failed to load admin dashboard:', err);
+      if (!peekPortalCache('/api/admin/dashboard')) setData(null);
+      setLoadError('Network error loading dashboard');
     } finally {
-      if (showLoading) setLoading(false);
+      setLoading(false);
     }
   }, []);
 
@@ -64,316 +193,331 @@ export default function AdminDashboardPage() {
     loadDashboard();
   }, [loadDashboard]);
 
-  async function handleApproveSupplier(supplierId: string) {
-    setActionError(null);
-    await run(() => apiPost(`/api/suppliers/${supplierId}/approve`), {
-      key: mutationKey(supplierId, 'approve-supplier'),
-      onSuccess: () => {
-        setApprovalsData((prev: any) => ({
-          ...prev,
-          pendingSuppliers: (prev?.pendingSuppliers || []).filter((s: any) => s.id !== supplierId),
-        }));
-        notifyApprovalsChanged();
-      },
-      onError: (msg) => setActionError(msg),
+  useEffect(() => {
+    return onDashboardChanged(() => {
+      void loadDashboard(false);
     });
-  }
+  }, [loadDashboard]);
 
-  async function handleApproveProduct(requestId: string) {
-    setActionError(null);
-    await run(() => apiPost(`/api/products/requests/${requestId}/approve`), {
-      key: mutationKey(requestId, 'approve-product'),
-      onSuccess: () => {
-        setApprovalsData((prev: any) => ({
-          ...prev,
-          newProductRequests: (prev?.newProductRequests || []).filter((r: any) => r.id !== requestId),
-          productUpdateRequests: (prev?.productUpdateRequests || []).filter((r: any) => r.id !== requestId),
-        }));
-        notifyApprovalsChanged();
-      },
-      onError: (msg) => setActionError(msg),
-    });
-  }
+  useEffect(() => {
+    const onFocus = () => {
+      void loadDashboard(false);
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [loadDashboard]);
 
-  const metrics = data?.metrics || {};
-  const activities = data?.activity || [];
-  const suppliersQueue = approvalsData?.pendingSuppliers || [];
-  const productsQueue = [
-    ...(approvalsData?.newProductRequests || []),
-    ...(approvalsData?.productUpdateRequests || []),
-  ];
-  const pendingApprovalsCount = suppliersQueue.length + (metrics.productsAwaitingApprovalCount || 0);
+  const metrics = data?.metrics;
+  const attention = data?.attention || [];
+  const activities = useMemo(
+    () => dedupeActivities(data?.activity || []).slice(0, 8),
+    [data?.activity]
+  );
 
-  const kpis = [
-    { label: 'Products', value: metrics.totalProducts || 0, href: '/admin/products', icon: Package, meta: 'Active catalog' },
-    { label: 'Suppliers', value: metrics.totalSuppliers || 0, href: '/admin/suppliers', icon: Building2, meta: 'Registered partners' },
-    { label: 'Pending RFQs', value: metrics.pendingRfqsCount || 0, href: '/admin/rfqs', icon: FileText, meta: 'Awaiting quote' },
-    { label: 'Active production orders', value: metrics.activeOrdersCount || 0, href: '/admin/orders', icon: ShoppingCart, meta: 'In production' },
+  const pendingItemsCount = liveNumber(metrics?.pendingItemsCount);
+  const newEnquiriesCount = liveNumber(metrics?.newEnquiriesCount);
+  const productsAwaitingApprovalCount = liveNumber(metrics?.productsAwaitingApprovalCount);
+  const activeOrdersCount = liveNumber(metrics?.activeOrdersCount);
+  const pendingRfqsCount = liveNumber(metrics?.pendingRfqsCount);
+  const pendingSuppliersCount = liveNumber(metrics?.pendingSuppliersCount);
+
+  /** Distinct live queue buckets — no double-counting a "Pending" aggregate */
+  const operationsMix = useMemo(
+    () => [
+      { name: 'Enquiries', value: newEnquiriesCount },
+      { name: 'Approvals', value: productsAwaitingApprovalCount },
+      { name: 'RFQs', value: pendingRfqsCount },
+      { name: 'Orders', value: activeOrdersCount },
+      { name: 'Suppliers', value: pendingSuppliersCount },
+    ],
+    [
+      newEnquiriesCount,
+      productsAwaitingApprovalCount,
+      pendingRfqsCount,
+      activeOrdersCount,
+      pendingSuppliersCount,
+    ]
+  );
+
+  const mixWithValues = operationsMix.filter((d) => d.value > 0);
+  const chartType = selectChart({
+    kind: 'compare',
+    categoryCount: mixWithValues.length || operationsMix.length,
+  });
+
+  const attentionColumns: DataTableColumn<AttentionItem>[] = [
+    {
+      key: 'type',
+      header: 'Type',
+      render: (item) => (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-sm text-portal-text">{item.typeLabel}</span>
+          <StatusPill
+            label={statusLabel(item.status)}
+            tone={item.status === 'pending' ? 'warning' : 'neutral'}
+          />
+        </div>
+      ),
+    },
+    {
+      key: 'entity',
+      header: 'Entity',
+      render: (item) => (
+        <span className="font-medium text-sm text-portal-text line-clamp-2" title={item.entity}>
+          {item.entity}
+        </span>
+      ),
+    },
+    {
+      key: 'party',
+      header: 'Supplier / Customer',
+      render: (item) => (
+        <span className="text-sm text-portal-muted line-clamp-1" title={item.party}>
+          {item.party}
+        </span>
+      ),
+    },
+    {
+      key: 'when',
+      header: 'When',
+      render: (item) => (
+        <span className="text-xs font-mono text-portal-muted whitespace-nowrap">
+          {formatTime(item.timestamp)}
+        </span>
+      ),
+    },
+    {
+      key: 'action',
+      header: 'Action',
+      className: 'text-right',
+      render: (item) => (
+        <Link
+          href={item.href}
+          className="saas-btn-secondary text-xs px-3 py-1.5 inline-flex items-center gap-1"
+          onClick={(e) => e.stopPropagation()}
+        >
+          Review
+          <ArrowRight className="w-3 h-3" />
+        </Link>
+      ),
+    },
   ];
 
   if (loading && !data) {
     return (
-      <div className="space-y-6 w-full">
-        <div className="h-10 w-64 bg-[#ECEEF0] rounded-full" />
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="saas-kpi-card h-32" />
-          ))}
+      <div className="space-y-8 w-full">
+        <div className="h-10 w-56 saas-skeleton" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-7 saas-panel h-80" />
-          <div className="lg:col-span-5 saas-panel h-80" />
-        </div>
+        <SkeletonTableRows rows={4} />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 w-full">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="type-page">Operations overview</h1>
-          <p className="type-subtitle">Catalog, partners, RFQs, orders, and the approval queue.</p>
-        </div>
+    <div className="flex w-full flex-col gap-5">
+      <div className="shrink-0">
+        <AdminPageHeader
+          title="Operations"
+          description="Review queue, open RFQs, and live order flow across MITFAST procurement."
+          actions={
+            <>
+              {SHOW_DATA_SOURCE_BADGE ? (
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium border ${
+                    data?.dataSource === 'live' || metrics?.dataSource === 'live'
+                      ? 'border-portal-success/40 bg-portal-success-soft text-portal-success'
+                      : 'border-portal-warning/40 bg-portal-warning-soft text-portal-warning'
+                  }`}
+                  title="Dashboard numbers come from live Postgres COUNT queries"
+                >
+                  <Database className="w-3 h-3" aria-hidden />
+                  {data?.dataSource === 'live' || metrics?.dataSource === 'live' ? 'Live' : 'Mock'}
+                </span>
+              ) : null}
+              {pendingItemsCount > 0 ? (
+                <a href="#needs-attention" className="saas-btn-secondary gap-2">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-portal-warning" aria-hidden />
+                  {pendingItemsCount} pending
+                </a>
+              ) : (
+                <span className="saas-btn-secondary gap-2 pointer-events-none opacity-70">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-portal-success" />
+                  Clear
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => loadDashboard(false)}
+                className="saas-btn-ghost"
+                title="Refresh live data"
+                aria-label="Refresh dashboard"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              </button>
+            </>
+          }
+        />
+      </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto">
-          {pendingApprovalsCount > 0 && (
-            <Link href="/admin/approvals" className="saas-btn-secondary gap-2">
-              <AlertCircle className="w-4 h-4" />
-              {pendingApprovalsCount} pending
-            </Link>
-          )}
-          <button onClick={() => loadDashboard()} className="saas-btn-ghost" title="Refresh">
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+      {loadError ? (
+        <div className="shrink-0 rounded-2xl border border-portal-danger/30 bg-portal-danger-soft px-4 py-3 text-sm text-portal-danger flex items-center justify-between gap-3">
+          <span>{loadError}</span>
+          <button type="button" className="saas-btn-secondary text-xs" onClick={() => loadDashboard()}>
+            Retry
           </button>
         </div>
+      ) : null}
+
+      {/* Static KPI strip */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <HeroKpiCard
+          label="Pending items"
+          value={pendingItemsCount}
+          subtext={
+            pendingItemsCount === 0
+              ? 'No data yet — queue is clear'
+              : 'Live count of items needing action'
+          }
+          icon={AlertCircle}
+          href="#needs-attention"
+        />
+        <KpiCard
+          label="New Enquiries"
+          value={newEnquiriesCount}
+          subtext={newEnquiriesCount === 0 ? 'No data yet' : 'status = new'}
+          icon={Mail}
+          href="/admin/enquiries"
+        />
+        <KpiCard
+          label="Products Awaiting Approval"
+          value={productsAwaitingApprovalCount}
+          subtext={
+            productsAwaitingApprovalCount === 0 ? 'No data yet' : 'pending / update_pending'
+          }
+          icon={Package}
+          href="/admin/approvals"
+        />
+        <KpiCard
+          label="Active Orders"
+          value={activeOrdersCount}
+          subtext={activeOrdersCount === 0 ? 'No data yet' : 'accepted / packing'}
+          icon={ShoppingCart}
+          href="/admin/orders"
+        />
       </div>
 
+      {/* Mid row: chart + activity */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <div className="lg:col-span-5 saas-panel p-6 sm:p-7 flex flex-col justify-between gap-6">
-          <div className="flex items-start justify-between gap-3">
+        <div className="lg:col-span-7 min-h-[280px]">
+          <ChartCard
+            className="h-full"
+            title="Operations mix"
+            subtitle="Live queue by category"
+          >
+            {mixWithValues.length === 0 ? (
+              <EmptyState label="No data yet — all queue counts are zero" />
+            ) : chartType === 'bar' && mixWithValues.length > 5 ? (
+              <PortalBarChart data={mixWithValues} />
+            ) : (
+              <PortalPieChart data={mixWithValues} />
+            )}
+          </ChartCard>
+        </div>
+        <aside className="lg:col-span-5">
+          <div className="saas-panel p-5 h-full flex flex-col">
+            <div className="flex items-baseline justify-between gap-2 mb-3 shrink-0">
+              <h2 className="type-section">Recent Activity</h2>
+              <span className="text-xs text-portal-muted">Last 14 days</span>
+            </div>
+
             <div>
-              <div className="type-kpi-label">New enquiries</div>
-              <div className="type-kpi mt-2">{metrics.newEnquiriesCount || 0}</div>
-              <p className="type-kpi-meta mt-2">Unread CAD and drawing leads</p>
+              {activities.length === 0 ? (
+                <EmptyState label="No data yet — no events in the last 14 days" />
+              ) : (
+                <ol className="relative border-l border-portal-border ml-1.5">
+                  {activities.map((act) => {
+                    const tone = activityTone(act.type);
+                    return (
+                      <li key={act.id} className="relative pl-4 pb-3.5 last:pb-0">
+                        <span
+                          className={`absolute -left-[5px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-portal-panel ${
+                            tone === 'pending'
+                              ? 'bg-portal-warning'
+                              : tone === 'completed'
+                                ? 'bg-portal-success'
+                                : 'bg-portal-muted'
+                          }`}
+                          aria-hidden
+                        />
+                        <Link
+                          href={activityHref(act.type)}
+                          className="block group rounded-xl -mx-1 px-2 py-1 hover:bg-portal-hover transition-colors"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <span
+                              className="text-sm font-medium text-portal-text group-hover:text-portal-accent line-clamp-1"
+                              title={act.title}
+                            >
+                              {act.title}
+                            </span>
+                            <span className="text-[11px] font-mono text-portal-muted whitespace-nowrap shrink-0 pt-0.5">
+                              {formatTime(act.timestamp)}
+                            </span>
+                          </div>
+                          <p className="text-xs text-portal-muted mt-0.5 line-clamp-2 leading-relaxed">
+                            {act.description}
+                          </p>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
             </div>
-            <div className="saas-icon-well-lg">
-              <Mail className="w-5 h-5" />
-            </div>
           </div>
-          <div className="flex flex-wrap gap-4">
-            {[
-              { href: '/admin/approvals', icon: CheckSquare, label: 'Approvals' },
-              { href: '/admin/rfqs', icon: FileText, label: 'RFQs' },
-              { href: '/admin/orders', icon: ShoppingCart, label: 'Production orders' },
-              { href: '/admin/products', icon: Package, label: 'Catalog' },
-            ].map((a) => {
-              const Icon = a.icon;
-              return (
-                <Link key={a.href} href={a.href} className="flex flex-col items-center gap-1.5 group">
-                  <span className="saas-icon-well group-hover:bg-[#D7D9DC] transition-colors">
-                    <Icon className="w-4 h-4" />
-                  </span>
-                  <span className="text-[10px] text-[#6B7280]">{a.label}</span>
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-
-        <Link href="/admin/approvals" className="lg:col-span-3 saas-kpi-card p-6 flex flex-col justify-between gap-4">
-          <div className="flex items-center justify-between">
-            <span className="type-kpi-label">Awaiting approval</span>
-            <span className="saas-icon-well">
-              <CheckSquare className="w-4 h-4" />
-            </span>
-          </div>
-          <div>
-            <div className="type-kpi">{metrics.productsAwaitingApprovalCount || 0}</div>
-            <div className="type-kpi-meta mt-1.5">Product submissions</div>
-          </div>
-        </Link>
-
-        <div className="lg:col-span-4 grid grid-cols-2 gap-4">
-          {kpis.map((kpi) => {
-            const Icon = kpi.icon;
-            return (
-              <Link key={kpi.label} href={kpi.href} className="saas-kpi-card p-5 flex flex-col justify-between gap-3">
-                <div className="flex items-center justify-between">
-                  <span className="type-kpi-label">{kpi.label}</span>
-                  <span className="saas-icon-well h-8 w-8">
-                    <Icon className="w-3.5 h-3.5" />
-                  </span>
-                </div>
-                <div>
-                  <div className="text-2xl font-semibold tabular-nums text-[#111315]">{kpi.value}</div>
-                  <div className="type-kpi-meta mt-1">{kpi.meta}</div>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
+        </aside>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-7 saas-panel p-6 sm:p-7 space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h2 className="type-section">Moderation queue</h2>
-              <p className="type-desc">Supplier registrations and catalog proposals.</p>
-            </div>
-            <div className="saas-segmented">
-              <button
-                onClick={() => setActiveTab('suppliers')}
-                className={activeTab === 'suppliers' ? 'saas-tab-active' : 'saas-tab-inactive'}
-              >
-                Suppliers ({suppliersQueue.length})
-              </button>
-              <button
-                onClick={() => setActiveTab('products')}
-                className={activeTab === 'products' ? 'saas-tab-active' : 'saas-tab-inactive'}
-              >
-                Products ({productsQueue.length})
-              </button>
-            </div>
+      {/* Needs Attention — page scroll */}
+      <section id="needs-attention" className="flex flex-col saas-panel">
+        <div className="flex items-center justify-between gap-3 px-5 pt-4 pb-3 shrink-0 border-b border-portal-border">
+          <div>
+            <h2 className="type-section">Needs Attention</h2>
+            <p className="type-desc">
+              Live actionable rows
+              {pendingItemsCount > attention.length
+                ? ` · showing ${attention.length} of ${pendingItemsCount}`
+                : ''}
+            </p>
           </div>
+          {pendingItemsCount > 0 ? (
+            <StatusPill label={String(pendingItemsCount)} tone="warning" />
+          ) : null}
+        </div>
 
-          {activeTab === 'suppliers' ? (
-            suppliersQueue.length === 0 ? (
-              <div className="py-12 flex flex-col items-center justify-center text-center space-y-3">
-                <div className="saas-icon-well-lg">
-                  <ShieldCheck className="w-5 h-5" />
-                </div>
-                <div className="type-empty-title">Queue is clear</div>
-                <div className="type-empty-body max-w-sm">No supplier registrations pending review.</div>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {suppliersQueue.slice(0, 4).map((sup: any) => (
-                  <div key={sup.id} className="saas-inset-surface p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                    <div className="min-w-0 space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="saas-badge-neutral">Pending</span>
-                        <span className="font-medium text-sm text-[#111315] truncate">{sup.company_name}</span>
-                      </div>
-                      <div className="type-meta normal-case tracking-normal">
-                        {sup.contact_person} • {sup.email} • {sup.country}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
-                      <button
-                        onClick={() => handleApproveSupplier(sup.id)}
-                        disabled={isPending(mutationKey(sup.id, 'approve-supplier'))}
-                        className="saas-btn-primary flex-1 sm:flex-initial gap-1.5"
-                      >
-                        <Check className="w-4 h-4" />
-                        Approve
-                      </button>
-                      <Link href="/admin/approvals" className="saas-btn-secondary flex-1 sm:flex-initial text-center">
-                        Review
-                      </Link>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )
-          ) : productsQueue.length === 0 ? (
-            <div className="py-12 flex flex-col items-center justify-center text-center space-y-3">
-              <div className="saas-icon-well-lg">
-                <Package className="w-5 h-5" />
-              </div>
-              <div className="type-empty-title">Catalog is up to date</div>
-              <div className="type-empty-body max-w-sm">No product submissions pending review.</div>
+        <div>
+          {attention.length === 0 ? (
+            <div className="p-6">
+              <EmptyState
+                label="No data yet — nothing waiting for review"
+                icon={CheckCircle2}
+              />
             </div>
           ) : (
-            <div className="space-y-3">
-              {productsQueue.slice(0, 4).map((req: any) => (
-                <div key={req.id} className="saas-inset-surface p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                  <div className="min-w-0 space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="saas-badge-neutral">
-                        {req.request_type === 'update' ? 'Update' : 'New product'}
-                      </span>
-                      <span className="font-medium text-sm text-[#111315] truncate">
-                        {req.proposed_data?.name || req.product?.name}
-                      </span>
-                    </div>
-                    <div className="type-meta normal-case tracking-normal">
-                      {req.product?.supplier?.company_name || 'Partner'}
-                      {req.proposed_data?.supplier_price != null && (
-                        <> • ₹{Number(req.proposed_data.supplier_price).toLocaleString('en-IN')}</>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
-                    <button
-                      onClick={() => handleApproveProduct(req.id)}
-                      disabled={isPending(mutationKey(req.id, 'approve-product'))}
-                      className="saas-btn-primary flex-1 sm:flex-initial gap-1.5"
-                    >
-                      <Check className="w-4 h-4" />
-                      Approve
-                    </button>
-                    <Link href="/admin/approvals" className="saas-btn-secondary flex-1 sm:flex-initial text-center">
-                      Review
-                    </Link>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <DataTable
+              className="!rounded-none !border-0"
+              columns={attentionColumns}
+              rows={attention}
+              emptyLabel="No data yet"
+            />
           )}
         </div>
-
-        <div className="lg:col-span-5 saas-panel p-6 sm:p-7 space-y-5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-[#6B7280]" />
-              <h2 className="type-section">Live activity</h2>
-            </div>
-            <span className="type-meta bg-[#F7F7F8] px-3 py-1 rounded-full border border-[#E2E4E8]">Recent</span>
-          </div>
-
-          <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
-            {activities.length === 0 ? (
-              <div className="py-10 text-center type-empty-body">No recent activity recorded.</div>
-            ) : (
-              activities.slice(0, 8).map((act: any) => {
-                let badgeClass = 'saas-badge-neutral';
-                let targetHref = '/admin/dashboard';
-
-                if (act.type === 'supplier_registered') {
-                  targetHref = '/admin/approvals';
-                } else if (act.type === 'product_submitted' || act.type === 'product_update_submitted') {
-                  targetHref = '/admin/approvals';
-                } else if (act.type === 'new_rfq' || act.type === 'rfq_accepted') {
-                  targetHref = '/admin/rfqs';
-                } else if (act.type === 'order_created') {
-                  badgeClass = 'saas-badge-success';
-                  targetHref = '/admin/orders';
-                } else if (act.type === 'new_enquiry') {
-                  targetHref = '/admin/enquiries';
-                }
-
-                return (
-                  <div key={act.id} className="saas-inset-surface p-3.5 flex items-center justify-between gap-3">
-                    <div className="space-y-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className={badgeClass}>{(act.type || '').replace(/_/g, ' ')}</span>
-                        <span className="font-medium text-xs text-[#111315] truncate">{act.title}</span>
-                      </div>
-                      <div className="text-xs text-[#6B7280] truncate">{act.description}</div>
-                      <div className="text-[10px] font-mono text-[#6B7280]">{formatTime(act.timestamp)}</div>
-                    </div>
-                    <Link href={targetHref} className="saas-btn-secondary shrink-0">
-                      View
-                    </Link>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-      </div>
+      </section>
     </div>
   );
 }

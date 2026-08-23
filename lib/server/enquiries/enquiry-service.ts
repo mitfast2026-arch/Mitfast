@@ -1,5 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin';
-import { createEnquirySchema, updateEnquiryStatusSchema, respondToEnquirySchema } from '@/lib/validation/enquiry.schema';
+import { createEnquirySchema, updateEnquiryStatusSchema, respondToEnquirySchema, updateEnquiryDetailsSchema } from '@/lib/validation/enquiry.schema';
 import type { ServerResult } from '@/lib/server/auth/get-session';
 import type { EnquiryStatus } from '@/types/database';
 import { generateTrackingToken } from '@/lib/server/tracking';
@@ -39,7 +39,17 @@ export async function createEnquiry(
     const guestName = validated.data.name || validated.data.guestName || '';
     const guestEmail = validated.data.email || validated.data.guestEmail || '';
     const guestPhone = validated.data.phone || validated.data.guestPhone || '';
+    const country = validated.data.country?.trim() || null;
+    const companyName = validated.data.companyName?.trim() || null;
+    const enquiryType =
+      validated.data.enquiryType?.trim() ||
+      (validated.data.productId ? 'product' : 'contact');
     const { productId, message } = validated.data;
+    const lineItems = (validated.data.lineItems || []).map((li) => ({
+      product_id: li.productId,
+      name: li.name || null,
+      quantity: li.quantity,
+    }));
     const adminClient = createAdminClient();
 
     const trackingToken = generateTrackingToken();
@@ -50,8 +60,12 @@ export async function createEnquiry(
         guest_name: guestName,
         guest_email: guestEmail,
         guest_phone: guestPhone,
-        product_id: productId || null,
+        country,
+        company_name: companyName,
+        enquiry_type: enquiryType,
+        product_id: productId || lineItems[0]?.product_id || null,
         message: message.trim(),
+        line_items: lineItems.length ? lineItems : null,
         status: 'new',
         tracking_token: trackingToken,
       })
@@ -253,7 +267,9 @@ export async function getEnquiriesForAdmin(params: {
     }
 
     if (params.search) {
-      query = query.or(`guest_name.ilike.%${params.search}%,guest_email.ilike.%${params.search}%,guest_phone.ilike.%${params.search}%,message.ilike.%${params.search}%`);
+      query = query.or(
+        `guest_name.ilike.%${params.search}%,guest_email.ilike.%${params.search}%,guest_phone.ilike.%${params.search}%,message.ilike.%${params.search}%,company_name.ilike.%${params.search}%,country.ilike.%${params.search}%`
+      );
     }
 
     query = query.order('created_at', { ascending: false });
@@ -345,6 +361,52 @@ export async function respondToEnquiry(
       success: false,
       error: { message: 'Failed to respond to enquiry', code: 'INTERNAL_ERROR' },
     };
+  }
+}
+
+/**
+ * Admin corrects stored contact details on an enquiry.
+ */
+export async function updateEnquiryDetails(formData: unknown): Promise<ServerResult<{ updated: boolean }>> {
+  try {
+    const validated = updateEnquiryDetailsSchema.safeParse(formData);
+    if (!validated.success) {
+      return {
+        success: false,
+        error: { message: validated.error.errors[0].message, code: 'VALIDATION_ERROR' },
+      };
+    }
+
+    const { enquiryId, guestName, guestEmail, guestPhone, country, companyName } = validated.data;
+    const adminClient = createAdminClient();
+
+    const patch: {
+      updated_at: string;
+      guest_name?: string;
+      guest_email?: string;
+      guest_phone?: string;
+      country?: string;
+      company_name?: string | null;
+    } = { updated_at: new Date().toISOString() };
+    if (guestName !== undefined) patch.guest_name = guestName;
+    if (guestEmail !== undefined) patch.guest_email = guestEmail;
+    if (guestPhone !== undefined) patch.guest_phone = guestPhone;
+    if (country !== undefined) patch.country = country;
+    if (companyName !== undefined) patch.company_name = companyName;
+
+    const { error } = await adminClient
+      .from('enquiries')
+      .update(patch as import('@/types/database').Database['public']['Tables']['enquiries']['Update'])
+      .eq('id', enquiryId);
+
+    if (error) {
+      return { success: false, error: { message: error.message, code: 'DATABASE_ERROR' } };
+    }
+
+    return { success: true, data: { updated: true } };
+  } catch (error) {
+    console.error('[updateEnquiryDetails] Error:', error);
+    return { success: false, error: { message: 'Failed to update enquiry details', code: 'INTERNAL_ERROR' } };
   }
 }
 

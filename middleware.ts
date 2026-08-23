@@ -2,6 +2,85 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import type { Database } from '@/types/database';
 
+const PORTAL_GATE_COOKIE = 'mf_portal_gate';
+
+type PortalGate = {
+  userId: string;
+  role: string;
+  supplierStatus?: string;
+};
+
+function parsePortalGate(value: string | undefined): PortalGate | null {
+  if (!value) return null;
+  const parts = value.split('|');
+  const userId = parts[0];
+  const role = parts[1];
+  if (!userId || !role) return null;
+  const supplierStatus = parts[2] || undefined;
+  return { userId, role, supplierStatus };
+}
+
+function serializePortalGate(gate: PortalGate): string {
+  return `${gate.userId}|${gate.role}|${gate.supplierStatus ?? ''}`;
+}
+
+function portalGateCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax' as const,
+    path: '/',
+    maxAge: 60 * 60,
+  };
+}
+
+function clearPortalGateCookie(response: NextResponse) {
+  response.cookies.set({
+    name: PORTAL_GATE_COOKIE,
+    value: '',
+    ...portalGateCookieOptions(),
+    maxAge: 0,
+  });
+}
+
+function setPortalGateCookie(response: NextResponse, gate: PortalGate) {
+  response.cookies.set({
+    name: PORTAL_GATE_COOKIE,
+    value: serializePortalGate(gate),
+    ...portalGateCookieOptions(),
+  });
+}
+
+function gateAllowsAdmin(gate: PortalGate): boolean {
+  return gate.role === 'admin';
+}
+
+function gateAllowsCustomer(gate: PortalGate): boolean {
+  return gate.role === 'customer';
+}
+
+function gateAllowsActiveSupplier(gate: PortalGate): boolean {
+  return gate.role === 'supplier' && gate.supplierStatus === 'active';
+}
+
+function supplierStatusRedirect(
+  status: string | undefined,
+  requestUrl: string
+): NextResponse | null {
+  if (!status || status === 'pending') {
+    return NextResponse.redirect(new URL('/auth/supplier/pending', requestUrl));
+  }
+  if (status === 'rejected') {
+    return NextResponse.redirect(new URL('/auth/supplier/rejected', requestUrl));
+  }
+  if (status === 'archived') {
+    return NextResponse.redirect(
+      new URL('/auth/supplier/pending?status=archived', requestUrl)
+    );
+  }
+  return null;
+}
+
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
     request: {
@@ -42,7 +121,9 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   const { pathname } = request.nextUrl;
 
   // 1. Protected Route Guards
@@ -62,30 +143,90 @@ export async function middleware(request: NextRequest) {
         request.url
       );
       redirectUrl.searchParams.set('redirect', pathname);
-      return NextResponse.redirect(redirectUrl);
+      const redirect = NextResponse.redirect(redirectUrl);
+      clearPortalGateCookie(redirect);
+      return redirect;
     }
 
-    // Resolve user role
+    const cached = parsePortalGate(request.cookies.get(PORTAL_GATE_COOKIE)?.value);
+    const cacheValid = cached?.userId === user.id;
+
+    if (cacheValid && cached) {
+      if (isAdminRoute && gateAllowsAdmin(cached)) {
+        return response;
+      }
+      if (isCustomerRoute && gateAllowsCustomer(cached)) {
+        return response;
+      }
+      if (isSupplierRoute) {
+        if (gateAllowsActiveSupplier(cached)) {
+          return response;
+        }
+        if (cached.role === 'supplier') {
+          const statusRedirect = supplierStatusRedirect(cached.supplierStatus, request.url);
+          if (statusRedirect) {
+            clearPortalGateCookie(statusRedirect);
+            return statusRedirect;
+          }
+        }
+        if (cached.role !== 'supplier') {
+          const redirect = NextResponse.redirect(
+            new URL('/auth?role=supplier&mode=signin', request.url)
+          );
+          clearPortalGateCookie(redirect);
+          return redirect;
+        }
+      }
+    }
+
+    // Resolve user role (full DB check when cookie missing/mismatched)
     const { data: profileData } = await supabase
       .from('profiles')
-      .select('role')
+      .select('role, full_name, phone, email')
       .eq('user_id', user.id)
       .single();
 
-    const profile = profileData as { role?: string } | null;
+    const profile = profileData as {
+      role?: string;
+      full_name?: string | null;
+      phone?: string | null;
+      email?: string | null;
+    } | null;
     const role = profile?.role;
 
+    const identityOk =
+      (profile?.full_name || '').trim().length >= 2 &&
+      (profile?.phone || '').trim().length >= 7 &&
+      (profile?.email || '').trim().includes('@');
+
+    if ((isCustomerRoute || isSupplierRoute) && role !== 'admin' && !identityOk) {
+      const roleQs = role === 'supplier' || isSupplierRoute ? 'supplier' : 'buyer';
+      const redirect = NextResponse.redirect(
+        new URL(`/auth/complete-profile?role=${roleQs}`, request.url)
+      );
+      clearPortalGateCookie(redirect);
+      return redirect;
+    }
+
     if (isAdminRoute && role !== 'admin') {
-      return NextResponse.redirect(new URL('/', request.url));
+      const redirect = NextResponse.redirect(new URL('/', request.url));
+      clearPortalGateCookie(redirect);
+      return redirect;
     }
 
     if (isCustomerRoute && role !== 'customer') {
-      return NextResponse.redirect(new URL('/', request.url));
+      const redirect = NextResponse.redirect(new URL('/', request.url));
+      clearPortalGateCookie(redirect);
+      return redirect;
     }
 
     if (isSupplierRoute) {
       if (role !== 'supplier') {
-        return NextResponse.redirect(new URL('/auth?role=supplier&mode=signin', request.url));
+        const redirect = NextResponse.redirect(
+          new URL('/auth?role=supplier&mode=signin', request.url)
+        );
+        clearPortalGateCookie(redirect);
+        return redirect;
       }
 
       const { data: supplierData } = await supabase
@@ -95,41 +236,100 @@ export async function middleware(request: NextRequest) {
         .maybeSingle();
 
       const supplier = supplierData as { status?: string } | null;
-
-      if (!supplier || supplier.status === 'pending') {
-        return NextResponse.redirect(new URL('/auth/supplier/pending', request.url));
+      if (!supplier) {
+        const redirect = NextResponse.redirect(new URL('/auth/supplier/apply', request.url));
+        clearPortalGateCookie(redirect);
+        return redirect;
       }
 
-      if (supplier.status === 'rejected') {
-        return NextResponse.redirect(new URL('/auth/supplier/rejected', request.url));
+      const statusRedirect = supplierStatusRedirect(supplier?.status, request.url);
+      if (statusRedirect) {
+        clearPortalGateCookie(statusRedirect);
+        return statusRedirect;
       }
 
-      if (supplier.status === 'archived') {
-        return NextResponse.redirect(new URL('/auth/supplier/pending?status=archived', request.url));
-      }
+      setPortalGateCookie(response, {
+        userId: user.id,
+        role: 'supplier',
+        supplierStatus: supplier?.status,
+      });
+      return response;
     }
+
+    if (role === 'admin' || role === 'customer') {
+      setPortalGateCookie(response, { userId: user.id, role });
+    }
+
+    return response;
   }
 
   // 2. Redirect authenticated users visiting login/register pages
+  // Allow onboarding pages: complete-profile, supplier apply, pending, rejected
   if (
     isAuthRoute &&
     user &&
     !pathname.includes('/pending') &&
     !pathname.includes('/rejected') &&
-    !pathname.includes('/callback')
+    !pathname.includes('/callback') &&
+    !pathname.includes('/signout') &&
+    !pathname.includes('/complete-profile') &&
+    !pathname.includes('/supplier/apply')
   ) {
+    const cached = parsePortalGate(request.cookies.get(PORTAL_GATE_COOKIE)?.value);
+    if (cached?.userId === user.id) {
+      if (cached.role === 'admin') {
+        return NextResponse.redirect(new URL('/admin/dashboard', request.url));
+      }
+      if (cached.role === 'customer') {
+        return NextResponse.redirect(new URL('/customer/dashboard', request.url));
+      }
+      if (cached.role === 'supplier') {
+        if (cached.supplierStatus === 'active') {
+          return NextResponse.redirect(new URL('/supplier/dashboard', request.url));
+        }
+        if (cached.supplierStatus === 'rejected') {
+          return NextResponse.redirect(new URL('/auth/supplier/rejected', request.url));
+        }
+        if (!cached.supplierStatus) {
+          return NextResponse.redirect(new URL('/auth/supplier/apply', request.url));
+        }
+        return NextResponse.redirect(new URL('/auth/supplier/pending', request.url));
+      }
+    }
+
     const { data: profileData } = await supabase
       .from('profiles')
-      .select('role')
+      .select('role, full_name, phone, email')
       .eq('user_id', user.id)
-      .single();
+      .maybeSingle();
 
-    const profile = profileData as { role?: string } | null;
+    const profile = profileData as {
+      role?: string;
+      full_name?: string | null;
+      phone?: string | null;
+      email?: string | null;
+    } | null;
+
+    const identityOk =
+      (profile?.full_name || '').trim().length >= 2 &&
+      (profile?.phone || '').trim().length >= 7 &&
+      (profile?.email || '').trim().includes('@');
+
+    if (!identityOk && profile?.role !== 'admin') {
+      const roleQs = profile?.role === 'supplier' ? 'supplier' : 'buyer';
+      return NextResponse.redirect(
+        new URL(`/auth/complete-profile?role=${roleQs}`, request.url)
+      );
+    }
 
     if (profile?.role === 'admin') {
-      return NextResponse.redirect(new URL('/admin/dashboard', request.url));
+      const redirect = NextResponse.redirect(new URL('/admin/dashboard', request.url));
+      setPortalGateCookie(redirect, { userId: user.id, role: 'admin' });
+      return redirect;
     } else if (profile?.role === 'customer') {
-      return NextResponse.redirect(new URL('/customer/dashboard', request.url));
+      const redirect = NextResponse.redirect(new URL('/customer/dashboard', request.url));
+      setPortalGateCookie(redirect, { userId: user.id, role: 'customer' });
+      return redirect;
     } else if (profile?.role === 'supplier') {
       const { data: supplierData } = await supabase
         .from('suppliers')
@@ -140,13 +340,31 @@ export async function middleware(request: NextRequest) {
       const supplier = supplierData as { status?: string } | null;
 
       if (supplier?.status === 'active') {
-        return NextResponse.redirect(new URL('/supplier/dashboard', request.url));
+        const redirect = NextResponse.redirect(new URL('/supplier/dashboard', request.url));
+        setPortalGateCookie(redirect, {
+          userId: user.id,
+          role: 'supplier',
+          supplierStatus: 'active',
+        });
+        return redirect;
       } else if (supplier?.status === 'rejected') {
-        return NextResponse.redirect(new URL('/auth/supplier/rejected', request.url));
+        const redirect = NextResponse.redirect(new URL('/auth/supplier/rejected', request.url));
+        clearPortalGateCookie(redirect);
+        return redirect;
+      } else if (!supplier) {
+        const redirect = NextResponse.redirect(new URL('/auth/supplier/apply', request.url));
+        clearPortalGateCookie(redirect);
+        return redirect;
       } else {
-        return NextResponse.redirect(new URL('/auth/supplier/pending', request.url));
+        const redirect = NextResponse.redirect(new URL('/auth/supplier/pending', request.url));
+        clearPortalGateCookie(redirect);
+        return redirect;
       }
     }
+  }
+
+  if (isAuthRoute && !user) {
+    clearPortalGateCookie(response);
   }
 
   return response;

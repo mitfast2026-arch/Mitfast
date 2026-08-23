@@ -32,7 +32,10 @@ export async function apiRequest<T>(
   init?: RequestInit
 ): Promise<MutationResult<T>> {
   try {
-    const res = await fetch(url, init);
+    const res = await fetch(url, {
+      ...init,
+      cache: 'no-store',
+    });
     let json: ApiSuccess<T> | ApiFailure | null = null;
 
     try {

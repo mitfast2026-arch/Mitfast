@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { XCircle, AlertCircle, Save } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
+import CountrySelect from '@/components/ui/CountrySelect';
 
 export default function SupplierRejectedPage() {
   const router = useRouter();
@@ -87,7 +88,7 @@ export default function SupplierRejectedPage() {
   if (loading) {
     return (
       <div className="min-h-screen saas-canvas-bg flex items-center justify-center py-16 px-4">
-        <div className="text-xs font-mono text-[#6B7280]">Loading application status...</div>
+        <div className="text-xs font-mono text-portal-muted">Loading application status...</div>
       </div>
     );
   }
@@ -96,7 +97,7 @@ export default function SupplierRejectedPage() {
     <div className="min-h-screen saas-canvas-bg flex items-center justify-center py-16 px-4">
       <div className="w-full max-w-lg space-y-6">
         <div className="text-center space-y-2">
-          <div className="saas-icon-well-lg mx-auto text-[#B91C1C]">
+          <div className="saas-icon-well-lg mx-auto text-portal-danger">
             <XCircle className="w-6 h-6" />
           </div>
           <h1 className="type-page text-xl sm:text-xl">Supplier application requires revision</h1>
@@ -106,12 +107,12 @@ export default function SupplierRejectedPage() {
         </div>
 
         {supplier?.rejection_reason && (
-          <div className="p-4 rounded-2xl bg-[#FEF2F2] border border-[#FECACA] space-y-1 text-xs">
-            <div className="font-semibold text-[#B91C1C] flex items-center gap-1.5">
+          <div className="p-4 rounded-2xl bg-portal-danger-soft border border-portal-danger/30 space-y-1 text-xs">
+            <div className="font-semibold text-portal-danger flex items-center gap-1.5">
               <AlertCircle className="w-4 h-4" />
               Operations feedback
             </div>
-            <div className="text-[#B91C1C] font-mono pl-5">"{supplier.rejection_reason}"</div>
+            <div className="text-portal-danger font-mono pl-5">"{supplier.rejection_reason}"</div>
           </div>
         )}
 
@@ -165,11 +166,10 @@ export default function SupplierRejectedPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="saas-label">Country *</label>
-                <input
-                  type="text"
+                <CountrySelect
                   required
                   value={country}
-                  onChange={(e) => setCountry(e.target.value)}
+                  onChange={setCountry}
                   className="saas-input"
                 />
               </div>
@@ -185,7 +185,7 @@ export default function SupplierRejectedPage() {
             </div>
 
             {errorMsg && (
-              <div className="p-2.5 rounded-2xl bg-[#FEF2F2] border border-[#FECACA] text-xs text-[#B91C1C] flex items-center gap-2">
+              <div className="p-2.5 rounded-2xl bg-portal-danger-soft border border-portal-danger/30 text-xs text-portal-danger flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>{errorMsg}</span>
               </div>

@@ -11,8 +11,9 @@ export type SupplierStatus = 'pending' | 'active' | 'rejected' | 'archived';
 export type ProductApprovalStatus = 'pending' | 'approved' | 'rejected' | 'update_pending';
 export type ProductPublicationStatus = 'published' | 'unpublished';
 export type ProductArchiveStatus = 'active' | 'archived';
+export type CategoryStatus = 'active' | 'archived';
 export type ProfitType = 'percentage' | 'fixed';
-export type EnquiryStatus = 'new' | 'contacted' | 'converted_to_order' | 'closed';
+export type EnquiryStatus = 'new' | 'contacted' | 'converted_to_rfq' | 'converted_to_order' | 'closed';
 export type RfqStatus = 'submitted' | 'under_review' | 'accepted' | 'rejected' | 'converted_to_order';
 export type OrderStatus = 'accepted' | 'packing' | 'dispatched' | 'cancelled';
 export type PaymentStatus = 'payment_required' | 'payment_done';
@@ -95,7 +96,7 @@ export type Database = {
       suppliers: {
         Row: {
           id: string;
-          user_id: string | null;
+          user_id: string;
           company_name: string;
           contact_person: string;
           email: string;
@@ -111,7 +112,7 @@ export type Database = {
         };
         Insert: {
           id?: string;
-          user_id?: string | null;
+          user_id: string;
           company_name: string;
           contact_person: string;
           email: string;
@@ -127,7 +128,7 @@ export type Database = {
         };
         Update: {
           id?: string;
-          user_id?: string | null;
+          user_id?: string;
           company_name?: string;
           contact_person?: string;
           email?: string;
@@ -149,6 +150,8 @@ export type Database = {
           name: string;
           image_url: string | null;
           image_storage_path: string | null;
+          status: CategoryStatus;
+          archived_at: string | null;
           created_at: string;
         };
         Insert: {
@@ -156,6 +159,8 @@ export type Database = {
           name: string;
           image_url?: string | null;
           image_storage_path?: string | null;
+          status?: CategoryStatus;
+          archived_at?: string | null;
           created_at?: string;
         };
         Update: {
@@ -163,6 +168,8 @@ export type Database = {
           name?: string;
           image_url?: string | null;
           image_storage_path?: string | null;
+          status?: CategoryStatus;
+          archived_at?: string | null;
           created_at?: string;
         };
         Relationships: [];
@@ -170,13 +177,14 @@ export type Database = {
       products: {
         Row: {
           id: string;
-          supplier_id: string;
+          supplier_id: string | null;
           category_id: string;
           name: string;
           description: string | null;
           sku: string | null;
           stock_quantity: number;
           moq: number;
+          suggested_moq: number | null;
           supplier_price: number;
           profit_type: ProfitType;
           profit_value: number;
@@ -192,18 +200,20 @@ export type Database = {
           rejection_reason: string | null;
           pre_archive_publication_status: ProductPublicationStatus | null;
           view_count: number;
+          is_draft: boolean;
           created_at: string;
           updated_at: string;
         };
         Insert: {
           id?: string;
-          supplier_id: string;
+          supplier_id?: string | null;
           category_id: string;
           name: string;
           description?: string | null;
           sku?: string | null;
           stock_quantity?: number;
           moq: number;
+          suggested_moq?: number | null;
           supplier_price: number;
           profit_type?: ProfitType;
           profit_value?: number;
@@ -219,18 +229,20 @@ export type Database = {
           rejection_reason?: string | null;
           pre_archive_publication_status?: ProductPublicationStatus | null;
           view_count?: number;
+          is_draft?: boolean;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
           id?: string;
-          supplier_id?: string;
+          supplier_id?: string | null;
           category_id?: string;
           name?: string;
           description?: string | null;
           sku?: string | null;
           stock_quantity?: number;
           moq?: number;
+          suggested_moq?: number | null;
           supplier_price?: number;
           profit_type?: ProfitType;
           profit_value?: number;
@@ -246,6 +258,7 @@ export type Database = {
           rejection_reason?: string | null;
           pre_archive_publication_status?: ProductPublicationStatus | null;
           view_count?: number;
+          is_draft?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -348,8 +361,12 @@ export type Database = {
           guest_name: string;
           guest_email: string;
           guest_phone: string;
+          country: string | null;
+          company_name: string | null;
+          enquiry_type: string;
           product_id: string | null;
           message: string;
+          line_items: Json | null;
           attachment_url: string | null;
           attachment_path: string | null;
           status: EnquiryStatus;
@@ -366,8 +383,12 @@ export type Database = {
           guest_name: string;
           guest_email: string;
           guest_phone: string;
+          country?: string | null;
+          company_name?: string | null;
+          enquiry_type?: string;
           product_id?: string | null;
           message: string;
+          line_items?: Json | null;
           attachment_url?: string | null;
           attachment_path?: string | null;
           status?: EnquiryStatus;
@@ -384,8 +405,12 @@ export type Database = {
           guest_name?: string;
           guest_email?: string;
           guest_phone?: string;
+          country?: string | null;
+          company_name?: string | null;
+          enquiry_type?: string;
           product_id?: string | null;
           message?: string;
+          line_items?: Json | null;
           attachment_url?: string | null;
           attachment_path?: string | null;
           status?: EnquiryStatus;
@@ -395,6 +420,90 @@ export type Database = {
           responded_by?: string | null;
           created_at?: string;
           updated_at?: string;
+        };
+        Relationships: [];
+      };
+      guest_sessions: {
+        Row: {
+          id: string;
+          created_at: string;
+          expires_at: string;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          expires_at: string;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          expires_at?: string;
+        };
+        Relationships: [];
+      };
+      guest_cart_items: {
+        Row: {
+          id: string;
+          guest_session_id: string;
+          product_id: string;
+          quantity: number;
+          added_at: string;
+        };
+        Insert: {
+          id?: string;
+          guest_session_id: string;
+          product_id: string;
+          quantity: number;
+          added_at?: string;
+        };
+        Update: {
+          id?: string;
+          guest_session_id?: string;
+          product_id?: string;
+          quantity?: number;
+          added_at?: string;
+        };
+        Relationships: [];
+      };
+      guest_wishlist_items: {
+        Row: {
+          id: string;
+          guest_session_id: string;
+          product_id: string;
+          added_at: string;
+        };
+        Insert: {
+          id?: string;
+          guest_session_id: string;
+          product_id: string;
+          added_at?: string;
+        };
+        Update: {
+          id?: string;
+          guest_session_id?: string;
+          product_id?: string;
+          added_at?: string;
+        };
+        Relationships: [];
+      };
+      wishlist_items: {
+        Row: {
+          id: string;
+          customer_id: string;
+          product_id: string;
+          added_at: string;
+        };
+        Insert: {
+          id?: string;
+          customer_id: string;
+          product_id: string;
+          added_at?: string;
+        };
+        Update: {
+          id?: string;
+          customer_id?: string;
+          product_id?: string;
+          added_at?: string;
         };
         Relationships: [];
       };
@@ -448,6 +557,7 @@ export type Database = {
           id: string;
           rfq_number: string;
           customer_id: string;
+          enquiry_id: string | null;
           status: RfqStatus;
           delivery_address_snapshot: Json;
           customer_message: string | null;
@@ -461,6 +571,7 @@ export type Database = {
           id?: string;
           rfq_number: string;
           customer_id: string;
+          enquiry_id?: string | null;
           status?: RfqStatus;
           delivery_address_snapshot: Json;
           customer_message?: string | null;
@@ -474,6 +585,7 @@ export type Database = {
           id?: string;
           rfq_number?: string;
           customer_id?: string;
+          enquiry_id?: string | null;
           status?: RfqStatus;
           delivery_address_snapshot?: Json;
           customer_message?: string | null;

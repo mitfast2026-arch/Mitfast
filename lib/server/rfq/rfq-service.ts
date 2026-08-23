@@ -1,6 +1,8 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getCustomerCart, clearCustomerCart } from '@/lib/server/cart/cart-service';
 import { negotiateRfqSchema, rejectRfqSchema, submitRfqSchema } from '@/lib/validation/rfq.schema';
+import { convertEnquiryToRfqSchema } from '@/lib/validation/enquiry.schema';
+import { ensureCustomerFromGuest } from '@/lib/server/auth/ensure-customer-from-guest';
 import type { ServerResult } from '@/lib/server/auth/get-session';
 import type { RfqStatus } from '@/types/database';
 
@@ -181,6 +183,163 @@ export async function submitRfqFromCart(
     return {
       success: false,
       error: { message: 'Unexpected error submitting RFQ', code: 'INTERNAL_ERROR' },
+    };
+  }
+}
+
+/**
+ * Admin converts a qualified enquiry into an RFQ for price negotiation.
+ * Bypasses cart/minimum-RFQ rules — this is an internal sales step.
+ */
+export async function createRfqFromEnquiry(
+  formData: unknown
+): Promise<ServerResult<{ rfqId: string; rfqNumber: string }>> {
+  try {
+    const validated = convertEnquiryToRfqSchema.safeParse(formData);
+    if (!validated.success) {
+      return {
+        success: false,
+        error: { message: validated.error.errors[0].message, code: 'VALIDATION_ERROR' },
+      };
+    }
+
+    const { enquiryId, quantity, productId: clientProductId, deliveryAddress } = validated.data;
+    const adminClient = createAdminClient();
+
+    const { data: enquiry, error: enquiryError } = await adminClient
+      .from('enquiries')
+      .select('*')
+      .eq('id', enquiryId)
+      .single();
+
+    if (enquiryError || !enquiry) {
+      return { success: false, error: { message: 'Enquiry not found', code: 'NOT_FOUND' } };
+    }
+
+    if (enquiry.status === 'converted_to_rfq' || enquiry.status === 'converted_to_order') {
+      return {
+        success: false,
+        error: { message: 'Enquiry has already been converted', code: 'INVALID_STATUS' },
+      };
+    }
+
+    const resolvedProductId = enquiry.product_id || clientProductId;
+    if (!resolvedProductId) {
+      return {
+        success: false,
+        error: { message: 'Select a product before creating an RFQ from this enquiry', code: 'VALIDATION_ERROR' },
+      };
+    }
+
+    const { data: product, error: prodError } = await adminClient
+      .from('products')
+      .select('id, name, selling_price, moq')
+      .eq('id', resolvedProductId)
+      .single();
+
+    if (prodError || !product) {
+      return { success: false, error: { message: 'Product not found', code: 'NOT_FOUND' } };
+    }
+
+    if (quantity < (product.moq || 1)) {
+      return {
+        success: false,
+        error: { message: `Quantity must be at least MOQ (${product.moq})`, code: 'BELOW_MOQ' },
+      };
+    }
+
+    let customerId = enquiry.customer_id;
+    if (!customerId) {
+      const country = enquiry.country || deliveryAddress?.country || 'India';
+      const provisioned = await ensureCustomerFromGuest({
+        email: enquiry.guest_email,
+        phone: enquiry.guest_phone,
+        fullName: enquiry.guest_name,
+        deliveryAddress: deliveryAddress || {
+          address_line_1: 'To be confirmed',
+          city: 'TBD',
+          state: 'TBD',
+          postal_code: '000000',
+          country,
+        },
+      });
+      if (!provisioned.success) return provisioned;
+      customerId = provisioned.data.customerId;
+    }
+
+    const unitPrice = Number(product.selling_price || 0);
+    const originalTotal = Math.round(quantity * unitPrice * 100) / 100;
+
+    const addressSnapshot = deliveryAddress || {
+      address_line_1: 'To be confirmed',
+      address_line_2: null,
+      city: 'TBD',
+      state: 'TBD',
+      postal_code: '000000',
+      country: enquiry.country || 'India',
+    };
+
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const rfqNumber = `RFQ-${dateStr}-${randomSuffix}`;
+
+    const { data: rfq, error: rfqError } = await adminClient
+      .from('rfqs')
+      .insert({
+        rfq_number: rfqNumber,
+        customer_id: customerId,
+        enquiry_id: enquiryId,
+        status: 'submitted',
+        delivery_address_snapshot: addressSnapshot,
+        customer_message: enquiry.message,
+        original_total: originalTotal,
+        final_total: null,
+      })
+      .select()
+      .single();
+
+    if (rfqError || !rfq) {
+      return {
+        success: false,
+        error: { message: rfqError?.message || 'Failed to create RFQ', code: 'DATABASE_ERROR' },
+      };
+    }
+
+    const { error: itemsError } = await adminClient.from('rfq_items').insert({
+      rfq_id: rfq.id,
+      product_id: product.id,
+      product_name_snapshot: product.name,
+      original_quantity: quantity,
+      original_unit_price: unitPrice,
+      final_quantity: null,
+      final_unit_price: null,
+    });
+
+    if (itemsError) {
+      await adminClient.from('rfqs').delete().eq('id', rfq.id);
+      return {
+        success: false,
+        error: { message: 'Failed to record RFQ line items', code: 'DATABASE_ERROR' },
+      };
+    }
+
+    await adminClient
+      .from('enquiries')
+      .update({
+        status: 'converted_to_rfq',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', enquiryId);
+
+    return {
+      success: true,
+      data: { rfqId: rfq.id, rfqNumber },
+    };
+  } catch (error) {
+    console.error('[createRfqFromEnquiry] Error:', error);
+    return {
+      success: false,
+      error: { message: 'Unexpected error creating RFQ from enquiry', code: 'INTERNAL_ERROR' },
     };
   }
 }
@@ -442,6 +601,7 @@ export async function getRfqsForAdmin(params: {
       .select(`
         *,
         customer:profiles(id, full_name, email, phone),
+        enquiry:enquiries(id, guest_name, guest_email, guest_phone, country, company_name, enquiry_type),
         items:rfq_items(
           id,
           product_id,
@@ -465,7 +625,9 @@ export async function getRfqsForAdmin(params: {
     }
 
     if (params.search) {
-      query = query.or(`rfq_number.ilike.%${params.search}%,customer_message.ilike.%${params.search}%`);
+      query = query.or(
+        `rfq_number.ilike.%${params.search}%,customer_message.ilike.%${params.search}%`
+      );
     }
 
     query = query.order('created_at', { ascending: false });

@@ -4,10 +4,10 @@ import React, { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Clock, ShieldCheck, LogOut, ArrowRight, Archive } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { signOutTo } from '@/lib/client/sign-out';
 
 function SupplierPendingContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [isArchived, setIsArchived] = useState(
     searchParams.get('status') === 'archived'
@@ -36,10 +36,8 @@ function SupplierPendingContent() {
     detectStatus();
   }, [searchParams]);
 
-  async function handleSignOut() {
-    const supabase = createBrowserClient();
-    await supabase.auth.signOut();
-    router.push('/auth?role=supplier&mode=signin');
+  function handleSignOut() {
+    signOutTo('/auth?role=supplier&mode=signin');
   }
 
   return (
@@ -67,11 +65,11 @@ function SupplierPendingContent() {
 
         {!isArchived && (
           <div className="saas-inset-surface p-4 text-left space-y-2 text-xs">
-            <div className="font-semibold text-[#111315] flex items-center gap-1.5">
+            <div className="font-semibold text-portal-text flex items-center gap-1.5">
               <ShieldCheck className="w-4 h-4" />
               Verification checklist
             </div>
-            <ul className="list-disc list-inside space-y-1 text-[#6B7280]">
+            <ul className="list-disc list-inside space-y-1 text-portal-muted">
               <li>Corporate entity & tax compliance verification</li>
               <li>Manufacturing capacity & CNC tolerance audit</li>
               <li>ISO 9001 / AS9100 quality certifications</li>
@@ -84,7 +82,7 @@ function SupplierPendingContent() {
             Return to public catalog
             <ArrowRight className="w-3.5 h-3.5" />
           </Link>
-          <button onClick={handleSignOut} className="saas-btn-secondary gap-1.5 text-[#B91C1C]">
+          <button onClick={handleSignOut} className="saas-btn-secondary gap-1.5 text-portal-danger">
             <LogOut className="w-3.5 h-3.5" />
             Sign out
           </button>
@@ -98,7 +96,7 @@ export default function SupplierPendingPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen saas-canvas-bg flex items-center justify-center text-xs font-mono text-[#6B7280]">
+        <div className="min-h-screen saas-canvas-bg flex items-center justify-center text-xs font-mono text-portal-muted">
           Loading…
         </div>
       }

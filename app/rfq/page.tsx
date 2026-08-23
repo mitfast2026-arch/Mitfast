@@ -18,6 +18,7 @@ function cartRedirectWithPrefill(searchParams: SearchParams): string {
   return qs ? `/cart?${qs}` : "/cart";
 }
 
+/** RFQ entry: customers go to cart; guests go to cart (submit gated). */
 export default async function RfqPage({
   searchParams,
 }: {
@@ -25,10 +26,6 @@ export default async function RfqPage({
 }) {
   const session = await getServerSession();
   const cartTarget = cartRedirectWithPrefill(searchParams);
-
-  if (session?.profile.role === "customer") {
-    redirect(cartTarget);
-  }
 
   if (session?.profile.role === "admin") {
     redirect("/admin/rfqs");
@@ -38,7 +35,5 @@ export default async function RfqPage({
     redirect("/supplier/rfqs");
   }
 
-  redirect(
-    `/auth?role=buyer&mode=signin&redirect=${encodeURIComponent(cartTarget)}`,
-  );
+  redirect(cartTarget);
 }

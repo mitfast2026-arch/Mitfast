@@ -1,3 +1,5 @@
+import { sanitizeImageUrl } from '@/lib/image-url';
+
 export interface CurvedProduct {
   id: string;
   category: string;
@@ -51,7 +53,7 @@ export function mapApiProductToCurved(p: {
     specification,
     material: '',
     price,
-    image: imageUrl,
+    image: sanitizeImageUrl(imageUrl),
     href: `/products/${p.id}`,
     badge: p.ribbon_label || undefined,
   };

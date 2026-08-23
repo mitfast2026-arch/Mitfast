@@ -1,19 +1,24 @@
-import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { customerRegisterSchema, updateProfileSchema } from '@/lib/validation/auth.schema';
+import { createClient } from '@/lib/supabase/server';
+import { completeProfileSchema, updateProfileSchema } from '@/lib/validation/auth.schema';
 import type { ServerResult } from './get-session';
-import { getEmailRedirectTo } from './site-url';
+import {
+  emailFromAuthUser,
+  isProfileIdentityComplete,
+  nameFromAuthUser,
+} from './profile-complete';
+import { mergeGuestStateIntoCustomer } from '@/lib/server/guest/merge-guest-state';
 
 /**
- * Registers a new Customer account with profile, initial cart, address, and links prior guest enquiries.
- * Uses Supabase Auth signUp (email confirmation). Does not auto-confirm or create an admin session.
+ * Completes buyer/customer (or shared) identity on existing profiles row.
+ * Ensures cart for customers. Does not set role if already locked to another portal role.
  */
-export async function registerCustomer(
+export async function completeUserProfile(
   formData: unknown,
-  options?: { origin?: string | null }
-): Promise<ServerResult<{ userId: string; needsEmailConfirmation: boolean }>> {
+  options?: { intendedRole?: 'customer' | 'supplier' }
+): Promise<ServerResult<{ profileId: string; role: string }>> {
   try {
-    const validated = customerRegisterSchema.safeParse(formData);
+    const validated = completeProfileSchema.safeParse(formData);
     if (!validated.success) {
       return {
         success: false,
@@ -21,98 +26,102 @@ export async function registerCustomer(
       };
     }
 
-    const { fullName, email, phone, password, addressLine1, city, state, postalCode, country } = validated.data;
     const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return { success: false, error: { message: 'Not authenticated', code: 'UNAUTHORIZED' } };
+    }
+
     const adminClient = createAdminClient();
-
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: getEmailRedirectTo(options?.origin),
-        data: {
-          role: 'customer',
-          full_name: fullName,
-          phone,
-        },
-      },
-    });
-
-    if (authError || !authData.user) {
-      return {
-        success: false,
-        error: { message: authError?.message || 'Failed to create user account', code: 'AUTH_ERROR' },
-      };
+    const email = (validated.data.email || emailFromAuthUser(user)).trim().toLowerCase();
+    if (!email) {
+      return { success: false, error: { message: 'Email is required', code: 'VALIDATION_ERROR' } };
     }
 
-    if (authData.user.identities && authData.user.identities.length === 0) {
-      return {
-        success: false,
-        error: { message: 'An account with this email already exists. Sign in or confirm your email.', code: 'DUPLICATE_EMAIL' },
-      };
+    const { data: existing } = await adminClient
+      .from('profiles')
+      .select('id, role, full_name, phone, email')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    const intended = options?.intendedRole;
+    let role: 'customer' | 'supplier' | 'admin' = (existing?.role as any) || intended || 'customer';
+
+    if (existing?.role === 'admin') {
+      role = 'admin';
+    } else if (existing?.role && intended && existing.role !== intended) {
+      // Allow role choice only while onboarding is incomplete (Google defaults role via trigger).
+      if (isProfileIdentityComplete(existing)) {
+        return {
+          success: false,
+          error: {
+            message: `This account is already registered as a ${existing.role}. Sign in with that role.`,
+            code: 'ROLE_LOCKED',
+          },
+        };
+      }
+      role = intended;
+    } else if (!existing?.role && intended) {
+      role = intended;
+    } else if (!existing?.role) {
+      const metaRole = user.user_metadata?.role;
+      role = metaRole === 'supplier' ? 'supplier' : 'customer';
     }
 
-    const userId = authData.user.id;
+    const fullName = validated.data.fullName.trim() || nameFromAuthUser(user);
+    const phone = validated.data.phone.trim();
 
-    // 2. Ensure profile exists
     const { data: profile, error: profileError } = await adminClient
       .from('profiles')
-      .upsert({
-        user_id: userId,
-        role: 'customer',
-        full_name: fullName,
-        email,
-        phone,
-      }, { onConflict: 'user_id' })
-      .select()
+      .upsert(
+        {
+          user_id: user.id,
+          role,
+          full_name: fullName,
+          email,
+          phone,
+        },
+        { onConflict: 'user_id' }
+      )
+      .select('id, role')
       .single();
 
     if (profileError || !profile) {
       return {
         success: false,
-        error: { message: 'Failed to create customer profile', code: 'PROFILE_ERROR' },
+        error: { message: profileError?.message || 'Failed to save profile', code: 'PROFILE_ERROR' },
       };
     }
 
-    const { data: existingCart } = await adminClient
-      .from('carts')
-      .select('id')
-      .eq('customer_id', profile.id)
-      .maybeSingle();
+    if (profile.role === 'customer') {
+      const { data: existingCart } = await adminClient
+        .from('carts')
+        .select('id')
+        .eq('customer_id', profile.id)
+        .maybeSingle();
 
-    if (!existingCart) {
-      await adminClient.from('carts').insert({ customer_id: profile.id });
+      if (!existingCart) {
+        await adminClient.from('carts').insert({ customer_id: profile.id });
+      }
+
+      await adminClient
+        .from('enquiries')
+        .update({ customer_id: profile.id })
+        .ilike('guest_email', email)
+        .is('customer_id', null);
+
+      await mergeGuestStateIntoCustomer(profile.id);
     }
 
-    // 4. Create primary delivery address if provided
-    if (addressLine1 && city && state && postalCode) {
-      await adminClient.from('customer_addresses').insert({
-        customer_id: profile.id,
-        address_line_1: addressLine1,
-        city,
-        state,
-        postal_code: postalCode,
-        country: country || 'India',
-      });
-    }
-
-    // 5. Link prior guest enquiries by email (phone is a soft match when present)
-    let enquiryQuery = adminClient
-      .from('enquiries')
-      .update({ customer_id: profile.id })
-      .ilike('guest_email', email)
-      .is('customer_id', null);
-    await enquiryQuery;
-
-    return {
-      success: true,
-      data: { userId, needsEmailConfirmation: !authData.session },
-    };
+    return { success: true, data: { profileId: profile.id, role: profile.role } };
   } catch (error) {
-    console.error('[registerCustomer] Error:', error);
+    console.error('[completeUserProfile] Error:', error);
     return {
       success: false,
-      error: { message: 'Unexpected error during customer registration', code: 'INTERNAL_ERROR' },
+      error: { message: 'Unexpected error completing profile', code: 'INTERNAL_ERROR' },
     };
   }
 }
@@ -161,4 +170,17 @@ export async function updateCustomerProfile(
       error: { message: 'Failed to update profile', code: 'INTERNAL_ERROR' },
     };
   }
+}
+
+/** @deprecated Prefer completeUserProfile after OTP/Google. */
+export async function registerCustomer(): Promise<
+  ServerResult<{ userId: string; needsEmailConfirmation: boolean }>
+> {
+  return {
+    success: false,
+    error: {
+      message: 'Password registration is disabled. Use Google or email OTP.',
+      code: 'DEPRECATED',
+    },
+  };
 }

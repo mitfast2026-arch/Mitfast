@@ -6,9 +6,9 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowRight, Package } from 'lucide-react';
+import { RemoteImage } from '@/components/ui/RemoteImage';
 import type { CurvedProduct } from './productData';
 import './curved-products.css';
 
@@ -325,10 +325,9 @@ export default function CurvedProductCarousel({ products }: CurvedProductCarouse
                   <div className="arc-fan-card-inner group">
                     <div className="arc-fan-image-wrap">
                       {product.image ? (
-                        <Image
+                        <RemoteImage
                           src={product.image}
                           alt={product.title}
-                          fill
                           sizes="360px"
                           priority={i < 4}
                           className="arc-fan-image"

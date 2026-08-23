@@ -38,6 +38,13 @@ const ENQUIRY_TYPE_COPY: Record<
     metaValue: "Custom specification, CAD inquiry, and volume production quotes.",
     message: "",
   },
+  cart: {
+    heading: "Cart quote enquiry",
+    metaLabel: "Cart RFQ",
+    metaValue: "Guest quote request from your RFQ workspace — our team will follow up with pricing.",
+    message:
+      "Cart quote request: please confirm quantities, delivery timeline, and any packaging or inspection requirements.",
+  },
 };
 
 const SERVICE_OPTIONS = [
@@ -48,6 +55,22 @@ const SERVICE_OPTIONS = [
 ] as const;
 
 type ServiceValue = (typeof SERVICE_OPTIONS)[number]["value"];
+
+type CartLinePreview = {
+  productId: string;
+  name: string;
+  quantity: number;
+};
+
+function formatCartMessage(lines: CartLinePreview[]): string {
+  const header =
+    "Cart quote request: please confirm quantities, delivery timeline, and any packaging or inspection requirements.";
+  if (!lines.length) return header;
+  const list = lines
+    .map((line, idx) => `${idx + 1}. ${line.name} — qty ${line.quantity}`)
+    .join("\n");
+  return `${header}\n\nSelected products:\n${list}`;
+}
 
 function splitFullName(fullName: string) {
   const parts = fullName.trim().split(/\s+/).filter(Boolean);
@@ -61,13 +84,19 @@ function EnquiryContent() {
   const searchParams = useSearchParams();
   const preselectedProductId = searchParams.get("product");
   const initialType = (searchParams.get("type") || "").toLowerCase();
-  const initialService: ServiceValue = ENQUIRY_TYPE_COPY[initialType]
-    ? (initialType as ServiceValue)
-    : "custom";
+  const isCartEnquiry = initialType === "cart";
+  const initialService: ServiceValue =
+    initialType === "cart"
+      ? "custom"
+      : ENQUIRY_TYPE_COPY[initialType]
+        ? (initialType as ServiceValue)
+        : "custom";
 
   const [product, setProduct] = useState<{ id: string; name: string } | null>(
     null,
   );
+  const [cartLines, setCartLines] = useState<CartLinePreview[]>([]);
+  const [cartLoading, setCartLoading] = useState(isCartEnquiry);
   const [profile, setProfile] = useState<{ id: string; full_name?: string } | null>(
     null,
   );
@@ -77,10 +106,13 @@ function EnquiryContent() {
   const [serviceType, setServiceType] = useState<ServiceValue>(initialService);
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [country, setCountry] = useState("");
   const [hasDrawing, setHasDrawing] = useState(false);
   const [drawingFile, setDrawingFile] = useState<File | null>(null);
   const [message, setMessage] = useState(
-    ENQUIRY_TYPE_COPY[initialService]?.message || "",
+    isCartEnquiry
+      ? formatCartMessage([])
+      : ENQUIRY_TYPE_COPY[initialService]?.message || "",
   );
   const [messageDirty, setMessageDirty] = useState(false);
 
@@ -89,7 +121,9 @@ function EnquiryContent() {
   const [trackingToken, setTrackingToken] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
-  const typeCopy = ENQUIRY_TYPE_COPY[serviceType] || ENQUIRY_TYPE_COPY.custom;
+  const typeCopy = isCartEnquiry
+    ? ENQUIRY_TYPE_COPY.cart
+    : ENQUIRY_TYPE_COPY[serviceType] || ENQUIRY_TYPE_COPY.custom;
 
   useEffect(() => {
     async function init() {
@@ -114,7 +148,33 @@ function EnquiryContent() {
         }
       }
 
-      if (preselectedProductId) {
+      if (isCartEnquiry) {
+        setCartLoading(true);
+        try {
+          const cartRes = await fetch("/api/cart");
+          const cartJson = await cartRes.json();
+          if (cartJson.success && cartJson.data?.items?.length) {
+            const lines: CartLinePreview[] = cartJson.data.items.map(
+              (item: { productId: string; quantity: number; product?: { name?: string } }) => ({
+                productId: item.productId,
+                name: item.product?.name || "Product",
+                quantity: item.quantity,
+              }),
+            );
+            setCartLines(lines);
+            if (!messageDirty) {
+              setMessage(formatCartMessage(lines));
+            }
+            if (lines[0]) {
+              setProduct({ id: lines[0].productId, name: lines[0].name });
+            }
+          }
+        } catch {
+          /* cart optional for enquiry */
+        } finally {
+          setCartLoading(false);
+        }
+      } else if (preselectedProductId) {
         const res = await fetch(`/api/products/${preselectedProductId}`);
         const json = await res.json();
         if (json.success && json.data.product) {
@@ -124,7 +184,7 @@ function EnquiryContent() {
     }
 
     init();
-  }, [preselectedProductId]);
+  }, [preselectedProductId, isCartEnquiry]);
 
   function handleServiceChange(next: ServiceValue) {
     setServiceType(next);
@@ -139,9 +199,9 @@ function EnquiryContent() {
 
     const fullName = `${firstName} ${lastName}`.trim();
 
-    if (!firstName.trim() || !email.trim() || !phone.trim()) {
+    if (!firstName.trim() || !email.trim() || !phone.trim() || !country.trim()) {
       setErrorMsg(
-        "Name, email, and phone are required so we can book and track this enquiry.",
+        "Name, email, phone, and country are required so we can book and track this enquiry.",
       );
       return;
     }
@@ -151,11 +211,21 @@ function EnquiryContent() {
       return;
     }
 
+    if (isCartEnquiry && cartLines.length === 0) {
+      setErrorMsg(
+        "Your cart is empty. Add products from the catalog or send a general enquiry.",
+      );
+      return;
+    }
+
     setLoading(true);
 
     try {
       const formData = new FormData();
-      if (product?.id) formData.set("productId", product.id);
+      const primaryProductId = isCartEnquiry
+        ? cartLines[0]?.productId
+        : product?.id;
+      if (primaryProductId) formData.set("productId", primaryProductId);
       formData.set("message", message.trim());
       if (profile?.id) formData.set("customerId", profile.id);
       formData.set("name", fullName || profile?.full_name || "");
@@ -164,6 +234,20 @@ function EnquiryContent() {
       formData.set("guestName", fullName);
       formData.set("guestEmail", email.trim());
       formData.set("guestPhone", phone.trim());
+      formData.set("country", country.trim());
+      formData.set("enquiryType", isCartEnquiry ? "cart" : serviceType);
+      if (isCartEnquiry && cartLines.length) {
+        formData.set(
+          "lineItems",
+          JSON.stringify(
+            cartLines.map((line) => ({
+              productId: line.productId,
+              name: line.name,
+              quantity: line.quantity,
+            })),
+          ),
+        );
+      }
       if (hasDrawing && drawingFile) {
         formData.set("attachment", drawingFile);
       }
@@ -202,8 +286,22 @@ function EnquiryContent() {
             </div>
             {product && (
               <div className="contact-meta">
-                <p className="contact-meta__label">Referenced part</p>
+                <p className="contact-meta__label">
+                  {isCartEnquiry ? "Primary product" : "Referenced part"}
+                </p>
                 <p className="contact-meta__value">{product.name}</p>
+              </div>
+            )}
+            {isCartEnquiry && cartLines.length > 0 && (
+              <div className="contact-meta">
+                <p className="contact-meta__label">Cart lines</p>
+                <ul className="contact-meta__value" style={{ margin: 0, paddingLeft: "1.1rem" }}>
+                  {cartLines.map((line) => (
+                    <li key={line.productId}>
+                      {line.name} × {line.quantity}
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
             <div className="contact-meta">
@@ -252,6 +350,15 @@ function EnquiryContent() {
           </div>
         ) : (
           <form className="contact-form" onSubmit={handleSubmit} noValidate>
+            {isCartEnquiry && cartLoading && (
+              <p className="contact-form__hint">Loading your cart…</p>
+            )}
+            {isCartEnquiry && !cartLoading && cartLines.length === 0 && (
+              <p className="contact-form__hint">
+                Your cart is empty.{" "}
+                <Link href="/products">Browse products</Link> or continue with a general message.
+              </p>
+            )}
             <div className="contact-form__group">
               <p className="contact-form__legend" id="enquiry-name-legend">
                 Contact name
@@ -289,29 +396,31 @@ function EnquiryContent() {
               </div>
             </div>
 
-            <div className="field">
-              <label className="field__label" htmlFor="enquiry-service">
-                Enquiry type
-              </label>
-              <div className="field__control">
-                <select
-                  id="enquiry-service"
-                  className="field__select"
-                  name="service"
-                  value={serviceType}
-                  onChange={(e) =>
-                    handleServiceChange(e.target.value as ServiceValue)
-                  }
-                >
-                  {SERVICE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="field__chevron" aria-hidden="true" />
+            {!isCartEnquiry && (
+              <div className="field">
+                <label className="field__label" htmlFor="enquiry-service">
+                  Enquiry type
+                </label>
+                <div className="field__control">
+                  <select
+                    id="enquiry-service"
+                    className="field__select"
+                    name="service"
+                    value={serviceType}
+                    onChange={(e) =>
+                      handleServiceChange(e.target.value as ServiceValue)
+                    }
+                  >
+                    {SERVICE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="field__chevron" aria-hidden="true" />
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="field">
               <label className="field__label" htmlFor="enquiry-email">
@@ -342,6 +451,22 @@ function EnquiryContent() {
                 required
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
+              />
+            </div>
+
+            <div className="field">
+              <label className="field__label" htmlFor="enquiry-country">
+                Country
+              </label>
+              <input
+                id="enquiry-country"
+                className="field__input"
+                type="text"
+                name="country"
+                autoComplete="country-name"
+                required
+                value={country}
+                onChange={(e) => setCountry(e.target.value)}
               />
             </div>
 

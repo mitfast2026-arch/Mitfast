@@ -22,17 +22,26 @@ export async function POST(
       .eq('supplier_id', supplierId)
       .maybeSingle();
 
+    const suggestedMoqRaw =
+      body.suggestedMoq !== undefined
+        ? body.suggestedMoq
+        : body.suggested_moq !== undefined
+          ? body.suggested_moq
+          : body.moq;
+
     const payload = {
       productId: params.id,
       name: body.name || existing?.name,
       categoryId: body.categoryId || body.category_id || existing?.category_id,
       description: body.description,
-      moq: body.moq !== undefined ? Number(body.moq) : undefined,
-      supplierPrice: body.supplierPrice !== undefined ? Number(body.supplierPrice) : (body.supplier_price !== undefined ? Number(body.supplier_price) : undefined),
-      gstRate: body.gstRate !== undefined ? Number(body.gstRate) : undefined,
-      gstIncluded: body.gstIncluded,
-      discount: body.discount !== undefined ? Number(body.discount) : undefined,
-      minOrderValue: body.minOrderValue !== undefined && body.minOrderValue !== '' ? Number(body.minOrderValue) : undefined,
+      sku: body.sku !== undefined ? (body.sku === '' ? null : body.sku) : undefined,
+      suggestedMoq: suggestedMoqRaw !== undefined ? Number(suggestedMoqRaw) : undefined,
+      supplierPrice:
+        body.supplierPrice !== undefined
+          ? Number(body.supplierPrice)
+          : body.supplier_price !== undefined
+            ? Number(body.supplier_price)
+            : undefined,
       specifications: (body.specifications || []).map((s: any, idx: number) => ({
         spec_name: s.spec_name || s.key || s.name || `Spec ${idx + 1}`,
         spec_value: s.spec_value || s.value || '',

@@ -35,8 +35,9 @@ export async function GET(request: NextRequest) {
     const paymentStatus = (searchParams.get('paymentStatus') as PaymentStatus) || undefined;
     const supplierId = searchParams.get('supplierId') || undefined;
     const search = searchParams.get('search') || undefined;
+    const convertedOnly = searchParams.get('convertedOnly') === 'true';
 
-    const result = await getOrdersForAdmin({ page, limit, status, paymentStatus, supplierId, search });
+    const result = await getOrdersForAdmin({ page, limit, status, paymentStatus, supplierId, search, convertedOnly });
     if (!result.success) return NextResponse.json(result, { status: 400 });
     return NextResponse.json(result);
   } catch (error) {

@@ -1,0 +1,82 @@
+'use client';
+
+import React from 'react';
+import { Plus, X } from 'lucide-react';
+import type { SpecRow } from './types';
+
+type SpecificationSheetProps = {
+  rows: SpecRow[];
+  onChange: (rows: SpecRow[]) => void;
+};
+
+export default function SpecificationSheet({ rows, onChange }: SpecificationSheetProps) {
+  function addRow() {
+    onChange([
+      ...rows,
+      { id: `new-${Date.now()}`, spec_name: '', spec_value: '' },
+    ]);
+  }
+
+  function updateRow(id: string, field: 'spec_name' | 'spec_value', value: string) {
+    onChange(rows.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
+  }
+
+  function removeRow(id: string) {
+    onChange(rows.filter((r) => r.id !== id));
+  }
+
+  return (
+    <div className="space-y-2">
+      <label className="saas-label">Specification Sheet</label>
+      <div className="rounded-lg border border-portal-border overflow-hidden">
+        <div className="grid grid-cols-[1fr_1fr_2rem] gap-2 px-3 py-2 bg-portal-inset text-[10px] font-medium uppercase tracking-wide text-portal-muted">
+          <span>Spec Name</span>
+          <span>Spec Value</span>
+          <span />
+        </div>
+        {rows.length === 0 ? (
+          <div className="px-3 py-4 text-xs text-portal-muted text-center">
+            No specifications yet. Add rows below.
+          </div>
+        ) : (
+          <div className="divide-y divide-portal-border">
+            {rows.map((row) => (
+              <div key={row.id} className="grid grid-cols-[1fr_1fr_2rem] gap-2 px-3 py-2 items-center">
+                <input
+                  type="text"
+                  value={row.spec_name}
+                  onChange={(e) => updateRow(row.id, 'spec_name', e.target.value)}
+                  placeholder="e.g. Material"
+                  className="saas-input text-xs py-1.5"
+                />
+                <input
+                  type="text"
+                  value={row.spec_value}
+                  onChange={(e) => updateRow(row.id, 'spec_value', e.target.value)}
+                  placeholder="e.g. Titanium"
+                  className="saas-input text-xs py-1.5"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeRow(row.id)}
+                  className="p-1 rounded text-portal-muted hover:text-portal-danger hover:bg-portal-danger-soft"
+                  title="Remove row"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={addRow}
+        className="saas-btn-secondary text-xs py-1.5 px-3 flex items-center gap-1.5 w-full justify-center"
+      >
+        <Plus className="w-3.5 h-3.5" />
+        Add specification
+      </button>
+    </div>
+  );
+}

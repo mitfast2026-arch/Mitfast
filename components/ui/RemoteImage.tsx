@@ -1,6 +1,7 @@
 'use client';
 
 import Image from 'next/image';
+import { isLikelyImageUrl, isNextImageHost } from '@/lib/image-url';
 
 type RemoteImageProps = {
   src: string;
@@ -19,17 +20,34 @@ export function RemoteImage({
   priority = false,
   objectFit = 'cover',
 }: RemoteImageProps) {
-  if (!src) return null;
+  if (!isLikelyImageUrl(src)) return null;
+
+  const fitClass = objectFit === 'contain' ? 'object-contain' : 'object-cover';
+
+  if (!isNextImageHost(src)) {
+    return (
+      <div className="relative h-full w-full min-h-0">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt={alt}
+          className={`absolute inset-0 h-full w-full ${fitClass} ${className}`.trim()}
+          loading={priority ? 'eager' : 'lazy'}
+        />
+      </div>
+    );
+  }
 
   return (
-    <Image
-      src={src}
-      alt={alt}
-      fill
-      sizes={sizes}
-      priority={priority}
-      className={className}
-      style={{ objectFit }}
-    />
+    <div className="relative h-full w-full min-h-0">
+      <Image
+        src={src}
+        alt={alt}
+        fill
+        sizes={sizes}
+        priority={priority}
+        className={`${fitClass} ${className}`.trim()}
+      />
+    </div>
   );
 }

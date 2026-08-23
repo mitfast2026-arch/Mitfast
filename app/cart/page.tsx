@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { RemoteImage } from "@/components/ui/RemoteImage";
+import AuthOrGuestGate from "@/components/commerce/AuthOrGuestGate";
 
 function CartRFQPageInner() {
   const router = useRouter();
@@ -37,6 +38,7 @@ function CartRFQPageInner() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [gateOpen, setGateOpen] = useState(false);
 
   useEffect(() => {
     async function initCart() {
@@ -45,90 +47,69 @@ function CartRFQPageInner() {
         data: { user },
       } = await supabase.auth.getUser();
 
-      if (!user) {
-        const redirectTarget =
-          typeof window !== "undefined"
-            ? `/cart${window.location.search || ""}`
-            : "/cart";
-        setLoading(false);
-        router.push(
-          `/auth?role=buyer&mode=signin&redirect=${encodeURIComponent(redirectTarget)}`,
-        );
-        return;
-      }
+      if (user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("user_id", user.id)
+          .single();
 
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("user_id", user.id)
-        .single();
+        if (profile && (profile.role === "customer" || profile.role === "buyer")) {
+          setCustomer(profile);
+          try {
+            await fetch("/api/guest/merge", { method: "POST" });
+          } catch {
+            /* best-effort */
+          }
 
-      if (
-        !profile ||
-        (profile.role !== "customer" && profile.role !== "buyer")
-      ) {
-        setErrorMsg(
-          "Only registered Buyer / Procurement accounts can access the RFQ workspace.",
-        );
-        setLoading(false);
-        return;
-      }
-
-      setCustomer(profile);
-
-      const prefillProduct = searchParams.get("product");
-      const prefillQty = Number(searchParams.get("qty") || "1");
-
-      if (prefillProduct) {
-        try {
-          await fetch("/api/cart", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              productId: prefillProduct,
-              quantity: Number.isFinite(prefillQty) && prefillQty > 0 ? prefillQty : 1,
-            }),
-          });
-        } catch {
-          // Prefill is best-effort; cart load below still proceeds.
+          try {
+            const addrRes = await fetch("/api/customer/addresses");
+            const addrJson = await addrRes.json();
+            if (addrRes.ok && addrJson.success) {
+              setAddresses(addrJson.data?.addresses || []);
+              const primary = (addrJson.data?.addresses || [])[0];
+              if (primary) setSelectedAddressId(primary.id);
+            }
+          } catch {
+            /* optional */
+          }
         }
       }
 
-      const [addrRes, settingsRes, cartRes] = await Promise.all([
-        supabase
-          .from("customer_addresses")
-          .select("*")
-          .eq("customer_id", profile.id),
-        fetch("/api/settings").then((r) => r.json()),
-        fetch(`/api/cart?customerId=${profile.id}`).then((r) => r.json()),
-      ]);
-
-      if (addrRes.data && addrRes.data.length > 0) {
-        setAddresses(addrRes.data);
-        setSelectedAddressId(addrRes.data[0].id);
+      const prefillProduct = searchParams.get("product");
+      const prefillQty = Number(searchParams.get("qty") || "1");
+      if (prefillProduct) {
+        await fetch("/api/cart", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            productId: prefillProduct,
+            quantity: Number.isFinite(prefillQty) && prefillQty > 0 ? prefillQty : 1,
+          }),
+        });
       }
 
-      if (settingsRes.success && settingsRes.data) {
-        setMinimumRfqValue(
-          settingsRes.data.minimumRfqValue ||
-          settingsRes.data.minimum_rfq_value ||
-          500000,
-        );
-        setCurrency(settingsRes.data.currency || "INR");
+      try {
+        const settingsRes = await fetch("/api/settings");
+        const settingsJson = await settingsRes.json();
+        if (settingsRes.ok && settingsJson.success) {
+          if (typeof settingsJson.data?.minimumRfqValue === "number") {
+            setMinimumRfqValue(settingsJson.data.minimumRfqValue);
+          }
+          if (settingsJson.data?.currency) setCurrency(settingsJson.data.currency);
+        }
+      } catch {
+        /* defaults */
       }
 
-      if (cartRes.success && cartRes.data) {
-        setCart(cartRes.data);
+      const cartRes = await fetch("/api/cart");
+      const cartJson = await cartRes.json();
+      if (cartRes.ok && cartJson.success) {
+        setCart(cartJson.data);
+      } else {
+        setErrorMsg(cartJson.error?.message || "Could not load cart");
       }
-
       setLoading(false);
-
-      if (prefillProduct && typeof window !== "undefined") {
-        const url = new URL(window.location.href);
-        url.searchParams.delete("product");
-        url.searchParams.delete("qty");
-        window.history.replaceState({}, "", url.pathname + (url.search || ""));
-      }
     }
 
     initCart();
@@ -152,7 +133,7 @@ function CartRFQPageInner() {
       });
       const json = await res.json();
       if (json.success) {
-        const cartRes = await fetch(`/api/cart?customerId=${customer.id}`);
+        const cartRes = await fetch("/api/cart");
         const cartJson = await cartRes.json();
         if (cartJson.success) setCart(cartJson.data);
       }
@@ -168,7 +149,7 @@ function CartRFQPageInner() {
       });
       const json = await res.json();
       if (json.success) {
-        const cartRes = await fetch(`/api/cart?customerId=${customer.id}`);
+        const cartRes = await fetch("/api/cart");
         const cartJson = await cartRes.json();
         if (cartJson.success) setCart(cartJson.data);
       }
@@ -182,7 +163,12 @@ function CartRFQPageInner() {
     setErrorMsg("");
 
     if (!cart || !cart.items || cart.items.length === 0) {
-      setErrorMsg("Your RFQ workspace is empty.");
+      setErrorMsg("Your cart is empty.");
+      return;
+    }
+
+    if (!customer?.id) {
+      setGateOpen(true);
       return;
     }
 
@@ -437,9 +423,18 @@ function CartRFQPageInner() {
               className="saas-panel p-5 space-y-4"
             >
               <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-[#111315] border-b border-[#E2E4E8] pb-2">
-                Delivery & Submission
+                {customer?.id ? "Delivery & Submission" : "Request a quote"}
               </h3>
 
+              {!customer?.id && (
+                <p className="text-xs text-[#6B7280] leading-relaxed">
+                  Browse and edit your cart without signing in. To submit an official RFQ, log in — or
+                  continue as guest to send a cart enquiry with your contact details.
+                </p>
+              )}
+
+              {customer?.id && (
+              <>
               {/* Delivery Address */}
               <div className="space-y-2">
                 <label className="saas-label flex items-center gap-1 font-mono">
@@ -578,6 +573,8 @@ function CartRFQPageInner() {
                   className="saas-input resize-none"
                 />
               </div>
+              </>
+              )}
 
               {/* Summary calculation */}
               <div className="space-y-1.5 pt-3 border-t border-[#E2E4E8] text-xs font-mono">
@@ -605,11 +602,15 @@ function CartRFQPageInner() {
 
               <button
                 type="submit"
-                disabled={submitting || !meetsMinimum}
+                disabled={submitting || (customer?.id ? !meetsMinimum : false)}
                 className="saas-btn-primary w-full py-2.5 text-xs flex items-center justify-center gap-1.5 font-mono shadow-xs disabled:opacity-50"
               >
                 <span>
-                  {submitting ? "Submitting RFQ..." : "Submit Official RFQ"}
+                  {submitting
+                    ? "Submitting…"
+                    : customer?.id
+                      ? "Submit Official RFQ"
+                      : "Request quote"}
                 </span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
@@ -617,6 +618,13 @@ function CartRFQPageInner() {
           </div>
         </div>
       )}
+
+      <AuthOrGuestGate
+        open={gateOpen}
+        onClose={() => setGateOpen(false)}
+        loginRedirect="/cart"
+        guestEnquiryHref="/enquiry?type=cart"
+      />
     </div>
   );
 }

@@ -17,7 +17,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const isEnquiry = pathname === '/enquiry';
 
   if (isPortalOrAuth) {
-    return <div className="min-h-screen w-full bg-white text-[#111315]">{children}</div>;
+    const portalTheme = pathname.startsWith('/admin')
+      ? 'portal-theme-admin'
+      : pathname.startsWith('/supplier')
+        ? 'portal-theme-supplier'
+        : '';
+
+    return (
+      <div
+        className={`portal-ui h-dvh max-h-dvh w-full overflow-hidden saas-canvas-bg text-portal-text ${portalTheme}`.trim()}
+      >
+        {children}
+      </div>
+    );
   }
 
   return (

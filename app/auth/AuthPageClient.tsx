@@ -1,479 +1,1025 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   AlertCircle,
   CheckCircle2,
-  Eye,
-  EyeOff,
   ArrowRight,
   ShoppingCart,
   Building2,
+  Eye,
+  EyeOff,
+  Mail,
+  Lock,
+  Check,
 } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
+import './auth.css';
 
 export type AuthSearchParams = {
   role?: string;
   mode?: string;
   redirect?: string;
   error?: string;
+  intent?: string;
+  guestEnquiry?: string;
 };
+
+type RegisterStep = 'email' | 'password' | 'otp';
+type AuthMode = 'signin' | 'register';
+
+const REGISTER_STEPS: { id: RegisterStep; label: string }[] = [
+  { id: 'email', label: 'Account' },
+  { id: 'password', label: 'Password' },
+  { id: 'otp', label: 'Verify' },
+];
 
 function redirectHard(path: string) {
   window.location.assign(path);
 }
 
+function buildAuthHref(
+  mode: AuthMode,
+  role: 'buyer' | 'supplier',
+  redirectPath?: string,
+  extras?: Record<string, string | undefined>
+) {
+  const params = new URLSearchParams();
+  params.set('role', role);
+  params.set('mode', mode);
+  if (redirectPath) params.set('redirect', redirectPath);
+  if (extras?.intent) params.set('intent', extras.intent);
+  if (extras?.guestEnquiry) params.set('guestEnquiry', extras.guestEnquiry);
+  return `/auth?${params.toString()}`;
+}
+
+async function resolvePostAuthPath(
+  supabase: ReturnType<typeof createBrowserClient>,
+  userId: string,
+  opts: {
+    isAdminAuth: boolean;
+    preferredRole: 'buyer' | 'supplier';
+    redirectPath?: string;
+  }
+): Promise<string> {
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role, full_name, phone, email')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  const nameOk = (profile?.full_name || '').trim().length >= 2;
+  const phoneOk = (profile?.phone || '').trim().length >= 7;
+  const emailOk = (profile?.email || '').trim().includes('@');
+  const identityOk = nameOk && phoneOk && emailOk;
+
+  if (opts.isAdminAuth) {
+    if (profile?.role !== 'admin') {
+      await supabase.auth.signOut();
+      throw new Error('This account does not have admin access.');
+    }
+    return opts.redirectPath?.startsWith('/admin')
+      ? opts.redirectPath
+      : '/admin/dashboard';
+  }
+
+  if (profile?.role === 'admin') {
+    return '/admin/dashboard';
+  }
+
+  const wantsSupplier = opts.preferredRole === 'supplier' || profile?.role === 'supplier';
+
+  if (!identityOk) {
+    return `/auth/complete-profile?role=${wantsSupplier ? 'supplier' : 'buyer'}`;
+  }
+
+  if (wantsSupplier || profile?.role === 'supplier') {
+    if (profile?.role === 'customer') {
+      throw new Error('This account is already a buyer. Use a different email for supplier access.');
+    }
+
+    const { data: sup } = await supabase
+      .from('suppliers')
+      .select('status')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (!sup) return '/auth/supplier/apply';
+    if (sup.status === 'rejected') return '/auth/supplier/rejected';
+    if (sup.status === 'pending' || sup.status === 'archived') {
+      return sup.status === 'archived'
+        ? '/auth/supplier/pending?status=archived'
+        : '/auth/supplier/pending';
+    }
+    if (opts.redirectPath?.startsWith('/supplier')) return opts.redirectPath;
+    return '/supplier/dashboard';
+  }
+
+  if (
+    opts.redirectPath &&
+    (opts.redirectPath.startsWith('/cart') ||
+      opts.redirectPath.startsWith('/customer') ||
+      opts.redirectPath.startsWith('/products') ||
+      opts.redirectPath.startsWith('/rfq'))
+  ) {
+    return opts.redirectPath;
+  }
+
+  return '/customer/dashboard';
+}
+
+function GoogleGlyph() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+      <path
+        fill="#FFC107"
+        d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34.2 6.1 29.4 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.5-.4-3.5z"
+      />
+      <path
+        fill="#FF3D00"
+        d="M6.3 14.7l6.6 4.8C14.7 16.1 19 13 24 13c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34.2 6.1 29.4 4 24 4 16.3 4 9.6 8.3 6.3 14.7z"
+      />
+      <path
+        fill="#4CAF50"
+        d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.3 26.8 36 24 36c-5.3 0-9.7-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"
+      />
+      <path
+        fill="#1976D2"
+        d="M43.6 20.5H42V20H24v8h11.3c-1.1 3.2-3.5 5.7-6.5 7.1l.1.1 6.2 5.2C36.9 39.2 44 34 44 24c0-1.3-.1-2.5-.4-3.5z"
+      />
+    </svg>
+  );
+}
+
+function RegisterStepper({ current }: { current: RegisterStep }) {
+  const currentIdx = REGISTER_STEPS.findIndex((s) => s.id === current);
+
+  return (
+    <div className="auth-stepper" aria-label="Registration progress">
+      {REGISTER_STEPS.map((step, idx) => {
+        const isActive = step.id === current;
+        const isDone = idx < currentIdx;
+        return (
+          <div
+            key={step.id}
+            className={`auth-stepper__item${isActive ? ' is-active' : ''}${isDone ? ' is-done' : ''}`}
+          >
+            <span className="auth-stepper__dot" aria-hidden="true">
+              {isDone ? <Check className="w-3 h-3" strokeWidth={3} /> : idx + 1}
+            </span>
+            <span className="auth-stepper__label">{step.label}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function EmailChip({ email, onEdit }: { email: string; onEdit: () => void }) {
+  return (
+    <div className="auth-email-chip">
+      <Mail className="auth-email-chip__icon w-4 h-4" />
+      <span className="auth-email-chip__text">{email}</span>
+      <button type="button" className="auth-email-chip__edit" onClick={onEdit}>
+        Change
+      </button>
+    </div>
+  );
+}
+
+function OtpInput({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  disabled?: boolean;
+}) {
+  const inputsRef = useRef<(HTMLInputElement | null)[]>([]);
+  const digits = value.padEnd(6, ' ').slice(0, 6).split('');
+
+  function focusCell(index: number) {
+    inputsRef.current[index]?.focus();
+  }
+
+  function handleChange(index: number, char: string) {
+    const digit = char.replace(/\D/g, '').slice(-1);
+    const next = digits.map((d, i) => (i === index ? digit : d.trim())).join('').slice(0, 6);
+    onChange(next);
+    if (digit && index < 5) focusCell(index + 1);
+  }
+
+  function handleKeyDown(index: number, e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Backspace' && !digits[index]?.trim() && index > 0) {
+      focusCell(index - 1);
+    }
+  }
+
+  function handlePaste(e: React.ClipboardEvent) {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+    if (pasted) onChange(pasted);
+    focusCell(Math.min(pasted.length, 5));
+  }
+
+  return (
+    <div className="auth-otp-row" onPaste={handlePaste}>
+      {digits.map((digit, idx) => (
+        <input
+          key={idx}
+          ref={(el) => {
+            inputsRef.current[idx] = el;
+          }}
+          type="text"
+          inputMode="numeric"
+          autoComplete={idx === 0 ? 'one-time-code' : 'off'}
+          maxLength={1}
+          value={digit.trim()}
+          disabled={disabled}
+          className="auth-otp-cell"
+          aria-label={`Digit ${idx + 1}`}
+          onChange={(e) => handleChange(idx, e.target.value)}
+          onKeyDown={(e) => handleKeyDown(idx, e)}
+          onFocus={(e) => e.target.select()}
+        />
+      ))}
+    </div>
+  );
+}
+
 export default function AuthPageClient({ searchParams }: { searchParams: AuthSearchParams }) {
+  const router = useRouter();
   const roleParam = searchParams.role;
   const initialRole = (roleParam === 'supplier' ? 'supplier' : 'buyer') as 'buyer' | 'supplier';
   const isAdminAuth = roleParam === 'admin';
-  const initialMode = (searchParams.mode as 'signin' | 'register') || 'signin';
   const redirectPath = searchParams.redirect;
+  const showGuestContinue =
+    !isAdminAuth &&
+    (searchParams.intent === 'rfq' ||
+      searchParams.guestEnquiry === '1' ||
+      (redirectPath || '').includes('/cart') ||
+      (redirectPath || '').includes('/rfq'));
 
   const [activeRole, setActiveRole] = useState<'buyer' | 'supplier'>(initialRole);
-  const [activeMode, setActiveMode] = useState<'signin' | 'register'>(isAdminAuth ? 'signin' : initialMode);
-
+  const [authMode, setAuthMode] = useState<AuthMode>(
+    searchParams.mode === 'register' ? 'register' : 'signin'
+  );
+  const [registerStep, setRegisterStep] = useState<RegisterStep>('email');
   const [email, setEmail] = useState('');
+  const [otp, setOtp] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
-  const [awaitingConfirm, setAwaitingConfirm] = useState(false);
-
-  const [fullName, setFullName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [companyName, setCompanyName] = useState('');
-  const [plantAddress, setPlantAddress] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [addressLine1, setAddressLine1] = useState('');
-  const [city, setCity] = useState('');
-  const [state, setState] = useState('');
-  const [postalCode, setPostalCode] = useState('');
+  const [googleEnabled, setGoogleEnabled] = useState(true);
+  const [cooldown, setCooldown] = useState(0);
 
   useEffect(() => {
     const r = searchParams.role;
-    const m = searchParams.mode;
     if (r === 'buyer' || r === 'supplier') setActiveRole(r);
-    if (r === 'admin') setActiveMode('signin');
-    if (m === 'signin' || m === 'register') setActiveMode(m);
+    setAuthMode(searchParams.mode === 'register' ? 'register' : 'signin');
     const err = searchParams.error;
     if (err && err !== 'missing_code') {
       setErrorMsg(decodeURIComponent(err));
     }
   }, [searchParams]);
 
-  async function resolvePostSignInRedirect(supabase: ReturnType<typeof createBrowserClient>, userId: string) {
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('user_id', userId)
-      .single();
-
-    if (profileError || !profile) {
-      throw new Error('Profile not found. Contact support if this persists.');
-    }
-
-    const role = profile.role;
-
-    if (isAdminAuth) {
-      if (role !== 'admin') {
-        await supabase.auth.signOut();
-        throw new Error('This account does not have admin access.');
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/settings');
+        if (!res.ok) return;
+        const json = await res.json();
+        const enabled = json?.data?.googleLoginEnabled;
+        if (!cancelled && typeof enabled === 'boolean') setGoogleEnabled(enabled);
+      } catch {
+        /* keep default */
       }
-      return redirectPath && redirectPath.startsWith('/admin') ? redirectPath : '/admin/dashboard';
-    }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-    if (role === 'admin') {
-      return '/admin/dashboard';
-    }
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = window.setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => window.clearTimeout(t);
+  }, [cooldown]);
 
-    if (role === 'supplier') {
-      const { data: sup } = await supabase
-        .from('suppliers')
-        .select('status')
-        .eq('user_id', userId)
-        .maybeSingle();
-
-      if (sup?.status === 'rejected') return '/auth/supplier/rejected';
-      if (sup?.status === 'pending') return '/auth/supplier/pending';
-      if (redirectPath && redirectPath.startsWith('/supplier')) return redirectPath;
-      return '/supplier/dashboard';
-    }
-
-    if (
-      redirectPath &&
-      (redirectPath.startsWith('/cart') ||
-        redirectPath.startsWith('/customer') ||
-        redirectPath.startsWith('/products') ||
-        redirectPath.startsWith('/rfq'))
-    ) {
-      return redirectPath;
-    }
-
-    return '/customer/dashboard';
+  function resetFlowState() {
+    setRegisterStep('email');
+    setPassword('');
+    setConfirmPassword('');
+    setOtp('');
+    setErrorMsg('');
+    setSuccessMsg('');
   }
 
-  async function handleAuthSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  function switchAuthMode(mode: AuthMode) {
+    resetFlowState();
+    setAuthMode(mode);
+    router.replace(
+      buildAuthHref(mode, activeRole, redirectPath, {
+        intent: searchParams.intent,
+        guestEnquiry: searchParams.guestEnquiry,
+      }),
+      { scroll: false }
+    );
+  }
+
+  function switchRole(role: 'buyer' | 'supplier') {
+    setActiveRole(role);
+    resetFlowState();
+    router.replace(
+      buildAuthHref(authMode, role, redirectPath, {
+        intent: searchParams.intent,
+        guestEnquiry: searchParams.guestEnquiry,
+      }),
+      { scroll: false }
+    );
+  }
+
+  async function handleGoogle() {
+    setErrorMsg('');
+    setLoading(true);
+    try {
+      const supabase = createBrowserClient();
+      const origin = window.location.origin;
+      const defaultNext =
+        activeRole === 'supplier' ? '/supplier/dashboard' : '/customer/dashboard';
+      const nextTarget =
+        redirectPath && redirectPath.startsWith('/') && !redirectPath.startsWith('//')
+          ? redirectPath
+          : defaultNext;
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(nextTarget)}`,
+          queryParams: { access_type: 'offline', prompt: 'consent' },
+        },
+      });
+      if (error) throw error;
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Google sign-in failed');
+      setLoading(false);
+    }
+  }
+
+  async function deliverOtp() {
+    const res = await fetch('/api/auth/otp/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: email.trim(),
+        role: activeRole === 'supplier' ? 'supplier' : 'customer',
+      }),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.success) {
+      throw new Error(json.error?.message || 'Could not send code');
+    }
+    setRegisterStep('otp');
+    setCooldown(60);
+    setSuccessMsg('Verification code sent. Check your inbox (and spam).');
+  }
+
+  async function sendOtp() {
     setErrorMsg('');
     setSuccessMsg('');
     setLoading(true);
-
     try {
-      const supabase = createBrowserClient();
-
-      if (activeMode === 'signin') {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        });
-
-        if (error) {
-          const msg = (error.message || '').toLowerCase();
-          if (msg.includes('email not confirmed') || msg.includes('not confirmed')) {
-            setErrorMsg('Confirm your email before signing in. Check your inbox for the confirmation link.');
-            setAwaitingConfirm(true);
-          } else {
-            setErrorMsg(error.message || 'Invalid email or password.');
-          }
-          return;
-        }
-
-        if (data.user) {
-          await supabase.auth.getSession();
-          const target = await resolvePostSignInRedirect(supabase, data.user.id);
-          redirectHard(target);
-          return;
-        }
-      } else {
-        if (password !== confirmPassword) {
-          setErrorMsg('Passwords do not match.');
-          return;
-        }
-        if (activeRole === 'buyer') {
-          if (!phone.trim() || !fullName.trim() || !addressLine1.trim() || !city.trim() || !state.trim() || !postalCode.trim()) {
-            setErrorMsg('Name, phone, and a complete delivery address are required.');
-            return;
-          }
-          const res = await fetch('/api/auth/register-customer', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              fullName: fullName.trim(),
-              email: email.trim(),
-              phone: phone.trim(),
-              password,
-              addressLine1: addressLine1.trim(),
-              city: city.trim(),
-              state: state.trim(),
-              postalCode: postalCode.trim(),
-              country: 'India',
-            }),
-          });
-
-          const json = await res.json();
-          if (!res.ok || !json.success) {
-            setErrorMsg(json.error?.message || 'Registration failed');
-            return;
-          }
-
-          setAwaitingConfirm(true);
-          setSuccessMsg(
-            'Account created. Confirm your email, then sign in. Guests can keep using enquiry without an account until they confirm.'
-          );
-          setActiveMode('signin');
-          return;
-        }
-
-        if (!companyName.trim() || !fullName.trim() || !phone.trim() || !plantAddress.trim()) {
-          setErrorMsg('Company, contact, phone, and plant address are required.');
-          return;
-        }
-
-        const res = await fetch('/api/auth/register-supplier', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            companyName: companyName.trim(),
-            contactPerson: fullName.trim(),
-            email: email.trim(),
-            phone: phone.trim(),
-            password,
-            confirmPassword,
-            termsAccepted: true,
-            address: plantAddress.trim(),
-            country: 'India',
-          }),
-        });
-
-        const json = await res.json();
-        if (!res.ok || !json.success) {
-          setErrorMsg(json.error?.message || 'Supplier registration failed');
-          return;
-        }
-
-        setAwaitingConfirm(true);
-        setSuccessMsg(
-          'Application submitted. Confirm your email, then wait for admin approval before you can access the supplier portal.'
-        );
-        setActiveMode('signin');
-      }
+      await deliverOtp();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Authentication error.';
-      setErrorMsg(message);
+      setErrorMsg(err instanceof Error ? err.message : 'Could not send code');
     } finally {
       setLoading(false);
     }
   }
 
-  return (
-    <div className="min-h-screen saas-canvas-bg flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md space-y-4 text-center">
-        <Link href="/" className="inline-block">
-          <span className="text-xl font-semibold text-[#111315] tracking-tight">MITFAST B2B</span>
-        </Link>
-        <h1 className="type-page text-2xl sm:text-2xl">
-          {isAdminAuth ? 'Staff sign in' : activeMode === 'signin' ? 'Sign in' : 'Create enterprise account'}
-        </h1>
-        <p className="type-subtitle">
-          {isAdminAuth
-            ? 'Admin command center'
-            : activeRole === 'buyer'
-              ? 'Buyer procurement workspace'
-              : 'Supplier manufacturing network'}
-        </p>
-      </div>
+  async function handleSignIn(e: React.FormEvent) {
+    e.preventDefault();
+    setErrorMsg('');
+    setSuccessMsg('');
 
-      <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="saas-panel py-8 px-6 space-y-6">
-          {!isAdminAuth && (
-            <div className="saas-segmented w-full grid grid-cols-2">
+    if (!email.trim()) {
+      setErrorMsg('Email is required');
+      return;
+    }
+    if (password.length < 6) {
+      setErrorMsg('Password must be at least 6 characters');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const supabase = createBrowserClient();
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+
+      if (error) {
+        const msg = error.message.toLowerCase();
+        if (msg.includes('invalid login') || msg.includes('invalid credentials')) {
+          throw new Error('Invalid email or password.');
+        }
+        if (msg.includes('email not confirmed') || msg.includes('not confirmed')) {
+          setAuthMode('register');
+          setRegisterStep('otp');
+          await deliverOtp();
+          setSuccessMsg('Verify your email to continue signing in.');
+          return;
+        }
+        throw error;
+      }
+
+      if (!data.user) throw new Error('Sign in failed');
+
+      if (!data.session) {
+        setAuthMode('register');
+        setRegisterStep('otp');
+        await deliverOtp();
+        return;
+      }
+
+      try {
+        await fetch('/api/guest/merge', { method: 'POST' });
+      } catch {
+        /* best-effort */
+      }
+
+      const target = await resolvePostAuthPath(supabase, data.user.id, {
+        isAdminAuth: false,
+        preferredRole: activeRole,
+        redirectPath,
+      });
+      redirectHard(target);
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Could not sign in');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleRegisterEmail(e: React.FormEvent) {
+    e.preventDefault();
+    setErrorMsg('');
+    setSuccessMsg('');
+    if (!email.trim()) {
+      setErrorMsg('Email is required');
+      return;
+    }
+    setRegisterStep('password');
+  }
+
+  async function handleRegisterPassword(e: React.FormEvent) {
+    e.preventDefault();
+    setErrorMsg('');
+    setSuccessMsg('');
+
+    if (password.length < 6) {
+      setErrorMsg('Password must be at least 6 characters');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setErrorMsg('Passwords do not match');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const supabase = createBrowserClient();
+      const role = activeRole === 'supplier' ? 'supplier' : 'customer';
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: { data: { role } },
+      });
+
+      if (error) {
+        const msg = error.message.toLowerCase();
+        if (msg.includes('already') || msg.includes('registered') || msg.includes('exists')) {
+          throw new Error('This email is already registered. Sign in instead.');
+        }
+        throw error;
+      }
+
+      if (!data.user) throw new Error('Registration failed. Please try again.');
+
+      await deliverOtp();
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Could not create account');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function verifyOtp(e: React.FormEvent) {
+    e.preventDefault();
+    setErrorMsg('');
+    setSuccessMsg('');
+
+    if (otp.length < 6) {
+      setErrorMsg('Enter the 6-digit verification code');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const supabase = createBrowserClient();
+      const token = otp.trim();
+      let result = await supabase.auth.verifyOtp({
+        email: email.trim(),
+        token,
+        type: 'email',
+      });
+
+      if (result.error || !result.data.user) {
+        result = await supabase.auth.verifyOtp({
+          email: email.trim(),
+          token,
+          type: 'magiclink',
+        });
+      }
+
+      if (result.error) throw result.error;
+      if (!result.data.user) throw new Error('Verification failed');
+
+      try {
+        await fetch('/api/guest/merge', { method: 'POST' });
+      } catch {
+        /* best-effort */
+      }
+
+      const target = await resolvePostAuthPath(supabase, result.data.user.id, {
+        isAdminAuth: false,
+        preferredRole: activeRole,
+        redirectPath,
+      });
+      redirectHard(target);
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Invalid or expired code');
+      setLoading(false);
+    }
+  }
+
+  async function handleAdminPassword(e: React.FormEvent) {
+    e.preventDefault();
+    setErrorMsg('');
+    setSuccessMsg('');
+    setLoading(true);
+    try {
+      const supabase = createBrowserClient();
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+      if (error) throw error;
+      if (!data.user) throw new Error('Sign in failed');
+      const target = await resolvePostAuthPath(supabase, data.user.id, {
+        isAdminAuth: true,
+        preferredRole: 'buyer',
+        redirectPath,
+      });
+      redirectHard(target);
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Invalid email or password');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const heading = isAdminAuth
+    ? { title: 'Staff sign in', subtitle: 'Admin command center access' }
+    : authMode === 'signin'
+      ? {
+          title: 'Sign in',
+          subtitle:
+            activeRole === 'buyer'
+              ? 'Access your buyer procurement workspace'
+              : 'Access your supplier portal',
+        }
+      : registerStep === 'otp'
+        ? { title: 'Verify your email', subtitle: `Enter the code sent to ${email}` }
+        : registerStep === 'password'
+          ? { title: 'Create a password', subtitle: 'Use at least 6 characters for your account' }
+          : {
+              title: 'Create account',
+              subtitle:
+                activeRole === 'buyer'
+                  ? 'Register as a buyer on MITFAST B2B'
+                  : 'Register as a supplier — admin approval required',
+            };
+
+  return (
+    <div className="auth-page saas-canvas-bg">
+      <div className="auth-card">
+        <Link href="/" className="auth-brand">
+          MITFAST B2B
+        </Link>
+
+        {!isAdminAuth && registerStep === 'email' && (
+          <>
+            <div className="auth-mode-tabs" role="tablist" aria-label="Authentication mode">
               <button
                 type="button"
-                onClick={() => setActiveRole('buyer')}
-                className={`${activeRole === 'buyer' ? 'saas-tab-active' : 'saas-tab-inactive'} inline-flex items-center justify-center gap-1.5`}
+                role="tab"
+                aria-selected={authMode === 'signin'}
+                className={`auth-mode-tab${authMode === 'signin' ? ' is-active' : ''}`}
+                onClick={() => switchAuthMode('signin')}
+              >
+                Sign in
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={authMode === 'register'}
+                className={`auth-mode-tab${authMode === 'register' ? ' is-active' : ''}`}
+                onClick={() => switchAuthMode('register')}
+              >
+                Create account
+              </button>
+            </div>
+
+            <div className="auth-role-tabs" role="tablist" aria-label="Account type">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeRole === 'buyer'}
+                className={`auth-role-tab${activeRole === 'buyer' ? ' is-active' : ''}`}
+                onClick={() => switchRole('buyer')}
               >
                 <ShoppingCart className="w-3.5 h-3.5" />
                 Buyer
               </button>
               <button
                 type="button"
-                onClick={() => setActiveRole('supplier')}
-                className={`${activeRole === 'supplier' ? 'saas-tab-active' : 'saas-tab-inactive'} inline-flex items-center justify-center gap-1.5`}
+                role="tab"
+                aria-selected={activeRole === 'supplier'}
+                className={`auth-role-tab${activeRole === 'supplier' ? ' is-active' : ''}`}
+                onClick={() => switchRole('supplier')}
               >
                 <Building2 className="w-3.5 h-3.5" />
                 Supplier
               </button>
             </div>
-          )}
+          </>
+        )}
 
-          {errorMsg && (
-            <div className="p-3 rounded-2xl bg-[#FEF2F2] border border-[#FECACA] text-xs text-[#B91C1C] flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>{errorMsg}</span>
-            </div>
-          )}
+        <div className="auth-heading">
+          <h1>{heading.title}</h1>
+          <p>{heading.subtitle}</p>
+        </div>
 
-          {successMsg && (
-            <div className="p-3 rounded-2xl bg-[#F0FDF4] border border-[#BBF7D0] text-xs text-[#15803D] flex items-start gap-2">
-              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>{successMsg}</span>
-            </div>
-          )}
+        {authMode === 'register' && !isAdminAuth && (
+          <RegisterStepper current={registerStep} />
+        )}
 
-          {awaitingConfirm && email && (
-            <div className="text-center">
-              <button
-                type="button"
-                onClick={async () => {
-                  setErrorMsg('');
-                  const res = await fetch('/api/auth/resend-confirmation', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email: email.trim() }),
-                  });
-                  const json = await res.json();
-                  if (!res.ok || !json.success) {
-                    setErrorMsg(json.error?.message || 'Could not resend confirmation email.');
-                    return;
-                  }
-                  setSuccessMsg('Confirmation email sent. Check your inbox.');
-                }}
-                className="text-xs text-[#111315] hover:underline"
-              >
-                Resend confirmation email
-              </button>
-            </div>
-          )}
+        {errorMsg && (
+          <div className="auth-alert auth-alert--error" role="alert">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
 
-          <form onSubmit={handleAuthSubmit} className="space-y-4">
-            {activeMode === 'register' && (
-              <>
-                {activeRole === 'supplier' && (
-                  <div className="space-y-1">
-                    <label className="saas-label">Company Legal Entity *</label>
-                    <input
-                      type="text"
-                      required
-                      value={companyName}
-                      onChange={(e) => setCompanyName(e.target.value)}
-                      placeholder="e.g. AeroFast Precision Engineering Ltd"
-                      className="saas-input"
-                    />
-                  </div>
-                )}
+        {successMsg && (
+          <div className="auth-alert auth-alert--success" role="status">
+            <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{successMsg}</span>
+          </div>
+        )}
 
-                <div className="space-y-1">
-                  <label className="saas-label">
-                    {activeRole === 'supplier' ? 'Contact Person Name *' : 'Full Name *'}
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    placeholder="e.g. Amit Patel"
-                    className="saas-input"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="saas-label">Phone Number *</label>
-                  <input
-                    type="tel"
-                    required
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="+91 98765 43210"
-                    className="saas-input"
-                  />
-                </div>
-
-                {activeRole === 'supplier' && (
-                  <div className="space-y-1">
-                    <label className="saas-label">Plant / Facility Address *</label>
-                    <input
-                      type="text"
-                      required
-                      value={plantAddress}
-                      onChange={(e) => setPlantAddress(e.target.value)}
-                      placeholder="e.g. Peenya Industrial Area, Bengaluru"
-                      className="saas-input"
-                    />
-                  </div>
-                )}
-
-                {activeRole === 'buyer' && (
-                  <>
-                    <div className="space-y-1">
-                      <label className="saas-label">Ship-to / delivery address *</label>
-                      <input
-                        type="text"
-                        required
-                        value={addressLine1}
-                        onChange={(e) => setAddressLine1(e.target.value)}
-                        placeholder="Plant / warehouse line 1"
-                        className="saas-input"
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-1">
-                        <label className="saas-label">City *</label>
-                        <input required value={city} onChange={(e) => setCity(e.target.value)} className="saas-input" />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="saas-label">State *</label>
-                        <input required value={state} onChange={(e) => setState(e.target.value)} className="saas-input" />
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="saas-label">Postal code *</label>
-                      <input required value={postalCode} onChange={(e) => setPostalCode(e.target.value)} className="saas-input" />
-                    </div>
-                  </>
-                )}
-              </>
-            )}
-
-            <div className="space-y-1">
-              <label className="saas-label">Work Email Address *</label>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="name@company.com"
-                className="saas-input"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="saas-label">Password *</label>
-              <div className="relative">
+        {isAdminAuth ? (
+          <form onSubmit={handleAdminPassword} className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="saas-label" htmlFor="admin-email">
+                Work email
+              </label>
+              <div className="auth-field-icon">
+                <Mail />
                 <input
+                  id="admin-email"
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="saas-input"
+                  autoComplete="username"
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="saas-label" htmlFor="admin-password">
+                Password
+              </label>
+              <div className="auth-field-icon">
+                <Lock />
+                <input
+                  id="admin-password"
                   type={showPassword ? 'text' : 'password'}
                   required
                   minLength={6}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••••••"
                   className="saas-input pr-10"
+                  autoComplete="current-password"
                 />
                 <button
                   type="button"
+                  className="auth-toggle-pw"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6B7280] hover:text-[#111315]"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
             </div>
+            <button type="submit" disabled={loading} className="saas-btn-primary w-full py-2.5">
+              {loading ? 'Signing in…' : 'Sign in'}
+              {!loading && <ArrowRight className="w-4 h-4" />}
+            </button>
+          </form>
+        ) : authMode === 'signin' ? (
+          <div className="space-y-4">
+            {googleEnabled && (
+              <>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={handleGoogle}
+                  className="auth-google-btn"
+                >
+                  <GoogleGlyph />
+                  Continue with Google
+                </button>
+                <div className="auth-divider">
+                  <span>or</span>
+                </div>
+              </>
+            )}
 
-            {activeMode === 'register' && (
-              <div className="space-y-1">
-                <label className="saas-label">Confirm password *</label>
+            <form onSubmit={handleSignIn} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="saas-label" htmlFor="signin-email">
+                  Work email
+                </label>
+                <div className="auth-field-icon">
+                  <Mail />
+                  <input
+                    id="signin-email"
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@company.com"
+                    className="saas-input"
+                    autoComplete="email"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="saas-label" htmlFor="signin-password">
+                  Password
+                </label>
+                <div className="auth-field-icon">
+                  <Lock />
+                  <input
+                    id="signin-password"
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    minLength={6}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Your password"
+                    className="saas-input pr-10"
+                    autoComplete="current-password"
+                  />
+                  <button
+                    type="button"
+                    className="auth-toggle-pw"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              <button
+                type="submit"
+                disabled={loading || password.length < 6}
+                className="saas-btn-primary w-full py-2.5"
+              >
+                {loading ? 'Signing in…' : 'Sign in'}
+                {!loading && <ArrowRight className="w-4 h-4" />}
+              </button>
+            </form>
+          </div>
+        ) : registerStep === 'email' ? (
+          <div className="space-y-4">
+            {googleEnabled && (
+              <>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={handleGoogle}
+                  className="auth-google-btn"
+                >
+                  <GoogleGlyph />
+                  Continue with Google
+                </button>
+                <div className="auth-divider">
+                  <span>or</span>
+                </div>
+              </>
+            )}
+
+            <form onSubmit={handleRegisterEmail} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="saas-label" htmlFor="register-email">
+                  Work email
+                </label>
+                <div className="auth-field-icon">
+                  <Mail />
+                  <input
+                    id="register-email"
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@company.com"
+                    className="saas-input"
+                    autoComplete="email"
+                  />
+                </div>
+              </div>
+              <button type="submit" disabled={loading} className="saas-btn-primary w-full py-2.5">
+                Continue
+                {!loading && <ArrowRight className="w-4 h-4" />}
+              </button>
+              {activeRole === 'supplier' && (
+                <p className="auth-hint">
+                  Suppliers complete a company profile after verification. Portal access starts after
+                  admin approval.
+                </p>
+              )}
+            </form>
+          </div>
+        ) : registerStep === 'password' ? (
+          <form onSubmit={handleRegisterPassword} className="space-y-4">
+            <EmailChip
+              email={email}
+              onEdit={() => {
+                setRegisterStep('email');
+                setPassword('');
+                setConfirmPassword('');
+                setErrorMsg('');
+                setSuccessMsg('');
+              }}
+            />
+            <div className="space-y-1.5">
+              <label className="saas-label" htmlFor="register-password">
+                Password
+              </label>
+              <div className="auth-field-icon">
+                <Lock />
                 <input
+                  id="register-password"
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  minLength={6}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="At least 6 characters"
+                  className="saas-input pr-10"
+                  autoComplete="new-password"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  className="auth-toggle-pw"
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="saas-label" htmlFor="register-confirm">
+                Confirm password
+              </label>
+              <div className="auth-field-icon">
+                <Lock />
+                <input
+                  id="register-confirm"
                   type={showPassword ? 'text' : 'password'}
                   required
                   minLength={6}
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="••••••••••••"
+                  placeholder="Re-enter password"
                   className="saas-input"
+                  autoComplete="new-password"
                 />
               </div>
-            )}
-
-            <div className="pt-2">
-              <button type="submit" disabled={loading} className="saas-btn-primary w-full py-2.5 gap-2">
-                <span>
-                  {loading ? 'Authenticating...' : activeMode === 'signin' ? 'Sign In' : 'Create procurement account'}
-                </span>
-                {!loading && <ArrowRight className="w-4 h-4" />}
+            </div>
+            <button
+              type="submit"
+              disabled={loading || password.length < 6 || confirmPassword.length < 6}
+              className="saas-btn-primary w-full py-2.5"
+            >
+              {loading ? 'Creating account…' : 'Create account & verify'}
+              {!loading && <ArrowRight className="w-4 h-4" />}
+            </button>
+            <div className="auth-back-row">
+              <button
+                type="button"
+                onClick={() => {
+                  setRegisterStep('email');
+                  setPassword('');
+                  setConfirmPassword('');
+                  setErrorMsg('');
+                }}
+              >
+                ← Back
               </button>
             </div>
-
-            {!isAdminAuth && (
-              <div className="text-center pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveMode(activeMode === 'signin' ? 'register' : 'signin');
-                    setErrorMsg('');
-                    setSuccessMsg('');
-                  }}
-                  className="text-xs text-[#6B7280] hover:text-[#111315]"
-                >
-                  {activeMode === 'signin'
-                    ? "Don't have an enterprise account? Create one"
-                    : 'Already registered? Sign in'}
-                </button>
-              </div>
-            )}
           </form>
-        </div>
+        ) : (
+          <form onSubmit={verifyOtp} className="space-y-4">
+            <EmailChip
+              email={email}
+              onEdit={() => {
+                setRegisterStep('email');
+                setOtp('');
+                setErrorMsg('');
+                setSuccessMsg('');
+              }}
+            />
+            <div className="space-y-2">
+              <label className="saas-label text-center block">Verification code</label>
+              <OtpInput value={otp} onChange={setOtp} disabled={loading} />
+            </div>
+            <button
+              type="submit"
+              disabled={loading || otp.length < 6}
+              className="saas-btn-primary w-full py-2.5"
+            >
+              {loading ? 'Verifying…' : 'Verify & continue'}
+              {!loading && <ArrowRight className="w-4 h-4" />}
+            </button>
+            <div className="auth-back-row">
+              <button
+                type="button"
+                onClick={() => {
+                  setRegisterStep('password');
+                  setOtp('');
+                  setSuccessMsg('');
+                  setErrorMsg('');
+                }}
+              >
+                ← Back
+              </button>
+              <button type="button" disabled={loading || cooldown > 0} onClick={() => void sendOtp()}>
+                {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend code'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {!isAdminAuth && authMode === 'signin' && (
+          <p className="auth-footer-link">
+            Don&apos;t have an account?{' '}
+            <button type="button" onClick={() => switchAuthMode('register')}>
+              Create account
+            </button>
+          </p>
+        )}
+
+        {!isAdminAuth && authMode === 'register' && registerStep === 'email' && (
+          <p className="auth-footer-link">
+            Already have an account?{' '}
+            <button type="button" onClick={() => switchAuthMode('signin')}>
+              Sign in
+            </button>
+          </p>
+        )}
+
+        {showGuestContinue && activeRole === 'buyer' && authMode === 'signin' && (
+          <div className="auth-guest-block">
+            <p>Prefer not to sign in? Send your cart as a guest enquiry.</p>
+            <Link href="/enquiry?type=cart" className="auth-guest-btn">
+              Continue as Guest
+            </Link>
+          </div>
+        )}
       </div>
     </div>
   );

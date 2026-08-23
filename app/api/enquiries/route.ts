@@ -63,9 +63,21 @@ export async function POST(request: NextRequest) {
         guestName: String(form.get('guestName') || form.get('name') || ''),
         guestEmail: String(form.get('guestEmail') || form.get('email') || ''),
         guestPhone: String(form.get('guestPhone') || form.get('phone') || ''),
+        country: String(form.get('country') || ''),
+        companyName: String(form.get('companyName') || '') || undefined,
+        enquiryType: String(form.get('enquiryType') || '') || undefined,
         customerId: form.get('customerId') || null,
       };
       if (body.productId === '' || body.productId === 'null') body.productId = null;
+
+      const lineItemsRaw = form.get('lineItems');
+      if (typeof lineItemsRaw === 'string' && lineItemsRaw.trim()) {
+        try {
+          body.lineItems = JSON.parse(lineItemsRaw);
+        } catch {
+          /* ignore malformed lineItems */
+        }
+      }
 
       const file = form.get('attachment') || form.get('file');
       if (file && typeof file === 'object' && 'arrayBuffer' in file) {

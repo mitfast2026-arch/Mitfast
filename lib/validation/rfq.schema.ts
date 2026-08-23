@@ -30,3 +30,8 @@ export const rejectRfqSchema = z.object({
   rfqId: z.string().uuid('Invalid RFQ ID'),
   rejectionReason: z.string().min(3, 'Rejection reason is required'),
 });
+
+export const updateRfqContactSchema = z.object({
+  rfqId: z.string().uuid('Invalid RFQ ID'),
+  deliveryAddress: deliveryAddressInputSchema.optional(),
+});

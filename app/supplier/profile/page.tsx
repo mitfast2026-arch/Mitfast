@@ -15,6 +15,7 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import CountrySelect from '@/components/ui/CountrySelect';
 
 export default function SupplierProfilePage() {
   const router = useRouter();
@@ -98,7 +99,7 @@ export default function SupplierProfilePage() {
 
   if (loading) {
     return (
-      <div className="p-12 text-center text-[#6B7280] text-xs">
+      <div className="p-12 text-center text-portal-muted text-xs">
         Loading supplier profile...
       </div>
     );
@@ -121,53 +122,53 @@ export default function SupplierProfilePage() {
           onClick={loadProfile}
           className="saas-neu-button text-xs py-2 px-3.5 flex items-center gap-2 self-start sm:self-auto"
         >
-          <RefreshCw className={`w-3.5 h-3.5 text-[#6B7280] ${loading ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-3.5 h-3.5 text-portal-muted ${loading ? 'animate-spin' : ''}`} />
           <span>Reload</span>
         </button>
       </div>
 
       {/* Rejection Resubmission Banner if Applicable */}
       {supplier?.status === 'rejected' && (
-        <div className="p-5 rounded-2xl bg-[#FEF2F2] border border-[#FECACA] text-rose-900 space-y-2">
-          <div className="flex items-center gap-2 font-medium text-sm text-[#B91C1C]">
-            <AlertCircle className="w-5 h-5 text-[#B91C1C] shrink-0" />
+        <div className="p-5 rounded-2xl bg-portal-danger-soft border border-portal-danger/30 text-rose-900 space-y-2">
+          <div className="flex items-center gap-2 font-medium text-sm text-portal-danger">
+            <AlertCircle className="w-5 h-5 text-portal-danger shrink-0" />
             <span>Registration Revision Required</span>
           </div>
-          <p className="text-xs text-[#B91C1C] leading-relaxed">
+          <p className="text-xs text-portal-danger leading-relaxed">
             Admin Feedback: <b className="font-medium text-rose-950">{supplier.rejection_reason || 'Incomplete compliance credentials.'}</b>
           </p>
-          <p className="text-xs text-[#B91C1C]">
+          <p className="text-xs text-portal-danger">
             Please update the required information below and click "Save & Resubmit for Approval" to notify the operations team.
           </p>
         </div>
       )}
 
       {successMsg && (
-        <div className="p-4 rounded-xl bg-[#F0FDF4] text-xs text-[#15803D] flex items-center gap-2.5 font-medium">
-          <Check className="w-4 h-4 shrink-0 text-[#15803D]" />
+        <div className="p-4 rounded-xl bg-portal-success-soft text-xs text-portal-success flex items-center gap-2.5 font-medium">
+          <Check className="w-4 h-4 shrink-0 text-portal-success" />
           <span>{successMsg}</span>
         </div>
       )}
 
       {errorMsg && (
-        <div className="p-4 rounded-xl bg-[#FEF2F2] text-xs text-[#B91C1C] flex items-center gap-2.5 font-medium">
-          <AlertCircle className="w-4 h-4 shrink-0 text-[#B91C1C]" />
+        <div className="p-4 rounded-xl bg-portal-danger-soft text-xs text-portal-danger flex items-center gap-2.5 font-medium">
+          <AlertCircle className="w-4 h-4 shrink-0 text-portal-danger" />
           <span>{errorMsg}</span>
         </div>
       )}
 
       <form onSubmit={(e) => handleSaveProfile(e, false)} className="saas-panel p-6 sm:p-8 space-y-6">
         {/* Verification Status Overview */}
-        <div className="flex items-center justify-between p-4 rounded-xl bg-[#F7F7F8] border border-[#E2E4E8]">
+        <div className="flex items-center justify-between p-4 rounded-xl bg-portal-inset border border-portal-border">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-[#ECEEF0] text-[#111315] flex items-center justify-center">
+            <div className="h-10 w-10 rounded-xl bg-portal-inset text-portal-text flex items-center justify-center">
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
-              <div className="text-xs font-medium text-[#111315]">
-                QMS Account Status: <span className="uppercase text-[#111315]">{supplier?.status}</span>
+              <div className="text-xs font-medium text-portal-text">
+                QMS Account Status: <span className="uppercase text-portal-text">{supplier?.status}</span>
               </div>
-              <div className="text-[11px] text-[#6B7280]">
+              <div className="text-[11px] text-portal-muted">
                 Registered on {new Date(supplier?.created_at).toLocaleDateString()} • Partner ID: <span className="type-id">{supplier?.id?.slice(0, 8)}</span>
               </div>
             </div>
@@ -185,8 +186,8 @@ export default function SupplierProfilePage() {
 
         {/* Company Fields */}
         <div className="space-y-4">
-          <div className="flex items-center gap-2 border-b border-[#E2E4E8] pb-3">
-            <Building2 className="w-4 h-4 text-[#111315]" />
+          <div className="flex items-center gap-2 border-b border-portal-border pb-3">
+            <Building2 className="w-4 h-4 text-portal-text" />
             <h3 className="type-section">
               Facility Information
             </h3>
@@ -221,7 +222,7 @@ export default function SupplierProfilePage() {
                 type="email"
                 disabled
                 value={supplier?.email || ''}
-                className="saas-input text-xs bg-[#F7F7F8] text-[#6B7280] cursor-not-allowed"
+                className="saas-input text-xs bg-portal-inset text-portal-muted cursor-not-allowed"
                 title="Account email cannot be modified directly"
               />
             </div>
@@ -239,13 +240,14 @@ export default function SupplierProfilePage() {
 
             <div className="space-y-1">
               <label className="saas-label">Country *</label>
-              <input 
-                type="text"
+              <CountrySelect
                 required
                 value={country}
-                onChange={(e) => setCountry(e.target.value)}
-                className="saas-input text-xs"
+                onChange={setCountry}
               />
+              <p className="text-[10px] text-portal-muted mt-1">
+                Used as the origin flag on your product cards.
+              </p>
             </div>
 
             <div className="space-y-1">
@@ -273,7 +275,7 @@ export default function SupplierProfilePage() {
         </div>
 
         {/* Action Buttons */}
-        <div className="pt-4 border-t border-[#E2E4E8] flex flex-wrap justify-end gap-3">
+        <div className="pt-4 border-t border-portal-border flex flex-wrap justify-end gap-3">
           {supplier?.status === 'rejected' ? (
             <button 
               type="button"

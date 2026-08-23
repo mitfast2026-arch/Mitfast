@@ -24,9 +24,43 @@ export async function createSupplierByAdmin(formData: unknown): Promise<ServerRe
     const { companyName, contactPerson, email, phone, address, country, website } = validated.data;
     const adminClient = createAdminClient();
 
+    const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
+      email,
+      email_confirm: true,
+      user_metadata: {
+        role: 'supplier',
+        full_name: contactPerson,
+        phone,
+      },
+    });
+
+    if (authError || !authData.user) {
+      return {
+        success: false,
+        error: {
+          message: authError?.message || 'Failed to create supplier login',
+          code: 'AUTH_ERROR',
+        },
+      };
+    }
+
+    const userId = authData.user.id;
+
+    await adminClient.from('profiles').upsert(
+      {
+        user_id: userId,
+        role: 'supplier',
+        full_name: contactPerson,
+        email,
+        phone,
+      },
+      { onConflict: 'user_id' }
+    );
+
     const { data: supplier, error } = await adminClient
       .from('suppliers')
       .insert({
+        user_id: userId,
         company_name: companyName,
         contact_person: contactPerson,
         email,
@@ -424,8 +458,130 @@ async function getSupplierProductStatsLegacy(supplierId: string): Promise<Server
   }
 }
 
+export type SupplierListMetrics = {
+  productCount: number;
+  totalViews: number;
+  totalEnquiries: number;
+  totalRfqs: number;
+  totalOrders: number;
+};
+
+export type SupplierAdminListItem = {
+  id: string;
+  user_id: string | null;
+  company_name: string;
+  contact_person: string;
+  email: string;
+  phone: string;
+  address: string | null;
+  country: string;
+  website: string | null;
+  status: SupplierStatus;
+  rejection_reason: string | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+  metrics: SupplierListMetrics;
+};
+
+const EMPTY_METRICS: SupplierListMetrics = {
+  productCount: 0,
+  totalViews: 0,
+  totalEnquiries: 0,
+  totalRfqs: 0,
+  totalOrders: 0,
+};
+
+async function attachSupplierListMetrics(
+  adminClient: ReturnType<typeof createAdminClient>,
+  suppliers: Array<{ id: string }>
+): Promise<Map<string, SupplierListMetrics>> {
+  const metricsMap = new Map<string, SupplierListMetrics>();
+  if (suppliers.length === 0) return metricsMap;
+
+  const supplierIds = suppliers.map((s) => s.id);
+  const { data: rows, error } = await (adminClient as any).rpc('supplier_admin_summary_stats', {
+    p_supplier_ids: supplierIds,
+  });
+
+  if (error || !rows) {
+    for (const id of supplierIds) {
+      metricsMap.set(id, { ...EMPTY_METRICS });
+    }
+    return metricsMap;
+  }
+
+  for (const row of rows) {
+    metricsMap.set(row.supplier_id, {
+      productCount: Number(row.product_count) || 0,
+      totalViews: Number(row.total_views) || 0,
+      totalEnquiries: Number(row.total_enquiries) || 0,
+      totalRfqs: Number(row.total_rfqs) || 0,
+      totalOrders: Number(row.total_orders) || 0,
+    });
+  }
+
+  for (const id of supplierIds) {
+    if (!metricsMap.has(id)) {
+      metricsMap.set(id, { ...EMPTY_METRICS });
+    }
+  }
+
+  return metricsMap;
+}
+
+async function getSupplierStatusCounts(
+  adminClient: ReturnType<typeof createAdminClient>
+): Promise<Record<SupplierStatus, number>> {
+  const counts: Record<SupplierStatus, number> = {
+    pending: 0,
+    active: 0,
+    rejected: 0,
+    archived: 0,
+  };
+
+  const statuses = Object.keys(counts) as SupplierStatus[];
+  const results = await Promise.all(
+    statuses.map(async (status) => {
+      const { count, error } = await adminClient
+        .from('suppliers')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', status);
+      if (error) return [status, 0] as const;
+      return [status, count || 0] as const;
+    })
+  );
+
+  for (const [status, count] of results) {
+    counts[status] = count;
+  }
+
+  return counts;
+}
+
+async function getSupplierCountries(
+  adminClient: ReturnType<typeof createAdminClient>
+): Promise<string[]> {
+  // Cap scan — distinct countries for filter chips; avoid unbounded full-table reads
+  const { data, error } = await adminClient
+    .from('suppliers')
+    .select('country')
+    .not('country', 'is', null)
+    .order('country', { ascending: true })
+    .limit(500);
+
+  if (error || !data) return [];
+
+  const unique = new Set<string>();
+  for (const row of data) {
+    if (row.country?.trim()) unique.add(row.country.trim());
+  }
+
+  return Array.from(unique).sort((a, b) => a.localeCompare(b));
+}
+
 /**
- * Admin: list and search suppliers with pagination and filtering.
+ * Admin: list and search suppliers with pagination, filtering, and summary metrics.
  */
 export async function getSuppliersForAdmin(params: {
   page?: number;
@@ -434,7 +590,16 @@ export async function getSuppliersForAdmin(params: {
   status?: SupplierStatus;
   country?: string;
   sortBy?: 'created_at_desc' | 'created_at_asc' | 'company_name_asc' | 'company_name_desc';
-}): Promise<ServerResult<{ suppliers: any[]; total: number; page: number; limit: number }>> {
+}): Promise<
+  ServerResult<{
+    suppliers: SupplierAdminListItem[];
+    total: number;
+    page: number;
+    limit: number;
+    statusCounts: Record<SupplierStatus, number>;
+    countries: string[];
+  }>
+> {
   try {
     const adminClient = createAdminClient();
     const page = Math.max(1, params.page || 1);
@@ -452,7 +617,9 @@ export async function getSuppliersForAdmin(params: {
     }
 
     if (params.search) {
-      query = query.or(`company_name.ilike.%${params.search}%,contact_person.ilike.%${params.search}%,email.ilike.%${params.search}%`);
+      query = query.or(
+        `company_name.ilike.%${params.search}%,contact_person.ilike.%${params.search}%,email.ilike.%${params.search}%`
+      );
     }
 
     switch (params.sortBy) {
@@ -471,7 +638,11 @@ export async function getSuppliersForAdmin(params: {
         break;
     }
 
-    const { data: suppliers, count, error } = await query.range(offset, offset + limit - 1);
+    const [{ data: suppliers, count, error }, statusCounts, countries] = await Promise.all([
+      query.range(offset, offset + limit - 1),
+      getSupplierStatusCounts(adminClient),
+      getSupplierCountries(adminClient),
+    ]);
 
     if (error) {
       return {
@@ -480,13 +651,21 @@ export async function getSuppliersForAdmin(params: {
       };
     }
 
+    const metricsMap = await attachSupplierListMetrics(adminClient, suppliers || []);
+    const enrichedSuppliers: SupplierAdminListItem[] = (suppliers || []).map((supplier) => ({
+      ...supplier,
+      metrics: metricsMap.get(supplier.id) || { ...EMPTY_METRICS },
+    }));
+
     return {
       success: true,
       data: {
-        suppliers: suppliers || [],
+        suppliers: enrichedSuppliers,
         total: count || 0,
         page,
         limit,
+        statusCounts,
+        countries,
       },
     };
   } catch (error) {

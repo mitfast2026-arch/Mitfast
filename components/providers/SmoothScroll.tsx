@@ -37,7 +37,12 @@ export default function SmoothScroll({ children }: { children: React.ReactNode }
       autoRaf: false,
     });
 
-    lenis.on('scroll', ScrollTrigger.update);
+    lenis.on('scroll', (event) => {
+      ScrollTrigger.update();
+      window.dispatchEvent(
+        new CustomEvent('app-scroll', { detail: { y: event.scroll } })
+      );
+    });
 
     const tickerCb = (time: number) => {
       lenis.raf(time * 1000);

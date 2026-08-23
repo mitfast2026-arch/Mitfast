@@ -11,11 +11,26 @@ interface ApprovalsCountContextValue {
 const ApprovalsCountContext = createContext<ApprovalsCountContextValue | null>(null);
 
 const APPROVALS_CHANGED_EVENT = 'mitfast:approvals-changed';
+const DASHBOARD_CHANGED_EVENT = 'mitfast:dashboard-changed';
 
 export function notifyApprovalsChanged() {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(APPROVALS_CHANGED_EVENT));
+    // Approvals/publish/reject also change Operations KPIs
+    window.dispatchEvent(new CustomEvent(DASHBOARD_CHANGED_EVENT));
   }
+}
+
+export function notifyDashboardChanged() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(DASHBOARD_CHANGED_EVENT));
+  }
+}
+
+export function onDashboardChanged(handler: () => void) {
+  if (typeof window === 'undefined') return () => {};
+  window.addEventListener(DASHBOARD_CHANGED_EVENT, handler);
+  return () => window.removeEventListener(DASHBOARD_CHANGED_EVENT, handler);
 }
 
 export function ApprovalsCountProvider({ children }: { children: React.ReactNode }) {

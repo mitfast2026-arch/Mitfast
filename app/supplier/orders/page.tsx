@@ -53,7 +53,7 @@ export default function SupplierOrdersPage() {
           onClick={loadOrders} 
           className="saas-neu-button text-xs py-2 px-3.5 flex items-center gap-2 self-start sm:self-auto"
         >
-          <RefreshCw className={`w-3.5 h-3.5 text-[#6B7280] ${loading ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-3.5 h-3.5 text-portal-muted ${loading ? 'animate-spin' : ''}`} />
           <span>Refresh Orders</span>
         </button>
       </div>
@@ -70,17 +70,17 @@ export default function SupplierOrdersPage() {
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="saas-input pl-8 text-xs"
               />
-              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[#6B7280]" />
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-portal-muted" />
             </div>
           </div>
 
           <div className="space-y-2.5 max-h-[700px] overflow-y-auto pr-1">
             {loading ? (
-              <div className="saas-panel p-12 text-center text-xs text-[#6B7280]">
+              <div className="saas-panel p-12 text-center text-xs text-portal-muted">
                 Loading orders…
               </div>
             ) : orders.length === 0 ? (
-              <div className="saas-panel p-12 text-center text-xs text-[#6B7280]">
+              <div className="saas-panel p-12 text-center text-xs text-portal-muted">
                 No production orders found for your facility.
               </div>
             ) : (
@@ -93,11 +93,11 @@ export default function SupplierOrdersPage() {
                     className={`saas-panel p-4 cursor-pointer transition-all space-y-2 ${
                       isSelected 
                         ? 'ring-2 ring-amber-500 shadow-md' 
-                        : 'hover:bg-[#F7F7F8]/70'
+                        : 'hover:bg-portal-hover'
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="type-id text-[#111315]">{o.order_number}</span>
+                      <span className="type-id text-portal-text">{o.order_number}</span>
                       <span className={
                         o.status === 'dispatched' 
                           ? 'saas-badge-success' 
@@ -109,14 +109,14 @@ export default function SupplierOrdersPage() {
                       </span>
                     </div>
 
-                    <div className="text-xs text-[#6B7280]">
+                    <div className="text-xs text-portal-muted">
                       Your SKU lines to fulfill
                     </div>
 
-                    <div className="flex items-center justify-between text-xs pt-2 border-t border-[#E2E4E8]">
-                      <span className="text-[#6B7280]">{o.items?.length || 0} component line(s)</span>
-                      <span className="text-[#6B7280] flex items-center gap-1">
-                        <Calendar className="w-3 h-3 text-[#6B7280]" />
+                    <div className="flex items-center justify-between text-xs pt-2 border-t border-portal-border">
+                      <span className="text-portal-muted">{o.items?.length || 0} component line(s)</span>
+                      <span className="text-portal-muted flex items-center gap-1">
+                        <Calendar className="w-3 h-3 text-portal-muted" />
                         <span>{new Date(o.created_at).toLocaleDateString()}</span>
                       </span>
                     </div>
@@ -131,7 +131,7 @@ export default function SupplierOrdersPage() {
         <div className="lg:col-span-7">
           {selectedOrder ? (
             <div className="saas-panel p-6 space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#E2E4E8] pb-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-portal-border pb-4">
                 <div>
                   <div className="flex items-center gap-3">
                     <h2 className="type-section type-id">
@@ -139,20 +139,20 @@ export default function SupplierOrdersPage() {
                     </h2>
                     <span className="saas-badge-cyan">{selectedOrder.status.toUpperCase()}</span>
                   </div>
-                  <div className="text-xs text-[#6B7280] mt-1">
+                  <div className="text-xs text-portal-muted mt-1">
                     Confirmed on {new Date(selectedOrder.created_at).toLocaleDateString()}
                   </div>
                 </div>
 
                 <div className="text-right">
-                  <div className="type-meta text-[#6B7280]">Fulfillment status</div>
+                  <div className="type-meta text-portal-muted">Fulfillment status</div>
                   <span className="saas-badge-gold mt-0.5">{selectedOrder.status.toUpperCase()}</span>
                 </div>
               </div>
 
               {/* Items Table */}
               <div className="space-y-2">
-                <div className="type-section text-[#6B7280]">
+                <div className="type-section text-portal-muted">
                   Your Components to Fulfill
                 </div>
 
@@ -168,11 +168,11 @@ export default function SupplierOrdersPage() {
                       {selectedOrder.items?.map((item: any) => {
                         return (
                           <tr key={item.id}>
-                            <td className="font-medium text-[#111315] text-xs">
+                            <td className="font-medium text-portal-text text-xs">
                               {item.product_name_snapshot}
-                              {item.sku ? <span className="block text-[#6B7280] font-normal">SKU {item.sku}</span> : null}
+                              {item.sku ? <span className="block text-portal-muted font-normal">SKU {item.sku}</span> : null}
                             </td>
-                            <td className="text-right text-[#111315] type-metric">{item.quantity} Units</td>
+                            <td className="text-right text-portal-text type-metric">{item.quantity} Units</td>
                           </tr>
                         );
                       })}
@@ -181,12 +181,12 @@ export default function SupplierOrdersPage() {
                 </div>
               </div>
 
-              <p className="text-xs text-[#6B7280]">
+              <p className="text-xs text-portal-muted">
                 Buyer identity, ship-to address, and selling prices are withheld.
               </p>
             </div>
           ) : (
-            <div className="saas-panel p-16 text-center text-xs text-[#6B7280]">
+            <div className="saas-panel p-16 text-center text-xs text-portal-muted">
               Select an order from the list to view fulfillment details.
             </div>
           )}

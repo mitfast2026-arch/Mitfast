@@ -14,15 +14,32 @@ import {
   MapPin,
   Loader2,
 } from 'lucide-react';
-import { apiGet, apiPost } from '@/lib/client/api-client';
+import { apiPost } from '@/lib/client/api-client';
+import {
+  cachedApiGet,
+  markPortalContentReady,
+  peekPortalCache,
+  setPortalCache,
+} from '@/lib/client/portal-data-cache';
 import { useMutation, mutationKey } from '@/lib/client/use-mutation';
 import { notifyApprovalsChanged } from '@/components/portal/ApprovalsCountContext';
+import AdminPageHeader from '@/components/admin/AdminPageHeader';
+import PortalModal from '@/components/admin/PortalModal';
+import { StatusPill, SkeletonCard } from '@/components/portal/ds';
+import { toast } from 'sonner';
 
 type Tab = 'suppliers' | 'new' | 'updates';
 
+type ApprovalsPayload = {
+  pendingSuppliers: any[];
+  newProductRequests: any[];
+  productUpdateRequests: any[];
+};
+
 export default function AdminApprovalsPage() {
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const cached = peekPortalCache<ApprovalsPayload>('/api/admin/approvals');
+  const [data, setData] = useState<ApprovalsPayload | null>(cached?.data ?? null);
+  const [loading, setLoading] = useState(!cached);
   const [activeTab, setActiveTab] = useState<Tab>('suppliers');
   const [rejectionTarget, setRejectionTarget] = useState<{ type: 'supplier' | 'product'; id: string; name: string } | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
@@ -30,18 +47,25 @@ export default function AdminApprovalsPage() {
   const { isPending, run } = useMutation();
 
   const loadApprovals = useCallback(async (showLoading = true) => {
-    if (showLoading) setLoading(true);
+    const existing = peekPortalCache<ApprovalsPayload>('/api/admin/approvals');
+    if (existing) {
+      setData(existing.data);
+      setLoading(false);
+    } else if (showLoading) {
+      setLoading(true);
+    }
     try {
-      const result = await apiGet<{
-        pendingSuppliers: any[];
-        newProductRequests: any[];
-        productUpdateRequests: any[];
-      }>('/api/admin/approvals');
-      if (result.ok) setData(result.data);
+      const result = await cachedApiGet<ApprovalsPayload>('/api/admin/approvals', {
+        force: showLoading && !existing,
+      });
+      if (result.ok) {
+        setData(result.data);
+        markPortalContentReady('/admin/approvals');
+      }
     } catch (err) {
       console.error('Failed to load approvals:', err);
     } finally {
-      if (showLoading) setLoading(false);
+      setLoading(false);
     }
   }, []);
 
@@ -49,18 +73,34 @@ export default function AdminApprovalsPage() {
     loadApprovals();
   }, [loadApprovals]);
 
+  function patchApprovals(updater: (prev: ApprovalsPayload | null) => ApprovalsPayload | null) {
+    setData((prev) => {
+      const next = updater(prev);
+      if (next) setPortalCache('/api/admin/approvals', next);
+      return next;
+    });
+  }
+
   async function handleApproveSupplier(supplierId: string) {
     setActionError(null);
     await run(() => apiPost(`/api/suppliers/${supplierId}/approve`), {
       key: mutationKey(supplierId, 'approve-supplier'),
       onSuccess: () => {
-        setData((prev: any) => ({
-          ...prev,
-          pendingSuppliers: (prev?.pendingSuppliers || []).filter((s: any) => s.id !== supplierId),
-        }));
+        patchApprovals((prev) =>
+          prev
+            ? {
+                ...prev,
+                pendingSuppliers: (prev.pendingSuppliers || []).filter((s: any) => s.id !== supplierId),
+              }
+            : prev
+        );
         notifyApprovalsChanged();
+        toast.success('Supplier approved');
       },
-      onError: (msg) => setActionError(msg),
+      onError: (msg) => {
+        setActionError(msg);
+        toast.error(msg);
+      },
     });
   }
 
@@ -69,14 +109,24 @@ export default function AdminApprovalsPage() {
     await run(() => apiPost(`/api/products/requests/${requestId}/approve`), {
       key: mutationKey(requestId, 'approve-product'),
       onSuccess: () => {
-        setData((prev: any) => ({
-          ...prev,
-          newProductRequests: (prev?.newProductRequests || []).filter((r: any) => r.id !== requestId),
-          productUpdateRequests: (prev?.productUpdateRequests || []).filter((r: any) => r.id !== requestId),
-        }));
+        patchApprovals((prev) =>
+          prev
+            ? {
+                ...prev,
+                newProductRequests: (prev.newProductRequests || []).filter((r: any) => r.id !== requestId),
+                productUpdateRequests: (prev.productUpdateRequests || []).filter(
+                  (r: any) => r.id !== requestId
+                ),
+              }
+            : prev
+        );
         notifyApprovalsChanged();
+        toast.success('Product request approved');
       },
-      onError: (msg) => setActionError(msg),
+      onError: (msg) => {
+        setActionError(msg);
+        toast.error(msg);
+      },
     });
   }
 
@@ -95,22 +145,38 @@ export default function AdminApprovalsPage() {
         key: mutationKey(target.id, 'reject'),
         onSuccess: () => {
           if (target.type === 'supplier') {
-            setData((prev: any) => ({
-              ...prev,
-              pendingSuppliers: (prev?.pendingSuppliers || []).filter((s: any) => s.id !== target.id),
-            }));
+            patchApprovals((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    pendingSuppliers: (prev.pendingSuppliers || []).filter((s: any) => s.id !== target.id),
+                  }
+                : prev
+            );
           } else {
-            setData((prev: any) => ({
-              ...prev,
-              newProductRequests: (prev?.newProductRequests || []).filter((r: any) => r.id !== target.id),
-              productUpdateRequests: (prev?.productUpdateRequests || []).filter((r: any) => r.id !== target.id),
-            }));
+            patchApprovals((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    newProductRequests: (prev.newProductRequests || []).filter(
+                      (r: any) => r.id !== target.id
+                    ),
+                    productUpdateRequests: (prev.productUpdateRequests || []).filter(
+                      (r: any) => r.id !== target.id
+                    ),
+                  }
+                : prev
+            );
           }
           setRejectionTarget(null);
           setRejectionReason('');
           notifyApprovalsChanged();
+          toast.success('Request rejected');
         },
-        onError: (msg) => setActionError(msg),
+        onError: (msg) => {
+          setActionError(msg);
+          toast.error(msg);
+        },
       }
     );
   }
@@ -128,7 +194,7 @@ export default function AdminApprovalsPage() {
   function renderEmpty(title: string, body: string, Icon: typeof Package) {
     return (
       <div className="saas-panel p-16 text-center space-y-2">
-        <Icon className="w-10 h-10 text-[#6B7280] mx-auto" />
+        <Icon className="w-10 h-10 text-portal-muted mx-auto" />
         <h3 className="type-empty-title">{title}</h3>
         <p className="type-empty-body">{body}</p>
       </div>
@@ -145,11 +211,11 @@ export default function AdminApprovalsPage() {
             <span className="saas-badge-neutral">
               {req.request_type === 'update' ? 'Update pending' : 'Pending'}
             </span>
-            <h3 className="text-base text-[#111315]">{proposed.name || liveProd?.name}</h3>
+            <h3 className="text-base text-portal-text">{proposed.name || liveProd?.name}</h3>
           </div>
-          <div className="text-xs text-[#6B7280] space-y-1.5 saas-inset-surface p-3">
+          <div className="text-xs text-portal-muted space-y-1.5 saas-inset-surface p-3">
             <div>
-              Supplier: <b className="text-[#111315] font-medium">{liveProd?.supplier?.company_name || 'Supplier'}</b>
+              Supplier: <b className="text-portal-text font-medium">{liveProd?.supplier?.company_name || 'Supplier'}</b>
             </div>
             <div className="flex items-center gap-6 pt-1">
               <div>
@@ -157,7 +223,7 @@ export default function AdminApprovalsPage() {
               </div>
               {proposed.moq && (
                 <div>
-                  MOQ: <b className="text-[#111315]">{proposed.moq} units</b>
+                  MOQ: <b className="text-portal-text">{proposed.moq} units</b>
                 </div>
               )}
             </div>
@@ -175,7 +241,7 @@ export default function AdminApprovalsPage() {
           <button
             onClick={() => setRejectionTarget({ type: 'product', id: req.id, name: proposed.name || 'Product request' })}
             disabled={isPending(mutationKey(req.id, 'approve-product'))}
-            className="saas-btn-secondary flex-1 lg:flex-initial text-[#B91C1C] hover:bg-[#FEF2F2] gap-1.5"
+            className="saas-btn-secondary flex-1 lg:flex-initial text-portal-danger hover:bg-portal-danger-soft gap-1.5"
           >
             <X className="w-3.5 h-3.5" />
             Reject
@@ -187,32 +253,42 @@ export default function AdminApprovalsPage() {
 
   return (
     <div className="space-y-6 w-full">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="type-page">Approval Center</h1>
-          <p className="type-subtitle">Verify supplier applications and product submissions.</p>
-        </div>
-        <button onClick={() => loadApprovals()} className="saas-neu-button gap-2 self-start sm:self-auto">
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
-      </div>
+      <AdminPageHeader
+        title="Approval Center"
+        description="Verify supplier applications and product submissions."
+        actions={
+          <button onClick={() => loadApprovals()} className="saas-btn-secondary gap-2">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        }
+      />
 
       {actionError && (
-        <div className="text-xs text-[#B91C1C] bg-[#FEF2F2] rounded-lg p-2.5">{actionError}</div>
+        <div className="text-sm text-portal-danger bg-portal-danger-soft rounded-lg p-3">{actionError}</div>
       )}
 
-      <div className="saas-segmented flex-wrap">
+      {loading && !data ? (
+        <div className="space-y-4" aria-busy="true">
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+        </div>
+      ) : (
+        <>
+      <div className="saas-segmented overflow-x-auto flex-nowrap">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const active = activeTab === tab.id;
           return (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={active ? 'saas-tab-active gap-2 inline-flex items-center' : 'saas-tab-inactive gap-2 inline-flex items-center'}>
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`shrink-0 gap-2 inline-flex items-center ${active ? 'saas-tab-active' : 'saas-tab-inactive'}`}
+            >
               <Icon className="w-4 h-4" />
               {tab.label}
-              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono ${active ? 'bg-white text-[#111315]' : 'bg-[#111315] text-white'}`}>
-                {tab.count}
-              </span>
+              <span className="px-1.5 py-0.5 rounded-md text-xs font-mono bg-portal-inset">{tab.count}</span>
             </button>
           );
         })}
@@ -227,13 +303,13 @@ export default function AdminApprovalsPage() {
                 <div key={sup.id} className="saas-panel p-6 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
                   <div className="space-y-3 max-w-2xl">
                     <div className="flex items-center gap-3">
-                      <span className="badge-warning">Pending approval</span>
-                      <h3 className="text-base text-[#111315]">{sup.company_name}</h3>
+                      <StatusPill label="Pending approval" tone="warning" />
+                      <h3 className="text-base text-portal-text">{sup.company_name}</h3>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-xs text-[#6B7280]">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-xs text-portal-muted">
                       <div className="flex items-center gap-2">
                         <User className="w-3.5 h-3.5" />
-                        <span>Contact: <b className="text-[#111315] font-medium">{sup.contact_person}</b></span>
+                        <span>Contact: <b className="text-portal-text font-medium">{sup.contact_person}</b></span>
                       </div>
                       <div className="flex items-center gap-2">
                         <Mail className="w-3.5 h-3.5" />
@@ -249,7 +325,7 @@ export default function AdminApprovalsPage() {
                       </div>
                     </div>
                     {sup.address && (
-                      <div className="text-xs text-[#6B7280] saas-inset-surface p-3">Facility: {sup.address}</div>
+                      <div className="text-xs text-portal-muted saas-inset-surface p-3">Facility: {sup.address}</div>
                     )}
                   </div>
                   <div className="flex items-center gap-3 w-full lg:w-auto shrink-0">
@@ -264,7 +340,7 @@ export default function AdminApprovalsPage() {
                     <button
                       onClick={() => setRejectionTarget({ type: 'supplier', id: sup.id, name: sup.company_name })}
                       disabled={isPending(mutationKey(sup.id, 'reject'))}
-                      className="saas-btn-secondary flex-1 lg:flex-initial text-[#B91C1C] hover:bg-[#FEF2F2] gap-1.5"
+                      className="saas-btn-secondary flex-1 lg:flex-initial text-portal-danger hover:bg-portal-danger-soft gap-1.5"
                     >
                       <X className="w-3.5 h-3.5" />
                       Reject
@@ -284,26 +360,45 @@ export default function AdminApprovalsPage() {
         (updates.length === 0
           ? renderEmpty('No product updates pending', 'Price and spec changes will appear here.', Package)
           : <div className="grid grid-cols-1 gap-4">{updates.map(productCard)}</div>)}
+        </>
+      )}
 
-      {rejectionTarget && (
-        <div className="fixed inset-0 z-50 bg-[#111315]/40 flex items-center justify-center p-4">
-          <div className="w-full max-w-md p-6 saas-panel space-y-4">
-            <div className="flex items-center justify-between border-b border-[#E2E4E8] pb-3">
-              <h3 className="text-base text-[#111315]">
-                Reject {rejectionTarget.type === 'supplier' ? 'supplier application' : 'product proposal'}
-              </h3>
-              <button
-                onClick={() => {
-                  setRejectionTarget(null);
-                  setRejectionReason('');
-                }}
-                className="saas-btn-ghost"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <p className="text-xs text-[#6B7280]">
-              Provide feedback for <span className="font-medium text-[#111315]">{rejectionTarget.name}</span>.
+      <PortalModal
+        open={!!rejectionTarget}
+        onClose={() => {
+          setRejectionTarget(null);
+          setRejectionReason('');
+        }}
+        title={
+          rejectionTarget
+            ? `Reject ${rejectionTarget.type === 'supplier' ? 'supplier application' : 'product proposal'}`
+            : undefined
+        }
+        footer={
+          <>
+            <button
+              onClick={() => {
+                setRejectionTarget(null);
+                setRejectionReason('');
+              }}
+              className="saas-btn-secondary"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleConfirmReject}
+              disabled={isPending(mutationKey(rejectionTarget?.id || '', 'reject')) || !rejectionReason.trim()}
+              className="saas-btn-primary"
+            >
+              {isPending(mutationKey(rejectionTarget?.id || '', 'reject')) ? 'Processing…' : 'Confirm rejection'}
+            </button>
+          </>
+        }
+      >
+        {rejectionTarget && (
+          <>
+            <p className="text-sm text-portal-muted mb-3">
+              Provide feedback for <span className="font-medium text-portal-text">{rejectionTarget.name}</span>.
             </p>
             <textarea
               rows={4}
@@ -311,29 +406,11 @@ export default function AdminApprovalsPage() {
               placeholder="Reason for rejection..."
               value={rejectionReason}
               onChange={(e) => setRejectionReason(e.target.value)}
-              className="saas-input resize-none rounded-xl"
+              className="saas-input resize-none w-full"
             />
-            <div className="flex justify-end gap-2 pt-2 border-t border-[#E2E4E8]">
-              <button
-                onClick={() => {
-                  setRejectionTarget(null);
-                  setRejectionReason('');
-                }}
-                className="saas-btn-secondary"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmReject}
-                disabled={isPending(mutationKey(rejectionTarget.id, 'reject')) || !rejectionReason.trim()}
-                className="saas-btn-primary bg-[#B91C1C] hover:bg-[#991B1B]"
-              >
-                {isPending(mutationKey(rejectionTarget.id, 'reject')) ? 'Processing…' : 'Confirm rejection'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </PortalModal>
     </div>
   );
 }

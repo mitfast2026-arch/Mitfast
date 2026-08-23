@@ -1,20 +1,19 @@
-import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { supplierRegisterSchema } from '@/lib/validation/auth.schema';
+import { createClient } from '@/lib/supabase/server';
+import { supplierApplicationSchema } from '@/lib/validation/auth.schema';
 import { updateSupplierProfileSchema } from '@/lib/validation/supplier.schema';
 import type { ServerResult } from './get-session';
-import { getEmailRedirectTo } from './site-url';
+import { emailFromAuthUser, isProfileIdentityComplete } from './profile-complete';
 
 /**
- * Registers a new Supplier account in 'pending' approval status.
- * Auth uses email confirmation; portal access still requires admin approval.
+ * Creates supplier application on existing `suppliers` table as pending.
+ * Caller must already be authenticated (Google or email OTP).
  */
-export async function registerSupplier(
-  formData: unknown,
-  options?: { origin?: string | null }
-): Promise<ServerResult<{ supplierId: string; needsEmailConfirmation: boolean }>> {
+export async function submitSupplierApplication(
+  formData: unknown
+): Promise<ServerResult<{ supplierId: string; status: string }>> {
   try {
-    const validated = supplierRegisterSchema.safeParse(formData);
+    const validated = supplierApplicationSchema.safeParse(formData);
     if (!validated.success) {
       return {
         success: false,
@@ -22,94 +21,145 @@ export async function registerSupplier(
       };
     }
 
-    const { contactPerson, companyName, email, phone, country, website, password, address } = validated.data;
     const supabase = await createClient();
-    const adminClient = createAdminClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-    // 1. Check if email already registered in suppliers or profiles
-    const { data: existingSupplier } = await adminClient
-      .from('suppliers')
-      .select('id, status')
-      .eq('email', email)
+    if (!user) {
+      return { success: false, error: { message: 'Not authenticated', code: 'UNAUTHORIZED' } };
+    }
+
+    const email = emailFromAuthUser(user).toLowerCase();
+    if (!email) {
+      return { success: false, error: { message: 'Verified email is required', code: 'VALIDATION_ERROR' } };
+    }
+
+    const adminClient = createAdminClient();
+    const { contactPerson, companyName, phone, country, website, address } = validated.data;
+
+    const { data: profile } = await adminClient
+      .from('profiles')
+      .select('id, role, full_name, phone, email')
+      .eq('user_id', user.id)
       .maybeSingle();
 
-    if (existingSupplier) {
+    if (profile?.role === 'customer') {
+      return {
+        success: false,
+        error: {
+          message: 'This account is already a buyer. Use a different email for supplier registration.',
+          code: 'ROLE_LOCKED',
+        },
+      };
+    }
+
+    if (profile?.role === 'admin') {
+      return {
+        success: false,
+        error: { message: 'Admin accounts cannot register as suppliers.', code: 'ROLE_LOCKED' },
+      };
+    }
+
+    if (!isProfileIdentityComplete({ ...profile, full_name: contactPerson, phone, email })) {
+      // Ensure profile identity from application fields
+    }
+
+    await adminClient.from('profiles').upsert(
+      {
+        user_id: user.id,
+        role: 'supplier',
+        full_name: contactPerson,
+        email,
+        phone,
+      },
+      { onConflict: 'user_id' }
+    );
+
+    const { data: byUser } = await adminClient
+      .from('suppliers')
+      .select('id, status')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (byUser) {
+      if (byUser.status === 'active') {
+        return {
+          success: false,
+          error: { message: 'Supplier account already active', code: 'ALREADY_ACTIVE' },
+        };
+      }
+      if (byUser.status === 'pending') {
+        return { success: true, data: { supplierId: byUser.id, status: 'pending' } };
+      }
+      // rejected / archived: update and set pending
+      const { data: updated, error: updateError } = await adminClient
+        .from('suppliers')
+        .update({
+          company_name: companyName,
+          contact_person: contactPerson,
+          email,
+          phone,
+          country,
+          address,
+          website: website || null,
+          status: 'pending',
+          rejection_reason: null,
+          archived_at: null,
+        })
+        .eq('id', byUser.id)
+        .select('id, status')
+        .single();
+
+      if (updateError || !updated) {
+        return {
+          success: false,
+          error: { message: updateError?.message || 'Failed to update supplier', code: 'DATABASE_ERROR' },
+        };
+      }
+      return { success: true, data: { supplierId: updated.id, status: updated.status } };
+    }
+
+    const { data: byEmail } = await adminClient
+      .from('suppliers')
+      .select('id, user_id, status')
+      .ilike('email', email)
+      .neq('status', 'archived')
+      .maybeSingle();
+
+    if (byEmail && byEmail.user_id !== user.id) {
       return {
         success: false,
         error: { message: 'A supplier account with this email already exists', code: 'DUPLICATE_EMAIL' },
       };
     }
 
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: getEmailRedirectTo(options?.origin),
-        data: {
-          role: 'supplier',
-          full_name: contactPerson,
-          phone,
-        },
-      },
-    });
-
-    if (authError || !authData.user) {
-      return {
-        success: false,
-        error: { message: authError?.message || 'Failed to create supplier user account', code: 'AUTH_ERROR' },
-      };
-    }
-
-    if (authData.user.identities && authData.user.identities.length === 0) {
-      return {
-        success: false,
-        error: { message: 'An account with this email already exists. Sign in or confirm your email.', code: 'DUPLICATE_EMAIL' },
-      };
-    }
-
-    const userId = authData.user.id;
-
-    // 3. Create profile
-    await adminClient
-      .from('profiles')
-      .upsert({
-        user_id: userId,
-        role: 'supplier',
-        full_name: contactPerson,
-        email,
-        phone,
-      }, { onConflict: 'user_id' });
-
-    // 4. Create Supplier record with 'pending' status
     const { data: supplier, error: supplierError } = await adminClient
       .from('suppliers')
       .insert({
-        user_id: userId,
+        user_id: user.id,
         company_name: companyName,
         contact_person: contactPerson,
         email,
         phone,
         country,
-        address: address || null,
+        address,
         website: website || null,
         status: 'pending',
       })
-      .select()
+      .select('id, status')
       .single();
 
     if (supplierError || !supplier) {
       return {
         success: false,
-        error: { message: 'Failed to create supplier profile', code: 'DATABASE_ERROR' },
+        error: { message: supplierError?.message || 'Failed to create supplier profile', code: 'DATABASE_ERROR' },
       };
     }
 
-    return {
-      success: true,
-      data: { supplierId: supplier.id, needsEmailConfirmation: !authData.session },
-    };
+    return { success: true, data: { supplierId: supplier.id, status: supplier.status } };
   } catch (error) {
-    console.error('[registerSupplier] Error:', error);
+    console.error('[submitSupplierApplication] Error:', error);
     return {
       success: false,
       error: { message: 'Unexpected error during supplier registration', code: 'INTERNAL_ERROR' },
@@ -117,9 +167,21 @@ export async function registerSupplier(
   }
 }
 
+/** @deprecated Prefer submitSupplierApplication after OTP/Google. */
+export async function registerSupplier(): Promise<
+  ServerResult<{ supplierId: string; needsEmailConfirmation: boolean }>
+> {
+  return {
+    success: false,
+    error: {
+      message: 'Password registration is disabled. Use Google or email OTP, then submit the supplier form.',
+      code: 'DEPRECATED',
+    },
+  };
+}
+
 /**
  * Allows a rejected supplier to update their business information and resubmit for Admin approval.
- * Reuses the exact same supplier account without creating duplicates.
  */
 export async function resubmitSupplierApplication(
   supplierId: string,
@@ -136,7 +198,6 @@ export async function resubmitSupplierApplication(
 
     const adminClient = createAdminClient();
 
-    // Verify supplier is currently rejected
     const { data: supplier, error: fetchError } = await adminClient
       .from('suppliers')
       .select('id, status')
@@ -159,7 +220,7 @@ export async function resubmitSupplierApplication(
 
     const updatePayload: Record<string, string | null> = {
       status: 'pending',
-      rejection_reason: null, // clear previous rejection reason
+      rejection_reason: null,
       updated_at: new Date().toISOString(),
     };
 

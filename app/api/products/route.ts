@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import {
   createProductBySupplier,
   createProductByAdmin,
+  saveProductDraft,
   getStorefrontProducts,
   getProductsForAdmin,
 } from '@/lib/server/products/product-service';
@@ -12,13 +13,14 @@ function normalizeProductPayload(body: any) {
   return {
     ...body,
     categoryId: body.categoryId || body.category_id,
-    supplierId: body.supplierId || body.supplier_id,
+    supplierId: body.supplierId || body.supplier_id || undefined,
     sku: body.sku !== undefined ? (body.sku === '' ? null : body.sku) : undefined,
-    stockQuantity:
-      body.stockQuantity !== undefined
-        ? Number(body.stockQuantity)
-        : body.stock_quantity !== undefined
-          ? Number(body.stock_quantity)
+    moq: body.moq !== undefined ? Number(body.moq) : undefined,
+    suggestedMoq:
+      body.suggestedMoq !== undefined
+        ? Number(body.suggestedMoq)
+        : body.suggested_moq !== undefined
+          ? Number(body.suggested_moq)
           : undefined,
     supplierPrice: body.supplierPrice !== undefined ? Number(body.supplierPrice) : (body.supplier_price !== undefined ? Number(body.supplier_price) : undefined),
     gstRate: body.gstRate !== undefined ? Number(body.gstRate) : undefined,
@@ -31,6 +33,10 @@ function normalizeProductPayload(body: any) {
       sort_order: s.sort_order !== undefined ? s.sort_order : idx,
     })),
     imageUrls: body.imageUrls || body.images || [],
+    isDraft: body.isDraft === true,
+    profitType: body.profitType,
+    profitValue: body.profitValue !== undefined ? Number(body.profitValue) : undefined,
+    ribbonLabel: body.ribbonLabel,
   };
 }
 
@@ -48,7 +54,6 @@ export async function GET(request: NextRequest) {
     const maxPriceRaw = searchParams.get('maxPrice');
     const moqMinRaw = searchParams.get('moqMin');
     const moqMaxRaw = searchParams.get('moqMax');
-    const inStockOnly = searchParams.get('inStock') === '1' || searchParams.get('inStock') === 'true';
 
     if (mode === 'admin') {
       const auth = await requireAdmin();
@@ -84,7 +89,6 @@ export async function GET(request: NextRequest) {
       maxPrice: maxPriceRaw != null && maxPriceRaw !== '' ? Number(maxPriceRaw) : undefined,
       moqMin: moqMinRaw != null && moqMinRaw !== '' ? Number(moqMinRaw) : undefined,
       moqMax: moqMaxRaw != null && moqMaxRaw !== '' ? Number(moqMaxRaw) : undefined,
-      inStockOnly,
     });
     if (!result.success) return NextResponse.json(result, { status: 400 });
     return NextResponse.json(result, {
@@ -109,6 +113,12 @@ export async function POST(request: NextRequest) {
     const productPayload = normalizeProductPayload(body);
 
     if (session.profile.role === 'admin') {
+      if (productPayload.isDraft) {
+        const result = await saveProductDraft(productPayload);
+        if (!result.success) return NextResponse.json(result, { status: 400 });
+        deferRevalidateProduct(result.data.productId);
+        return NextResponse.json(result, { status: 201 });
+      }
       const result = await createProductByAdmin(productPayload);
       if (!result.success) return NextResponse.json(result, { status: 400 });
       deferRevalidateProduct(result.data.productId);

@@ -132,7 +132,7 @@ export default function AdminSupplierDetailPage() {
 
   if (loading) {
     return (
-      <div className="p-12 text-center text-[#6B7280] text-xs">
+      <div className="p-12 text-center text-portal-muted text-xs">
         Loading supplier details...
       </div>
     );
@@ -142,7 +142,7 @@ export default function AdminSupplierDetailPage() {
     return (
       <div className="saas-panel p-12 text-center space-y-4">
         <h2 className="type-section">Supplier not found</h2>
-        <p className="text-xs text-[#6B7280]">The requested manufacturing partner profile does not exist.</p>
+        <p className="text-xs text-portal-muted">The requested manufacturing partner profile does not exist.</p>
         <Link href="/admin/suppliers" className="saas-btn-primary text-xs py-2 px-4 inline-flex items-center gap-1.5">
           <ChevronLeft className="w-4 h-4" />
           <span>Back to Suppliers</span>
@@ -158,7 +158,7 @@ export default function AdminSupplierDetailPage() {
         <div className="flex items-center gap-3">
           <Link 
             href="/admin/suppliers"
-            className="p-2 rounded-xl bg-white border border-[#E2E4E8] text-[#6B7280] hover:text-[#111315] hover:bg-[#F7F7F8] shadow-sm"
+            className="p-2 rounded-xl bg-portal-panel border border-portal-border text-portal-muted hover:text-portal-text hover:bg-portal-hover shadow-sm"
           >
             <ChevronLeft className="w-4 h-4" />
           </Link>
@@ -187,7 +187,7 @@ export default function AdminSupplierDetailPage() {
           <button 
             onClick={handleToggleArchive}
             className={`saas-btn-secondary text-xs py-2 px-3 flex items-center gap-1.5 ${
-              supplier.status === 'archived' ? 'text-[#15803D]' : 'text-[#B91C1C]'
+              supplier.status === 'archived' ? 'text-portal-success' : 'text-portal-danger'
             }`}
           >
             {supplier.status === 'archived' ? <RotateCcw className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
@@ -198,21 +198,21 @@ export default function AdminSupplierDetailPage() {
             className="saas-neu-button text-xs py-2 px-3"
             title="Refresh"
           >
-            <RefreshCw className="w-3.5 h-3.5 text-[#6B7280]" />
+            <RefreshCw className="w-3.5 h-3.5 text-portal-muted" />
           </button>
         </div>
       </div>
 
       {successMsg && (
-        <div className="p-4 rounded-xl bg-[#F0FDF4] text-xs text-[#15803D] flex items-center gap-2.5 font-medium">
-          <Check className="w-4 h-4 shrink-0 text-[#15803D]" />
+        <div className="p-4 rounded-xl bg-portal-success-soft text-xs text-portal-success flex items-center gap-2.5 font-medium">
+          <Check className="w-4 h-4 shrink-0 text-portal-success" />
           <span>{successMsg}</span>
         </div>
       )}
 
       {errorMsg && (
-        <div className="p-4 rounded-xl bg-[#FEF2F2] text-xs text-[#B91C1C] flex items-center gap-2.5 font-medium">
-          <X className="w-4 h-4 shrink-0 text-[#B91C1C]" />
+        <div className="p-4 rounded-xl bg-portal-danger-soft text-xs text-portal-danger flex items-center gap-2.5 font-medium">
+          <X className="w-4 h-4 shrink-0 text-portal-danger" />
           <span>{errorMsg}</span>
         </div>
       )}
@@ -220,28 +220,28 @@ export default function AdminSupplierDetailPage() {
       {/* 4 Performance Metric Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="saas-panel p-4 text-center space-y-1">
-          <div className="type-kpi text-[#111315]">{stats?.totalViews || 0}</div>
-          <div className="type-kpi-label text-[#6B7280]">Catalog impressions</div>
+          <div className="type-kpi text-portal-text">{stats?.totalViews || 0}</div>
+          <div className="type-kpi-label text-portal-muted">Catalog impressions</div>
         </div>
         <div className="saas-panel p-4 text-center space-y-1">
-          <div className="type-kpi text-[#111315]">{stats?.totalEnquiries || 0}</div>
-          <div className="type-kpi-label text-[#111315]">CAD inquiries</div>
+          <div className="type-kpi text-portal-text">{stats?.totalEnquiries || 0}</div>
+          <div className="type-kpi-label text-portal-text">CAD inquiries</div>
         </div>
         <div className="saas-panel p-4 text-center space-y-1">
-          <div className="type-kpi text-[#111315]">{stats?.totalRfqs || 0}</div>
-          <div className="type-kpi-label text-[#111315]">Volume RFQs</div>
+          <div className="type-kpi text-portal-text">{stats?.totalRfqs || 0}</div>
+          <div className="type-kpi-label text-portal-text">Volume RFQs</div>
         </div>
         <div className="saas-panel p-4 text-center space-y-1">
-          <div className="type-kpi text-[#15803D]">{stats?.totalOrders || 0}</div>
-          <div className="type-kpi-label text-[#15803D]">Fulfilled orders</div>
+          <div className="type-kpi text-portal-success">{stats?.totalOrders || 0}</div>
+          <div className="type-kpi-label text-portal-success">Fulfilled orders</div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Supplier Profile Form (5 cols) */}
         <form onSubmit={handleSaveSupplier} className="lg:col-span-5 saas-panel p-6 space-y-4 h-fit">
-          <div className="flex items-center gap-2 border-b border-[#E2E4E8] pb-3">
-            <Building2 className="w-4 h-4 text-[#111315]" />
+          <div className="flex items-center gap-2 border-b border-portal-border pb-3">
+            <Building2 className="w-4 h-4 text-portal-text" />
             <h3 className="type-section">
               Company & contact credentials
             </h3>
@@ -326,7 +326,7 @@ export default function AdminSupplierDetailPage() {
             </div>
           </div>
 
-          <div className="pt-3 border-t border-[#E2E4E8] flex justify-end">
+          <div className="pt-3 border-t border-portal-border flex justify-end">
             <button 
               type="submit"
               disabled={saving}
@@ -342,12 +342,12 @@ export default function AdminSupplierDetailPage() {
         <div className="lg:col-span-7 space-y-3">
           <div className="saas-panel p-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Package className="w-4 h-4 text-[#111315]" />
+              <Package className="w-4 h-4 text-portal-text" />
               <h3 className="type-section">
                 Manufactured catalog ({products.length})
               </h3>
             </div>
-            <Link href="/admin/products" className="text-xs font-semibold text-[#111315] hover:underline">
+            <Link href="/admin/products" className="text-xs font-semibold text-portal-text hover:underline">
               View All in Catalog
             </Link>
           </div>
@@ -366,7 +366,7 @@ export default function AdminSupplierDetailPage() {
               <tbody>
                 {products.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-12 text-center text-[#6B7280] text-xs">
+                    <td colSpan={5} className="py-12 text-center text-portal-muted text-xs">
                       No components listed for this manufacturing partner.
                     </td>
                   </tr>
@@ -374,13 +374,13 @@ export default function AdminSupplierDetailPage() {
                   products.map((p) => (
                     <tr key={p.id}>
                       <td>
-                        <div className="font-medium text-[#111315]">{p.name}</div>
+                        <div className="font-medium text-portal-text">{p.name}</div>
                       </td>
-                      <td className="text-[#6B7280]">{p.category?.name || 'Fasteners'}</td>
-                      <td className="type-metric text-right text-[#111315]">
+                      <td className="text-portal-muted">{p.category?.name || 'Fasteners'}</td>
+                      <td className="type-metric text-right text-portal-text">
                         ₹{p.supplier_price?.toLocaleString('en-IN')}
                       </td>
-                      <td className="type-metric text-right text-[#6B7280]">{p.moq}</td>
+                      <td className="type-metric text-right text-portal-muted">{p.moq}</td>
                       <td className="text-center">
                         <span className={p.approval_status === 'approved' ? 'saas-badge-success' : 'saas-badge-gold'}>
                           {p.approval_status.toUpperCase()}

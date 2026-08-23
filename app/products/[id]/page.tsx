@@ -13,6 +13,7 @@ import {
   CreditCard,
   FileText,
   Gauge,
+  Heart,
   Package,
   Ruler,
   ShieldCheck,
@@ -23,6 +24,8 @@ import {
 } from "lucide-react";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { RemoteImage } from "@/components/ui/RemoteImage";
+import { CountryFlag } from "@/components/ui/CountryFlag";
+import { resolveSupplierCountry } from "@/lib/country-origin";
 import "./product-detail.css";
 
 type ProductImage = {
@@ -54,6 +57,7 @@ type Product = {
   stock_quantity?: number;
   category?: { id: string; name: string } | null;
   supplier?: { country?: string; address?: string } | null;
+  supplier_country?: string | null;
   images?: ProductImage[];
   specifications?: ProductSpec[];
 };
@@ -131,86 +135,6 @@ function specIcon(name: string) {
   return FileText;
 }
 
-type CountryOrigin = { code: string; label: string };
-
-function resolveSupplierCountry(product: Product): CountryOrigin | null {
-  const countryField = String(product.supplier?.country || "")
-    .trim()
-    .toLowerCase();
-  const addressField = String(product.supplier?.address || "")
-    .trim()
-    .toLowerCase();
-  const raw = [countryField, addressField].filter(Boolean).join(" ");
-  if (!raw.trim()) return null;
-
-  if (
-    countryField === "in" ||
-    countryField === "ind" ||
-    countryField === "india" ||
-    /\bindia\b|\bindian\b/.test(raw)
-  ) {
-    return { code: "IN", label: "India" };
-  }
-  if (
-    countryField === "cn" ||
-    countryField === "chn" ||
-    countryField === "china" ||
-    /\bchina\b|chinese|\bprc\b/.test(raw)
-  ) {
-    return { code: "CN", label: "China" };
-  }
-  if (
-    countryField === "de" ||
-    countryField === "deu" ||
-    countryField === "germany" ||
-    /\bgermany\b|german/.test(raw)
-  ) {
-    return { code: "DE", label: "Germany" };
-  }
-  if (
-    countryField === "us" ||
-    countryField === "usa" ||
-    countryField === "united states" ||
-    /\bunited states\b|\busa\b|american/.test(raw)
-  ) {
-    return { code: "US", label: "United States" };
-  }
-  if (
-    countryField === "jp" ||
-    countryField === "japan" ||
-    /\bjapan\b|japanese/.test(raw)
-  ) {
-    return { code: "JP", label: "Japan" };
-  }
-  if (
-    countryField === "kr" ||
-    countryField === "korea" ||
-    countryField === "south korea" ||
-    /\bkorea\b|korean/.test(raw)
-  ) {
-    return { code: "KR", label: "South Korea" };
-  }
-  if (countryField === "tw" || countryField === "taiwan" || /\btaiwan\b/.test(raw)) {
-    return { code: "TW", label: "Taiwan" };
-  }
-  if (
-    countryField === "gb" ||
-    countryField === "uk" ||
-    countryField === "united kingdom" ||
-    /\bunited kingdom\b|\bbritain\b|\bengland\b/.test(raw)
-  ) {
-    return { code: "GB", label: "United Kingdom" };
-  }
-  if (countryField === "vn" || countryField === "vietnam" || /\bvietnam\b/.test(raw)) {
-    return { code: "VN", label: "Vietnam" };
-  }
-  if (countryField === "th" || countryField === "thailand" || /\bthailand\b/.test(raw)) {
-    return { code: "TH", label: "Thailand" };
-  }
-
-  return null;
-}
-
 export default function ProductDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -223,6 +147,8 @@ export default function ProductDetailPage() {
   const [addingToCart, setAddingToCart] = useState(false);
   const [cartSuccess, setCartSuccess] = useState(false);
   const [cartError, setCartError] = useState("");
+  const [wishlisted, setWishlisted] = useState(false);
+  const [wishlistBusy, setWishlistBusy] = useState(false);
   const [relatedTab, setRelatedTab] = useState<"recommended" | "recent">("recommended");
   const [recommended, setRecommended] = useState<RelatedProduct[]>([]);
   const [recentlyViewed, setRecentlyViewed] = useState<RecentItem[]>([]);
@@ -291,39 +217,60 @@ export default function ProductDetailPage() {
     };
   }, [product]);
 
+  useEffect(() => {
+    if (!productId) return;
+    let cancelled = false;
+
+    async function loadWishlistState() {
+      try {
+        const res = await fetch("/api/wishlist");
+        const json = await res.json();
+        if (cancelled || !json.success) return;
+        const ids = (json.data?.items || []).map(
+          (item: { productId: string }) => item.productId,
+        );
+        setWishlisted(ids.includes(productId));
+      } catch {
+        if (!cancelled) setWishlisted(false);
+      }
+    }
+
+    loadWishlistState();
+    return () => {
+      cancelled = true;
+    };
+  }, [productId]);
+
+  async function handleToggleWishlist() {
+    if (!product) return;
+    setWishlistBusy(true);
+    try {
+      if (wishlisted) {
+        const res = await fetch(`/api/wishlist?productId=${product.id}`, {
+          method: "DELETE",
+        });
+        const json = await res.json();
+        if (res.ok && json.success) setWishlisted(false);
+      } else {
+        const res = await fetch("/api/wishlist", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ productId: product.id }),
+        });
+        const json = await res.json();
+        if (res.ok && json.success) setWishlisted(true);
+      }
+    } catch {
+      /* ignore */
+    } finally {
+      setWishlistBusy(false);
+    }
+  }
+
   async function handleAddToCart() {
     setCartError("");
     setAddingToCart(true);
     try {
-      const supabase = createBrowserClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        router.push(
-          `/auth?role=buyer&mode=signin&redirect=/products/${productId}`,
-        );
-        return;
-      }
-
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("id, role")
-        .eq("user_id", user.id)
-        .single();
-
-      if (
-        !profile ||
-        (profile as { role?: string }).role !== "customer"
-      ) {
-        setCartError(
-          "Sign in with a buyer procurement account to add line items to your RFQ workspace.",
-        );
-        setAddingToCart(false);
-        return;
-      }
-
       const res = await fetch("/api/cart", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -335,14 +282,14 @@ export default function ProductDetailPage() {
 
       const json = await res.json();
       if (!res.ok || !json.success) {
-        setCartError(json.error?.message || "Failed to add line item to RFQ workspace");
+        setCartError(json.error?.message || "Failed to add to cart");
       } else {
         setCartSuccess(true);
         window.dispatchEvent(new Event("cart-updated"));
         setTimeout(() => setCartSuccess(false), 4000);
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Error updating RFQ workspace";
+      const message = err instanceof Error ? err.message : "Error updating cart";
       setCartError(message);
     } finally {
       setAddingToCart(false);
@@ -400,9 +347,6 @@ export default function ProductDetailPage() {
     Math.round((sellingPrice - discountAmt) * 100) / 100,
   );
   const minLot = Math.max(1, product.moq || 1);
-  const stockQty = product.stock_quantity ?? 0;
-  const stockLabel =
-    stockQty > 0 ? `Available inventory (${stockQty})` : "Build-to-order";
   const supplierOrigin = resolveSupplierCountry(product);
   const brand =
     product.ribbon_label ||
@@ -497,6 +441,16 @@ export default function ProductDetailPage() {
               </div>
 
               <div className="pdp-main-media">
+                <button
+                  type="button"
+                  className={`pdp-wishlist${wishlisted ? " is-active" : ""}`}
+                  aria-label={wishlisted ? "Remove from wishlist" : "Add to wishlist"}
+                  aria-pressed={wishlisted}
+                  disabled={wishlistBusy}
+                  onClick={() => void handleToggleWishlist()}
+                >
+                  <Heart className={`w-5 h-5${wishlisted ? " fill-current" : ""}`} />
+                </button>
                 {selectedImage ? (
                   <span className="pdp-main-media__img">
                     <RemoteImage
@@ -547,7 +501,14 @@ export default function ProductDetailPage() {
               <span className="pdp-sku">MOQ: {minLot} pieces</span>
               {realSku && <span className="pdp-sku">SKU: {realSku}</span>}
               {supplierOrigin && (
-                <span className="pdp-sku">Origin: {supplierOrigin.label}</span>
+                <span className="pdp-sku pdp-origin">
+                  <CountryFlag
+                    origin={supplierOrigin}
+                    className="pdp-origin__flag"
+                    imgClassName="pdp-origin__flag-img"
+                  />
+                  Origin: {supplierOrigin.label}
+                </span>
               )}
             </div>
 
@@ -590,10 +551,6 @@ export default function ProductDetailPage() {
                 {discountAmt > 0 && (
                   <div className="pdp-buy__was">₹ {formatINR(sellingPrice)}</div>
                 )}
-              </div>
-              <div className="pdp-stock">
-                <span className="pdp-stock__dot" aria-hidden />
-                {stockLabel}
               </div>
             </div>
 
@@ -809,6 +766,23 @@ export default function ProductDetailPage() {
                   <td>₹ {formatINR(Number(product.min_order_value))}</td>
                 </tr>
               ) : null}
+              <tr>
+                <th scope="row">Country of Origin</th>
+                <td>
+                  {supplierOrigin ? (
+                    <span className="pdp-origin pdp-origin--table">
+                      <CountryFlag
+                        origin={supplierOrigin}
+                        className="pdp-origin__flag"
+                        imgClassName="pdp-origin__flag-img"
+                      />
+                      {supplierOrigin.label}
+                    </span>
+                  ) : (
+                    "N/A"
+                  )}
+                </td>
+              </tr>
               <tr>
                 <th scope="row">GST</th>
                 <td>

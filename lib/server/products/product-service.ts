@@ -7,9 +7,11 @@ import {
 import {
   createProductSchema,
   createProductByAdminSchema,
+  saveProductDraftSchema,
   updateProductBySupplierSchema,
   adminUpdateProductSchema,
   rejectProductSchema,
+  requestChangesSchema,
 } from '@/lib/validation/product.schema';
 import type { ServerResult } from '@/lib/server/auth/get-session';
 import type {
@@ -18,6 +20,21 @@ import type {
   ProductArchiveStatus,
   ProfitType,
 } from '@/types/database';
+
+function normalizeStorefrontSupplier<T extends { supplier?: unknown }>(product: T) {
+  const raw = product.supplier;
+  const supplier = Array.isArray(raw) ? raw[0] : raw;
+  const country =
+    supplier && typeof supplier === 'object' && 'country' in supplier
+      ? (supplier as { country?: string | null }).country ?? null
+      : null;
+
+  return {
+    ...product,
+    supplier: supplier ?? null,
+    supplier_country: country,
+  };
+}
 
 async function getMaxProductImages(): Promise<number> {
   const adminClient = createAdminClient();
@@ -88,6 +105,7 @@ export async function createProductBySupplier(
       sku,
       stockQuantity,
       moq,
+      suggestedMoq,
       supplierPrice,
       specifications,
       imageUrls,
@@ -121,6 +139,9 @@ export async function createProductBySupplier(
     const gstInc = gstIncluded ?? false;
     const discountAmt = discount ?? 0;
     const maxImages = settings?.max_product_images ?? 8;
+    const resolvedSuggestedMoq = suggestedMoq ?? moq ?? 100;
+    // Catalog MOQ starts as supplier suggestion until admin sets the final value.
+    const catalogMoq = moq ?? resolvedSuggestedMoq;
 
     // Default profit & pricing computation (default 15% margin)
     const initialPricing = calculatePricing({
@@ -142,7 +163,8 @@ export async function createProductBySupplier(
         description: description || null,
         sku: sku ?? null,
         stock_quantity: stockQuantity ?? 0,
-        moq,
+        moq: catalogMoq,
+        suggested_moq: resolvedSuggestedMoq,
         supplier_price: supplierPrice,
         profit_type: 'percentage',
         profit_value: 15,
@@ -154,6 +176,7 @@ export async function createProductBySupplier(
         approval_status: 'pending',
         publication_status: 'unpublished',
         archive_status: 'active',
+        is_draft: false,
       })
       .select()
       .single();
@@ -192,7 +215,7 @@ export async function createProductBySupplier(
         description,
         sku,
         stock_quantity: stockQuantity ?? 0,
-        moq,
+        suggested_moq: resolvedSuggestedMoq,
         supplier_price: supplierPrice,
         category_id: categoryId,
         specifications,
@@ -214,9 +237,85 @@ export async function createProductBySupplier(
   }
 }
 
+function normalizeSupplierId(raw: string | null | undefined): string | null {
+  if (!raw || raw === '') return null;
+  return raw;
+}
+
+async function insertProductRecord(params: {
+  supplierId: string | null;
+  categoryId: string;
+  name: string;
+  description?: string | null;
+  sku?: string | null;
+  stockQuantity?: number;
+  moq: number;
+  suggestedMoq?: number | null;
+  supplierPrice: number;
+  profitType?: ProfitType;
+  profitValue?: number;
+  discount?: number;
+  gstRate: number;
+  gstIncluded: boolean;
+  minOrderValue?: number | null;
+  ribbonLabel?: string | null;
+  approvalStatus: ProductApprovalStatus;
+  isDraft?: boolean;
+}): Promise<ServerResult<{ productId: string; product: any }>> {
+  const adminClient = createAdminClient();
+  const profitType = params.profitType ?? 'percentage';
+  const profitValue = params.profitValue ?? 15;
+  const discountAmt = params.discount ?? 0;
+
+  const pricing = calculatePricing({
+    supplier_price: params.supplierPrice,
+    profit_type: profitType,
+    profit_value: profitValue,
+    discount: discountAmt,
+    gst_rate: params.gstRate,
+    gst_included: params.gstIncluded,
+  });
+
+  const { data: product, error: prodError } = await adminClient
+    .from('products')
+    .insert({
+      supplier_id: params.supplierId,
+      category_id: params.categoryId,
+      name: params.name,
+      description: params.description || null,
+      sku: params.sku ?? null,
+      stock_quantity: params.stockQuantity ?? 0,
+      moq: params.moq,
+      suggested_moq: params.suggestedMoq ?? params.moq,
+      supplier_price: params.supplierPrice,
+      profit_type: profitType,
+      profit_value: profitValue,
+      selling_price: pricing.selling_price,
+      discount: discountAmt,
+      gst_rate: params.gstRate,
+      gst_included: params.gstIncluded,
+      min_order_value: params.minOrderValue ?? null,
+      ribbon_label: params.ribbonLabel ?? null,
+      approval_status: params.approvalStatus,
+      publication_status: 'unpublished',
+      archive_status: 'active',
+      is_draft: params.isDraft ?? false,
+    })
+    .select()
+    .single();
+
+  if (prodError || !product) {
+    return {
+      success: false,
+      error: { message: prodError?.message || 'Failed to create product', code: 'DATABASE_ERROR' },
+    };
+  }
+
+  return { success: true, data: { productId: product.id, product } };
+}
+
 /**
- * Admin creates a product assigned to an existing active supplier.
- * Mirrors supplier create (pending approval, unpublished) but requires supplierId.
+ * Admin creates a product; supplier is optional (NULL = internal product).
  */
 export async function createProductByAdmin(
   formData: unknown
@@ -230,13 +329,211 @@ export async function createProductByAdmin(
       };
     }
 
-    const { supplierId, ...productFields } = validated.data;
-    return createProductBySupplier(supplierId, productFields);
+    const {
+      supplierId: rawSupplierId,
+      categoryId,
+      name,
+      description,
+      sku,
+      stockQuantity,
+      moq,
+      suggestedMoq,
+      supplierPrice,
+      specifications,
+      imageUrls,
+      gstRate: payloadGstRate,
+      gstIncluded,
+      discount,
+      minOrderValue,
+      profitType,
+      profitValue,
+      ribbonLabel,
+      isDraft,
+    } = validated.data;
+
+    const supplierId = normalizeSupplierId(rawSupplierId);
+    const adminClient = createAdminClient();
+
+    if (supplierId) {
+      const { data: supplier, error: supplierError } = await adminClient
+        .from('suppliers')
+        .select('id, status')
+        .eq('id', supplierId)
+        .single();
+
+      if (supplierError || !supplier || supplier.status !== 'active') {
+        return {
+          success: false,
+          error: { message: 'Selected supplier is not active', code: 'UNAUTHORIZED_SUPPLIER' },
+        };
+      }
+    }
+
+    const { data: settings } = await adminClient
+      .from('business_settings')
+      .select('default_gst_rate, max_product_images')
+      .limit(1)
+      .maybeSingle();
+    const gstRate = payloadGstRate ?? settings?.default_gst_rate ?? 18;
+    const gstInc = gstIncluded ?? false;
+    const maxImages = settings?.max_product_images ?? 8;
+    const catalogMoq = moq ?? suggestedMoq ?? 100;
+
+    const insertResult = await insertProductRecord({
+      supplierId,
+      categoryId,
+      name,
+      description,
+      sku,
+      stockQuantity,
+      moq: catalogMoq,
+      suggestedMoq: suggestedMoq ?? catalogMoq,
+      supplierPrice,
+      profitType: profitType as ProfitType | undefined,
+      profitValue,
+      discount,
+      gstRate,
+      gstIncluded: gstInc,
+      minOrderValue,
+      ribbonLabel,
+      approvalStatus: isDraft ? 'pending' : 'approved',
+      isDraft: isDraft ?? false,
+    });
+
+    if (!insertResult.success) return insertResult;
+
+    const productId = insertResult.data.productId;
+
+    if (specifications && specifications.length > 0) {
+      const specRows = specifications.map((s, idx) => ({
+        product_id: productId,
+        spec_name: s.spec_name,
+        spec_value: s.spec_value,
+        sort_order: s.sort_order ?? idx,
+      }));
+      await adminClient.from('product_specifications').insert(specRows);
+    }
+
+    if (imageUrls && imageUrls.length > 0) {
+      await adminClient.from('product_images').insert(buildImageRows(productId, imageUrls, maxImages));
+    }
+
+    return { success: true, data: { productId } };
   } catch (error) {
     console.error('[createProductByAdmin] Error:', error);
     return {
       success: false,
       error: { message: 'Unexpected error creating product', code: 'INTERNAL_ERROR' },
+    };
+  }
+}
+
+/**
+ * Admin saves or updates a draft product (partial validation).
+ */
+export async function saveProductDraft(
+  formData: unknown
+): Promise<ServerResult<{ productId: string }>> {
+  try {
+    const validated = saveProductDraftSchema.safeParse(formData);
+    if (!validated.success) {
+      return {
+        success: false,
+        error: { message: validated.error.errors[0].message, code: 'VALIDATION_ERROR' },
+      };
+    }
+
+    const data = validated.data;
+    const adminClient = createAdminClient();
+    const supplierId = normalizeSupplierId(data.supplierId);
+
+    if (data.productId) {
+      const updateResult = await adminDirectUpdateProduct({
+        productId: data.productId,
+        name: data.name,
+        categoryId: data.categoryId,
+        supplierId: supplierId ?? undefined,
+        description: data.description,
+        sku: data.sku,
+        stockQuantity: data.stockQuantity,
+        moq: data.moq,
+        suggestedMoq: data.suggestedMoq,
+        supplierPrice: data.supplierPrice,
+        profitType: data.profitType,
+        profitValue: data.profitValue,
+        discount: data.discount,
+        gstRate: data.gstRate,
+        gstIncluded: data.gstIncluded,
+        minOrderValue: data.minOrderValue,
+        ribbonLabel: data.ribbonLabel,
+        specifications: data.specifications,
+        imageUrls: data.imageUrls,
+        isDraft: true,
+      });
+      if (!updateResult.success) return updateResult as ServerResult<{ productId: string }>;
+      return { success: true, data: { productId: data.productId } };
+    }
+
+    if (!data.categoryId) {
+      return {
+        success: false,
+        error: { message: 'Category is required to save a new draft', code: 'VALIDATION_ERROR' },
+      };
+    }
+
+    const { data: settings } = await adminClient
+      .from('business_settings')
+      .select('default_gst_rate, max_product_images')
+      .limit(1)
+      .maybeSingle();
+
+    const insertResult = await insertProductRecord({
+      supplierId,
+      categoryId: data.categoryId,
+      name: data.name,
+      description: data.description,
+      sku: data.sku,
+      stockQuantity: data.stockQuantity,
+      moq: data.moq ?? 100,
+      suggestedMoq: data.suggestedMoq ?? data.moq ?? 100,
+      supplierPrice: data.supplierPrice ?? 0,
+      profitType: data.profitType as ProfitType | undefined,
+      profitValue: data.profitValue,
+      discount: data.discount,
+      gstRate: data.gstRate ?? settings?.default_gst_rate ?? 18,
+      gstIncluded: data.gstIncluded ?? false,
+      minOrderValue: data.minOrderValue,
+      ribbonLabel: data.ribbonLabel,
+      approvalStatus: 'pending',
+      isDraft: true,
+    });
+
+    if (!insertResult.success) return insertResult;
+
+    const productId = insertResult.data.productId;
+    const maxImages = settings?.max_product_images ?? 8;
+
+    if (data.specifications?.length) {
+      await adminClient.from('product_specifications').insert(
+        data.specifications.map((s, idx) => ({
+          product_id: productId,
+          spec_name: s.spec_name,
+          spec_value: s.spec_value,
+          sort_order: s.sort_order ?? idx,
+        }))
+      );
+    }
+
+    if (data.imageUrls?.length) {
+      await adminClient.from('product_images').insert(buildImageRows(productId, data.imageUrls, maxImages));
+    }
+
+    return { success: true, data: { productId } };
+  } catch (error) {
+    console.error('[saveProductDraft] Error:', error);
+    return {
+      success: false,
+      error: { message: 'Failed to save draft', code: 'INTERNAL_ERROR' },
     };
   }
 }
@@ -258,7 +555,7 @@ export async function submitProductUpdateBySupplier(
       };
     }
 
-    const { productId, name, categoryId, description, sku, stockQuantity, moq, supplierPrice, specifications, imageUrls, gstRate, gstIncluded, discount, minOrderValue } = validated.data;
+    const { productId, name, categoryId, description, sku, suggestedMoq, supplierPrice, specifications, imageUrls } = validated.data;
     const adminClient = createAdminClient();
 
     // Verify ownership
@@ -285,7 +582,7 @@ export async function submitProductUpdateBySupplier(
       })
       .eq('id', productId);
 
-    // Queue the proposed update
+    // Queue the proposed update (supplier cannot change catalog MOQ / margin / discount)
     const { data: request, error: reqError } = await adminClient
       .from('product_approval_requests')
       .insert({
@@ -296,13 +593,8 @@ export async function submitProductUpdateBySupplier(
           category_id: categoryId,
           description,
           sku,
-          stock_quantity: stockQuantity,
-          moq,
+          suggested_moq: suggestedMoq,
           supplier_price: supplierPrice,
-          gst_rate: gstRate,
-          gst_included: gstIncluded,
-          discount,
-          min_order_value: minOrderValue,
           specifications,
           image_urls: imageUrls,
         },
@@ -345,7 +637,7 @@ export async function adminDirectUpdateProduct(formData: unknown): Promise<Serve
       };
     }
 
-    const { productId, specifications, imageUrls, ...directFields } = validated.data;
+    const { productId, specifications, imageUrls, forceApply, isDraft, ...directFields } = validated.data;
     const adminClient = createAdminClient();
 
     // Fetch existing product to resolve pricing params
@@ -360,6 +652,32 @@ export async function adminDirectUpdateProduct(formData: unknown): Promise<Serve
         success: false,
         error: { message: 'Product not found', code: 'NOT_FOUND' },
       };
+    }
+
+    if (
+      directFields.supplierPrice !== undefined &&
+      !forceApply &&
+      currentProduct.approval_status === 'update_pending'
+    ) {
+      const { data: pendingReq } = await adminClient
+        .from('product_approval_requests')
+        .select('id')
+        .eq('product_id', productId)
+        .in('status', ['pending', 'update_pending'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (pendingReq) {
+        return {
+          success: false,
+          error: {
+            message:
+              'A supplier price proposal is pending approval. Approve or reject it before changing the live factory price, or use force apply.',
+            code: 'PENDING_PROPOSAL_EXISTS',
+          },
+        };
+      }
     }
 
     const supplierPrice = directFields.supplierPrice ?? currentProduct.supplier_price;
@@ -385,11 +703,14 @@ export async function adminDirectUpdateProduct(formData: unknown): Promise<Serve
 
     if (directFields.name) updatePayload.name = directFields.name;
     if (directFields.categoryId) updatePayload.category_id = directFields.categoryId;
-    if (directFields.supplierId) updatePayload.supplier_id = directFields.supplierId;
+    if (directFields.supplierId !== undefined) {
+      updatePayload.supplier_id = normalizeSupplierId(directFields.supplierId);
+    }
     if (directFields.description !== undefined) updatePayload.description = directFields.description;
     if (directFields.sku !== undefined) updatePayload.sku = directFields.sku;
     if (directFields.stockQuantity !== undefined) updatePayload.stock_quantity = directFields.stockQuantity;
     if (directFields.moq !== undefined) updatePayload.moq = directFields.moq;
+    if (directFields.suggestedMoq !== undefined) updatePayload.suggested_moq = directFields.suggestedMoq;
     if (directFields.supplierPrice !== undefined) updatePayload.supplier_price = supplierPrice;
     if (directFields.profitType !== undefined) updatePayload.profit_type = profitType;
     if (directFields.profitValue !== undefined) updatePayload.profit_value = profitValue;
@@ -398,6 +719,7 @@ export async function adminDirectUpdateProduct(formData: unknown): Promise<Serve
     if (directFields.gstIncluded !== undefined) updatePayload.gst_included = gstIncluded;
     if (directFields.minOrderValue !== undefined) updatePayload.min_order_value = directFields.minOrderValue;
     if (directFields.ribbonLabel !== undefined) updatePayload.ribbon_label = directFields.ribbonLabel;
+    if (isDraft !== undefined) updatePayload.is_draft = isDraft;
 
     await (adminClient as any).from('product_versions').insert({
       product_id: productId,
@@ -487,10 +809,11 @@ export async function approveProduct(requestId: string, adminUserId?: string): P
     }
 
     // 3. Recalculate selling price with proposed supplier price if updated
+    // Keep admin-controlled margin/discount/MOQ — do not overwrite from supplier proposal.
     const supplierPrice = proposed.supplier_price ?? currentProduct.supplier_price;
-    const discount = proposed.discount ?? currentProduct.discount;
-    const gstRate = proposed.gst_rate ?? currentProduct.gst_rate;
-    const gstIncluded = proposed.gst_included ?? currentProduct.gst_included;
+    const discount = currentProduct.discount;
+    const gstRate = currentProduct.gst_rate;
+    const gstIncluded = currentProduct.gst_included;
     const pricing = calculatePricing({
       supplier_price: supplierPrice,
       profit_type: currentProduct.profit_type as ProfitType,
@@ -506,9 +829,6 @@ export async function approveProduct(requestId: string, adminUserId?: string): P
       rejection_reason: null,
       supplier_price: supplierPrice,
       selling_price: pricing.selling_price,
-      discount,
-      gst_rate: gstRate,
-      gst_included: gstIncluded,
       updated_at: new Date().toISOString(),
     };
 
@@ -516,9 +836,8 @@ export async function approveProduct(requestId: string, adminUserId?: string): P
     if (proposed.category_id) productUpdate.category_id = proposed.category_id;
     if (proposed.description !== undefined) productUpdate.description = proposed.description;
     if (proposed.sku !== undefined) productUpdate.sku = proposed.sku;
-    if (proposed.stock_quantity !== undefined) productUpdate.stock_quantity = proposed.stock_quantity;
-    if (proposed.moq !== undefined) productUpdate.moq = proposed.moq;
-    if (proposed.min_order_value !== undefined) productUpdate.min_order_value = proposed.min_order_value;
+    if (proposed.suggested_moq !== undefined) productUpdate.suggested_moq = proposed.suggested_moq;
+    // Legacy proposals may include moq/stock — ignore; catalog MOQ & availability stay admin-owned.
 
     await (adminClient as any).from('products').update(productUpdate).eq('id', productId);
 
@@ -582,7 +901,7 @@ export async function rejectProduct(formData: unknown, adminUserId?: string): Pr
 
     const { data: request, error: reqError } = await adminClient
       .from('product_approval_requests')
-      .select('product_id')
+      .select('product_id, request_type')
       .eq('id', requestId)
       .single();
 
@@ -593,17 +912,27 @@ export async function rejectProduct(formData: unknown, adminUserId?: string): Pr
       };
     }
 
-    // Mark product as rejected
-    await adminClient
-      .from('products')
-      .update({
-        approval_status: 'rejected',
-        rejection_reason: rejectionReason,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', request.product_id);
+    if (request.request_type === 'update') {
+      // Update rejection: keep live product approved; only close the request
+      await adminClient
+        .from('products')
+        .update({
+          approval_status: 'approved',
+          rejection_reason: rejectionReason,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', request.product_id);
+    } else {
+      await adminClient
+        .from('products')
+        .update({
+          approval_status: 'rejected',
+          rejection_reason: rejectionReason,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', request.product_id);
+    }
 
-    // Mark request as rejected
     await adminClient
       .from('product_approval_requests')
       .update({
@@ -623,6 +952,78 @@ export async function rejectProduct(formData: unknown, adminUserId?: string): Pr
     return {
       success: false,
       error: { message: 'Failed to reject product', code: 'INTERNAL_ERROR' },
+    };
+  }
+}
+
+/**
+ * Admin requests changes on a pending update without rejecting the live product.
+ */
+export async function requestProductChanges(
+  formData: unknown,
+  adminUserId?: string
+): Promise<ServerResult<{ noted: boolean }>> {
+  try {
+    const validated = requestChangesSchema.safeParse(formData);
+    if (!validated.success) {
+      return {
+        success: false,
+        error: { message: validated.error.errors[0].message, code: 'VALIDATION_ERROR' },
+      };
+    }
+
+    const { requestId, reviewNote } = validated.data;
+    const adminClient = createAdminClient();
+
+    const { data: request, error: reqError } = await adminClient
+      .from('product_approval_requests')
+      .select('product_id, request_type')
+      .eq('id', requestId)
+      .single();
+
+    if (reqError || !request) {
+      return {
+        success: false,
+        error: { message: 'Approval request not found', code: 'NOT_FOUND' },
+      };
+    }
+
+    await adminClient
+      .from('product_approval_requests')
+      .update({
+        status: 'rejected',
+        rejection_reason: reviewNote,
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: adminUserId || null,
+      })
+      .eq('id', requestId);
+
+    if (request.request_type === 'update') {
+      await adminClient
+        .from('products')
+        .update({
+          approval_status: 'approved',
+          rejection_reason: reviewNote,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', request.product_id);
+    } else {
+      await adminClient
+        .from('products')
+        .update({
+          approval_status: 'rejected',
+          rejection_reason: reviewNote,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', request.product_id);
+    }
+
+    return { success: true, data: { noted: true } };
+  } catch (error) {
+    console.error('[requestProductChanges] Error:', error);
+    return {
+      success: false,
+      error: { message: 'Failed to request changes', code: 'INTERNAL_ERROR' },
     };
   }
 }
@@ -799,7 +1200,6 @@ export async function getStorefrontProducts(params: {
   maxPrice?: number;
   moqMin?: number;
   moqMax?: number;
-  inStockOnly?: boolean;
 }): Promise<ServerResult<{ products: any[]; total: number; page: number; limit: number }>> {
   try {
     const adminClient = createAdminClient();
@@ -856,9 +1256,6 @@ export async function getStorefrontProducts(params: {
     if (params.moqMax != null && !Number.isNaN(params.moqMax) && Number.isFinite(params.moqMax)) {
       query = query.lte('moq', params.moqMax);
     }
-    if (params.inStockOnly) {
-      query = query.gt('stock_quantity', 0);
-    }
 
     switch (params.sortBy) {
       case 'oldest':
@@ -899,7 +1296,7 @@ export async function getStorefrontProducts(params: {
     return {
       success: true,
       data: {
-        products: products || [],
+        products: (products || []).map(normalizeStorefrontSupplier),
         total: count || 0,
         page,
         limit,
@@ -962,7 +1359,7 @@ export async function getStorefrontProductDetail(productId: string): Promise<Ser
 
     return {
       success: true,
-      data: { product },
+      data: { product: normalizeStorefrontSupplier(product) },
     };
   } catch (error) {
     console.error('[getStorefrontProductDetail] Error:', error);
@@ -1020,7 +1417,8 @@ export async function getProductsForAdmin(params: {
         created_at,
         updated_at,
         category:categories(id, name),
-        supplier:suppliers(id, company_name, contact_person)
+        supplier:suppliers(id, company_name, contact_person),
+        images:product_images(id, image_url, sort_order, is_primary)
       `,
         { count: 'exact' }
       );
@@ -1074,7 +1472,7 @@ export async function getProductForAdminDetail(
         `
         *,
         category:categories(id, name),
-        supplier:suppliers(id, company_name, contact_person),
+        supplier:suppliers(id, company_name, country, address, contact_person),
         images:product_images(id, image_url, sort_order, is_primary),
         specifications:product_specifications(id, spec_name, spec_value, sort_order)
       `
@@ -1086,9 +1484,74 @@ export async function getProductForAdminDetail(
       return { success: false, error: { message: 'Product not found', code: 'NOT_FOUND' } };
     }
 
-    return { success: true, data: { product } };
+    const { data: pendingRequest } = await adminClient
+      .from('product_approval_requests')
+      .select('id, request_type, status, proposed_data, created_at, reviewed_at, reviewed_by, rejection_reason')
+      .eq('product_id', productId)
+      .in('status', ['pending', 'update_pending'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const { data: priceHistory } = await (adminClient as any)
+      .from('product_versions')
+      .select('id, snapshot, created_at')
+      .eq('product_id', productId)
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    return {
+      success: true,
+      data: {
+        product: {
+          ...product,
+          pendingRequest: pendingRequest ?? null,
+          priceHistory: priceHistory ?? [],
+        },
+      },
+    };
   } catch (error) {
     console.error('[getProductForAdminDetail] Error:', error);
     return { success: false, error: { message: 'Failed to load product', code: 'INTERNAL_ERROR' } };
+  }
+}
+
+/**
+ * Admin permanently deletes a product. Blocked while published.
+ */
+export async function deleteProduct(productId: string): Promise<ServerResult<{ deleted: boolean }>> {
+  try {
+    const adminClient = createAdminClient();
+
+    const { data: product, error: fetchError } = await adminClient
+      .from('products')
+      .select('id, publication_status')
+      .eq('id', productId)
+      .single();
+
+    if (fetchError || !product) {
+      return { success: false, error: { message: 'Product not found', code: 'NOT_FOUND' } };
+    }
+
+    if (product.publication_status === 'published') {
+      return {
+        success: false,
+        error: {
+          message: 'Unpublish this product before deleting it',
+          code: 'PUBLISHED',
+        },
+      };
+    }
+
+    const { error: deleteError } = await adminClient.from('products').delete().eq('id', productId);
+
+    if (deleteError) {
+      return { success: false, error: { message: deleteError.message, code: 'DATABASE_ERROR' } };
+    }
+
+    return { success: true, data: { deleted: true } };
+  } catch (error) {
+    console.error('[deleteProduct] Error:', error);
+    return { success: false, error: { message: 'Failed to delete product', code: 'INTERNAL_ERROR' } };
   }
 }

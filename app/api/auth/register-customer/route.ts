@@ -1,20 +1,15 @@
-import { NextResponse, type NextRequest } from 'next/server';
-import { registerCustomer } from '@/lib/server/auth/customer-auth';
+import { NextResponse } from 'next/server';
 
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const result = await registerCustomer(body, { origin: request.headers.get('origin') });
-
-    if (!result.success) {
-      return NextResponse.json(result, { status: 400 });
-    }
-
-    return NextResponse.json(result, { status: 201 });
-  } catch (error) {
-    return NextResponse.json(
-      { success: false, error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } },
-      { status: 500 }
-    );
-  }
+/** Password customer registration disabled — use Google or email OTP + /api/auth/complete-profile. */
+export async function POST() {
+  return NextResponse.json(
+    {
+      success: false,
+      error: {
+        message: 'Password registration is disabled. Use Google or email OTP.',
+        code: 'DEPRECATED',
+      },
+    },
+    { status: 410 }
+  );
 }

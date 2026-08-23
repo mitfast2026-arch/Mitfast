@@ -2,15 +2,35 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getCategories, createCategory, deleteCategory } from '@/lib/server/categories/category-service';
 import { requireAdmin } from '@/lib/server/auth/get-session';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const result = await getCategories();
+    const { searchParams } = new URL(request.url);
+    const modeParam = searchParams.get('mode');
+    const statusParam = searchParams.get('status');
+
+    const mode = modeParam === 'admin' ? 'admin' : 'public';
+    let status: 'active' | 'archived' | 'all' = 'active';
+
+    if (mode === 'admin') {
+      const auth = await requireAdmin();
+      if (!auth.ok) return auth.response;
+
+      if (statusParam === 'archived' || statusParam === 'all' || statusParam === 'active') {
+        status = statusParam;
+      } else {
+        status = 'all';
+      }
+    }
+
+    const result = await getCategories({ mode, status });
     if (!result.success) return NextResponse.json(result, { status: 400 });
-    return NextResponse.json(result, {
-      headers: {
-        'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
-      },
-    });
+
+    const headers: Record<string, string> =
+      mode === 'admin'
+        ? { 'Cache-Control': 'no-store' }
+        : { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' };
+
+    return NextResponse.json(result, { headers });
   } catch (error) {
     return NextResponse.json(
       { success: false, error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } },

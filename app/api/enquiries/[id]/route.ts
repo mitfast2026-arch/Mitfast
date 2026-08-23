@@ -3,6 +3,7 @@ import {
   updateEnquiryStatus,
   deleteEnquiry,
   respondToEnquiry,
+  updateEnquiryDetails,
 } from '@/lib/server/enquiries/enquiry-service';
 import { requireAdmin } from '@/lib/server/auth/get-session';
 
@@ -24,6 +25,25 @@ export async function PUT(
         },
         auth.session.profile.id
       );
+      if (!result.success) return NextResponse.json(result, { status: 400 });
+      return NextResponse.json(result);
+    }
+
+    if (
+      body.guestName !== undefined ||
+      body.guestEmail !== undefined ||
+      body.guestPhone !== undefined ||
+      body.country !== undefined ||
+      body.companyName !== undefined
+    ) {
+      const result = await updateEnquiryDetails({
+        enquiryId: params.id,
+        guestName: body.guestName,
+        guestEmail: body.guestEmail,
+        guestPhone: body.guestPhone,
+        country: body.country,
+        companyName: body.companyName,
+      });
       if (!result.success) return NextResponse.json(result, { status: 400 });
       return NextResponse.json(result);
     }

@@ -34,6 +34,52 @@
     --status-warning-soft: #FEF3C7;
     --status-danger: #B91C1C;
     --status-danger-soft: #FEF2F2;
+
+    /* Admin / Supplier portal — Dark Dashboard (scoped to .portal-ui below) */
+    --portal-canvas: #0A0A0A;
+    --portal-sidebar: #0A0A0A;
+    --portal-panel: #171717;
+    --portal-inset: #212121;
+    --portal-border: #262626;
+    --portal-border-strong: #262626;
+    --portal-text: #F5F5F5;
+    --portal-muted: #8C8C8C;
+    --portal-subtle: #8C8C8C;
+    --portal-accent: #5B8DEF;
+    --portal-accent-hover: #7BA3F5;
+    --portal-selected: #212121;
+    --portal-selected-border: #5B8DEF;
+    --portal-focus: #5B8DEF;
+    --portal-hero: #FFFFFF;
+    --portal-hero-text: #0A0A0A;
+    --portal-hover: #212121;
+    --portal-success: #34D399;
+    --portal-success-soft: rgba(52, 211, 153, 0.15);
+    --portal-warning: #FBBF24;
+    --portal-warning-soft: rgba(251, 191, 36, 0.15);
+    --portal-danger: #F87171;
+    --portal-danger-soft: rgba(248, 113, 113, 0.15);
+    --portal-info: #FB923C;
+    --portal-info-soft: rgba(251, 146, 60, 0.15);
+    --portal-status-blue: #93C5FD;
+    --portal-status-orange: #FDBA74;
+    --portal-status-yellow: #FDE68A;
+    --portal-status-green: #6EE7B7;
+    --portal-status-text: #0A0A0A;
+  }
+
+  .portal-ui {
+    color: var(--portal-text);
+    background-color: var(--portal-canvas);
+  }
+
+  .portal-ui h1,
+  .portal-ui h2,
+  .portal-ui h3,
+  .portal-ui h4,
+  .portal-ui h5,
+  .portal-ui h6 {
+    color: var(--portal-text);
   }
 
   * {
@@ -166,6 +212,15 @@
     -webkit-backdrop-filter: none;
   }
 
+  /* Homepage scrolled — frosted glass bar */
+  .nav-glass--frosted {
+    background: rgba(255, 255, 255, 0.88);
+    border-bottom: 1px solid rgba(226, 228, 232, 0.65);
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.08);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+  }
+
   .nav-glass--dark {
     background: rgba(17, 19, 21, 0.88);
     box-shadow: 0 4px 24px rgba(0, 0, 0, 0.22);
@@ -185,6 +240,7 @@
 
   /* Navbar opaque action buttons (not glass) */
   .nav-btn {
+    font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
     background: #111315;
     color: #ffffff;
     border: 1px solid #111315;
@@ -215,6 +271,7 @@
   }
 
   .nav-icon {
+    font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
     background: #F7F7F8;
     color: #111315;
     border: 1px solid #E2E4E8;
@@ -242,12 +299,42 @@
     border-color: rgba(255, 255, 255, 0.28);
   }
 
+  .nav-icon--hero {
+    background: rgba(255, 255, 255, 0.15);
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.3);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+
+  .nav-icon--hero:hover {
+    background: rgba(255, 255, 255, 0.25);
+    border-color: rgba(255, 255, 255, 0.4);
+  }
+
+  .nav-btn--on-hero {
+    background: rgba(255, 255, 255, 0.15);
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.3);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+
+  .nav-btn--on-hero:hover {
+    background: rgba(255, 255, 255, 0.25);
+    border-color: rgba(255, 255, 255, 0.4);
+    color: #ffffff;
+  }
+
   /* Primary desktop nav — one flex group, identical items, shared underline geometry */
   .nav-primary {
     align-items: center;
     justify-content: center;
     gap: 2rem;
     height: 100%;
+    font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   }
 
   .nav-item {
@@ -259,9 +346,10 @@
     height: 100%;
     padding: 0;
     margin: 0;
-    font-size: 15px;
-    font-weight: 500;
-    letter-spacing: 0.01em;
+    font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+    font-size: 0.875rem;
+    font-weight: 600;
+    letter-spacing: 0.025em;
     line-height: 1;
     white-space: nowrap;
     text-decoration: none;
@@ -288,20 +376,29 @@
     position: absolute;
     left: 0;
     right: 0;
-    bottom: 16px;
+    bottom: 0.35rem;
     height: 2px;
     border-radius: 9999px;
     background: transparent;
     pointer-events: none;
-    transition: background-color 0.3s ease;
+    transition: background-color 0.3s ease, box-shadow 0.3s ease;
   }
 
   .nav-item.is-active::after {
-    background: #000000;
+    background: #111315;
+  }
+
+  .nav-item--on-hero.is-active::after {
+    background: #ffffff;
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.8);
   }
 
   .nav-item--on-dark.is-active::after {
     background: #ffffff;
+  }
+
+  .nav-item--frosted.is-active::after {
+    background: #111315;
   }
 
   /* Shared light-grey liquid glass CTA (hero) */
@@ -478,261 +575,348 @@
     @apply inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#FEF2F2] text-[#B91C1C] border border-[#FECACA];
   }
 
-  /* SaaS Portal — glassmorphic (admin + supplier only; uses brand greys, not blue) */
+  /* SaaS Portal — Dark Dashboard (admin + supplier) */
   .saas-theme {
-    @apply text-[#111315];
+    color: var(--portal-text);
   }
 
   .saas-canvas-bg {
-    background-color: #F7F7F8;
-    background-image:
-      radial-gradient(ellipse 90% 70% at 0% 0%, #ECEEF0 0%, transparent 58%),
-      radial-gradient(ellipse 80% 60% at 100% 100%, rgba(215, 217, 220, 0.55) 0%, transparent 52%),
-      radial-gradient(ellipse 50% 45% at 70% 20%, rgba(17, 19, 21, 0.04) 0%, transparent 60%);
+    background-color: var(--portal-canvas);
   }
 
   .saas-glass {
-    background: rgba(255, 255, 255, 0.42);
-    backdrop-filter: blur(22px);
-    -webkit-backdrop-filter: blur(22px);
-    border: 1px solid rgba(255, 255, 255, 0.55);
-    box-shadow:
-      0 18px 50px rgba(17, 19, 21, 0.07),
-      inset 0 1px 0 rgba(255, 255, 255, 0.75);
+    background: var(--portal-panel);
+    border: 1px solid var(--portal-border);
+    border-radius: 24px;
   }
 
-  .saas-sidebar-gradient {
-    @apply text-[#111315];
-    background: rgba(255, 255, 255, 0.38);
-    backdrop-filter: blur(22px);
-    -webkit-backdrop-filter: blur(22px);
-    border: 1px solid rgba(255, 255, 255, 0.55);
-    box-shadow:
-      0 18px 50px rgba(17, 19, 21, 0.07),
-      inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  .saas-sidebar-gradient,
+  .saas-sidebar {
+    color: var(--portal-text);
+    background: var(--portal-sidebar);
+    border-right: 1px solid var(--portal-border);
   }
 
   .saas-glass-bar {
-    background: rgba(255, 255, 255, 0.4);
-    backdrop-filter: blur(22px);
-    -webkit-backdrop-filter: blur(22px);
-    border: 1px solid rgba(255, 255, 255, 0.6);
-    box-shadow:
-      0 10px 32px rgba(17, 19, 21, 0.06),
-      inset 0 1px 0 rgba(255, 255, 255, 0.85);
+    background: var(--portal-panel);
+    border: 1px solid var(--portal-border);
+    border-radius: 9999px;
   }
 
   .saas-panel,
   .saas-kpi-card,
   .saas-neu-surface,
   .saas-command-band {
-    background: rgba(255, 255, 255, 0.4);
-    backdrop-filter: blur(22px);
-    -webkit-backdrop-filter: blur(22px);
-    border: 1px solid rgba(255, 255, 255, 0.55);
-    border-radius: 1.5rem;
-    box-shadow:
-      0 18px 50px rgba(17, 19, 21, 0.07),
-      inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    background: var(--portal-panel);
+    border: 1px solid var(--portal-border);
+    border-radius: 24px;
+  }
+
+  .saas-kpi-card,
+  .saas-kpi-card-hero {
+    padding: 24px;
+  }
+
+  .saas-kpi-card-hero {
+    background: var(--portal-hero) !important;
+    color: var(--portal-hero-text) !important;
+    border: 1px solid var(--portal-hero);
+    border-radius: 24px;
+  }
+
+  .saas-kpi-card-hero,
+  .saas-kpi-card-hero * {
+    color: var(--portal-hero-text);
+  }
+
+  .saas-kpi-card-hero .type-kpi,
+  .saas-kpi-card-hero .type-kpi-label,
+  .saas-kpi-card-hero .type-kpi-meta {
+    color: var(--portal-hero-text) !important;
+  }
+
+  .saas-kpi-card-hero .ds-hero-muted {
+    color: rgba(10, 10, 10, 0.55) !important;
+  }
+
+  .saas-kpi-card-hero .ds-hero-icon {
+    color: var(--portal-accent) !important;
+    background: rgba(10, 10, 10, 0.06);
+    border-color: rgba(10, 10, 10, 0.1);
   }
 
   .saas-panel-secondary {
-    background: rgba(236, 238, 240, 0.45);
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
-    border: 1px solid rgba(255, 255, 255, 0.5);
-    border-radius: 1.5rem;
+    background: var(--portal-inset);
+    border: 1px solid var(--portal-border);
+    border-radius: 24px;
   }
 
   .saas-inset-surface {
-    background: rgba(247, 247, 248, 0.55);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.45);
-    border-radius: 1.25rem;
+    background: var(--portal-inset);
+    border: 1px solid var(--portal-border);
+    border-radius: 20px;
   }
 
   .saas-icon-well {
-    @apply h-10 w-10 rounded-full text-[#111315] inline-flex items-center justify-center shrink-0;
-    background: rgba(255, 255, 255, 0.5);
-    border: 1px solid rgba(255, 255, 255, 0.7);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    @apply h-10 w-10 rounded-full inline-flex items-center justify-center shrink-0;
+    color: var(--portal-accent);
+    background: var(--portal-inset);
+    border: 1px solid var(--portal-border);
   }
 
   .saas-icon-well-lg {
-    @apply h-12 w-12 rounded-full text-[#111315] inline-flex items-center justify-center shrink-0;
-    background: rgba(255, 255, 255, 0.5);
-    border: 1px solid rgba(255, 255, 255, 0.7);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    @apply h-12 w-12 rounded-full inline-flex items-center justify-center shrink-0;
+    color: var(--portal-accent);
+    background: var(--portal-inset);
+    border: 1px solid var(--portal-border);
   }
 
   .saas-nav-active {
-    @apply text-white rounded-full font-medium;
-    background: rgba(17, 19, 21, 0.78);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    box-shadow: 0 8px 20px rgba(17, 19, 21, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    @apply font-medium text-portal-hero-text;
+    background: #F5F5F5;
+    border-radius: 12px;
   }
 
   .saas-nav-inactive {
-    @apply text-[#6B7280] hover:text-[#111315] rounded-full;
+    border-radius: 12px;
+    color: var(--portal-muted);
   }
 
   .saas-nav-inactive:hover {
-    background: rgba(255, 255, 255, 0.45);
+    color: var(--portal-text);
+    background: var(--portal-hover);
   }
 
   .saas-avatar-glow {
-    border: 1px solid rgba(255, 255, 255, 0.55);
+    border: 1px solid var(--portal-border);
   }
 
   .saas-table-container {
     @apply overflow-x-auto;
-    background: rgba(255, 255, 255, 0.35);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.5);
-    border-radius: 1.25rem;
+    background: var(--portal-panel);
+    border: 1px solid var(--portal-border);
+    border-radius: 20px;
   }
 
   .saas-table {
-    @apply w-full text-left text-xs;
+    @apply w-full text-left text-sm;
   }
 
   .saas-table thead {
-    @apply text-[#6B7280];
-    background: rgba(236, 238, 240, 0.45);
-    border-bottom: 1px solid rgba(226, 228, 232, 0.7);
+    color: var(--portal-muted);
+    background: transparent;
+    border-bottom: 1px solid var(--portal-border);
   }
 
   .saas-table th {
-    @apply px-4 py-3 font-semibold;
+    @apply px-4 py-3 font-medium text-xs uppercase tracking-wide;
   }
 
   .saas-table td {
-    @apply px-4 py-3 text-[#111315];
-    border-top: 1px solid rgba(226, 228, 232, 0.55);
+    @apply px-4 py-3;
+    color: var(--portal-text);
+    border-top: 1px solid var(--portal-border);
+  }
+
+  .saas-table tbody tr:hover td {
+    background: var(--portal-hover);
   }
 
   .saas-input {
-    @apply w-full px-3 py-2 text-xs text-[#111315] focus:outline-none transition-colors;
-    background: rgba(255, 255, 255, 0.4);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.6);
+    @apply w-full px-4 py-2.5 text-sm focus:outline-none transition-colors;
+    color: var(--portal-text);
+    background: var(--portal-inset);
+    border: 1px solid var(--portal-border);
     border-radius: 9999px;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
   }
 
   .saas-input:focus {
-    border-color: rgba(17, 19, 21, 0.35);
-    box-shadow: 0 0 0 3px rgba(17, 19, 21, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.75);
+    border-color: var(--portal-accent);
+    box-shadow: 0 0 0 3px rgba(91, 141, 239, 0.25);
   }
 
   textarea.saas-input {
-    border-radius: 1.25rem;
+    border-radius: 20px;
+  }
+
+  .saas-search-field {
+    @apply relative w-full;
+  }
+
+  .saas-search-field .saas-input {
+    padding-left: 2.5rem !important;
+  }
+
+  .saas-search-field .saas-search-icon {
+    @apply absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none;
+    color: var(--portal-muted);
+    width: 0.875rem;
+    height: 0.875rem;
   }
 
   .saas-label {
-    @apply block text-xs text-[#6B7280] mb-1 font-medium;
+    @apply block text-xs mb-1 font-medium;
+    color: var(--portal-muted);
   }
 
   .saas-btn-primary,
   .saas-btn-gold {
-    @apply inline-flex items-center justify-center text-white rounded-full font-medium text-xs px-5 py-2 transition-colors disabled:opacity-50;
-    background: rgba(17, 19, 21, 0.78);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-    border: 1px solid rgba(255, 255, 255, 0.22);
-    box-shadow: 0 10px 24px rgba(17, 19, 21, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    @apply inline-flex items-center justify-center font-medium text-sm px-5 py-2.5 transition-colors disabled:opacity-50 gap-2;
+    color: var(--portal-hero-text);
+    background: var(--portal-hero);
+    border: 1px solid var(--portal-hero);
+    border-radius: 9999px;
   }
 
   .saas-btn-primary:hover,
   .saas-btn-gold:hover {
-    background: rgba(31, 36, 41, 0.88);
+    background: #E5E5E5;
+    border-color: #E5E5E5;
   }
 
   .saas-btn-secondary,
   .saas-neu-button {
-    @apply inline-flex items-center justify-center text-[#111315] rounded-full font-medium text-xs px-5 py-2 transition-colors disabled:opacity-50;
-    background: rgba(255, 255, 255, 0.42);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-    border: 1px solid rgba(255, 255, 255, 0.65);
-    box-shadow: 0 8px 20px rgba(17, 19, 21, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+    @apply inline-flex items-center justify-center font-medium text-sm px-5 py-2.5 transition-colors disabled:opacity-50 gap-2;
+    color: var(--portal-text);
+    background: var(--portal-panel);
+    border: 1px solid var(--portal-border);
+    border-radius: 9999px;
   }
 
   .saas-btn-secondary:hover,
   .saas-neu-button:hover {
-    background: rgba(255, 255, 255, 0.62);
+    background: var(--portal-hover);
   }
 
   .saas-btn-ghost {
-    @apply inline-flex items-center justify-center h-9 w-9 rounded-full text-[#6B7280] hover:text-[#111315] transition-colors;
-    background: rgba(255, 255, 255, 0.4);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-    border: 1px solid rgba(255, 255, 255, 0.65);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+    @apply inline-flex items-center justify-center h-9 w-9 transition-colors;
+    color: var(--portal-muted);
+    background: var(--portal-panel);
+    border: 1px solid var(--portal-border);
+    border-radius: 9999px;
+  }
+
+  .saas-btn-ghost:hover {
+    color: var(--portal-text);
+    background: var(--portal-hover);
   }
 
   .saas-segmented {
-    @apply inline-flex items-center p-1 gap-0.5 rounded-full;
-    background: rgba(255, 255, 255, 0.35);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.55);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+    @apply inline-flex items-center p-1 gap-0.5;
+    background: var(--portal-inset);
+    border: 1px solid var(--portal-border);
+    border-radius: 9999px;
   }
 
   .saas-tab-active {
-    @apply font-medium text-xs px-4 py-2 rounded-full text-white;
-    background: rgba(17, 19, 21, 0.78);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    @apply font-medium text-sm px-3 py-1.5;
+    color: var(--portal-hero-text);
+    background: var(--portal-hero);
+    border-radius: 9999px;
   }
 
   .saas-tab-inactive {
-    @apply font-medium text-xs px-4 py-2 rounded-full text-[#6B7280] hover:text-[#111315] bg-transparent border-0;
+    @apply font-medium text-sm px-3 py-1.5 bg-transparent border-0;
+    color: var(--portal-muted);
+    border-radius: 9999px;
+  }
+
+  .saas-tab-inactive:hover {
+    color: var(--portal-text);
+    background: var(--portal-hover);
+  }
+
+  .saas-list-item {
+    @apply saas-panel p-3 w-full text-left transition-colors border-l-[3px] border-transparent hover:bg-portal-hover;
+  }
+
+  .saas-list-item-selected {
+    background: var(--portal-selected);
+    border-left: 3px solid var(--portal-selected-border);
+    padding-left: calc(0.75rem - 3px);
   }
 
   .saas-badge-gold,
   .saas-badge-cyan,
   .saas-badge-neutral {
-    @apply inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-[#ECEEF0] text-[#111315] border border-[#E2E4E8];
+    @apply inline-flex items-center px-2.5 py-0.5 text-xs;
+    background: var(--portal-inset);
+    color: var(--portal-text);
+    border: 1px solid var(--portal-border);
+    border-radius: 9999px;
   }
 
   .saas-badge-success {
-    @apply inline-flex items-center px-2 py-0.5 rounded-full text-[10px] bg-[#F0FDF4] text-[#15803D] border border-[#BBF7D0];
+    @apply inline-flex items-center px-2.5 py-0.5 text-xs;
+    background: var(--portal-success-soft);
+    color: var(--portal-success);
+    border: 1px solid transparent;
+    border-radius: 9999px;
   }
 
   .saas-badge-warning {
-    @apply inline-flex items-center px-2 py-0.5 rounded-full text-[10px] bg-[#FEF3C7] text-[#B45309] border border-[#FDE68A];
+    @apply inline-flex items-center px-2.5 py-0.5 text-xs;
+    background: var(--portal-warning-soft);
+    color: var(--portal-warning);
+    border: 1px solid transparent;
+    border-radius: 9999px;
   }
 
   .saas-badge-danger {
-    @apply inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-[#FEF2F2] text-[#B91C1C] border border-[#FECACA];
+    @apply inline-flex items-center px-2.5 py-0.5 text-xs;
+    background: var(--portal-danger-soft);
+    color: var(--portal-danger);
+    border: 1px solid transparent;
+    border-radius: 9999px;
+  }
+
+  .saas-badge-info {
+    @apply inline-flex items-center px-2.5 py-0.5 text-xs;
+    background: var(--portal-info-soft);
+    color: var(--portal-info);
+    border: 1px solid transparent;
+    border-radius: 9999px;
+  }
+
+  @keyframes portal-shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+
+  .saas-skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--portal-panel) 25%,
+      var(--portal-hover) 50%,
+      var(--portal-panel) 75%
+    );
+    background-size: 200% 100%;
+    animation: portal-shimmer 1.4s ease-in-out infinite;
+    border-radius: 12px;
   }
 
   /* Typography */
   .editorial-heading,
   .type-page {
-    @apply text-2xl sm:text-3xl font-heading font-bold text-[#111315] tracking-tight;
+    @apply text-2xl font-heading font-semibold tracking-tight;
+    color: var(--portal-text);
   }
   
   .editorial-subheading,
   .type-subtitle {
-    @apply text-sm text-[#6B7280] leading-relaxed;
+    @apply text-sm leading-relaxed;
+    color: var(--portal-muted);
   }
 
   .editorial-body {
-    @apply text-sm text-[#111315] leading-relaxed;
+    @apply text-sm leading-relaxed;
+    color: var(--portal-text);
   }
 
   .editorial-label,
   .type-meta {
-    @apply text-xs font-medium text-[#6B7280] uppercase tracking-wider;
+    @apply text-xs font-medium uppercase tracking-wider;
+    color: var(--portal-muted);
   }
   
   .editorial-card {
@@ -740,39 +924,48 @@
   }
 
   .type-metric {
-    @apply font-mono font-medium tabular-nums text-[#111315];
+    @apply font-mono font-medium tabular-nums;
+    color: var(--portal-text);
   }
 
   .type-id {
-    @apply font-mono font-medium text-xs text-[#6B7280];
+    @apply font-mono font-medium text-sm;
+    color: var(--portal-muted);
   }
 
   .type-kpi {
-    @apply font-mono font-medium text-3xl sm:text-4xl tracking-tight text-[#111315] tabular-nums;
+    @apply font-mono font-semibold text-2xl tracking-tight tabular-nums;
+    color: var(--portal-text);
   }
 
   .type-kpi-label {
-    @apply text-xs font-medium text-[#6B7280] uppercase tracking-wider;
+    @apply text-[13px] font-medium capitalize tracking-normal;
+    color: var(--portal-muted);
   }
 
   .type-kpi-meta {
-    @apply text-xs text-[#6B7280];
+    @apply text-xs;
+    color: var(--portal-muted);
   }
 
   .type-section {
-    @apply text-base font-semibold text-[#111315] tracking-tight;
+    @apply text-base font-semibold tracking-tight;
+    color: var(--portal-text);
   }
 
   .type-desc {
-    @apply text-xs text-[#6B7280] leading-relaxed mt-1;
+    @apply text-sm leading-relaxed mt-1;
+    color: var(--portal-muted);
   }
 
   .type-empty-title {
-    @apply text-sm font-semibold text-[#111315];
+    @apply text-base font-semibold;
+    color: var(--portal-text);
   }
 
   .type-empty-body {
-    @apply text-xs text-[#6B7280];
+    @apply text-sm;
+    color: var(--portal-muted);
   }
 
   /*

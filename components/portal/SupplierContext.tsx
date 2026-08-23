@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase/client';
 
@@ -29,13 +29,15 @@ export function SupplierProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [supplier, setSupplier] = useState<SupplierRecord | null>(null);
   const [loading, setLoading] = useState(true);
-  const [initialLoadDone, setInitialLoadDone] = useState(false);
+  const initialLoadDoneRef = useRef(false);
 
   const refreshSupplier = useCallback(async () => {
-    if (!initialLoadDone) setLoading(true);
+    if (!initialLoadDoneRef.current) setLoading(true);
     try {
       const supabase = createBrowserClient();
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) {
         router.push('/auth?role=supplier&mode=signin');
         return;
@@ -43,7 +45,9 @@ export function SupplierProvider({ children }: { children: React.ReactNode }) {
 
       const { data: sup } = await supabase
         .from('suppliers')
-        .select('id, user_id, company_name, contact_person, email, phone, country, address, status, rejection_reason, created_at')
+        .select(
+          'id, user_id, company_name, contact_person, email, phone, country, address, status, rejection_reason, created_at'
+        )
         .eq('user_id', user.id)
         .maybeSingle();
 
@@ -52,12 +56,12 @@ export function SupplierProvider({ children }: { children: React.ReactNode }) {
       console.error('Failed to load supplier profile:', err);
     } finally {
       setLoading(false);
-      setInitialLoadDone(true);
+      initialLoadDoneRef.current = true;
     }
-  }, [router, initialLoadDone]);
+  }, [router]);
 
   useEffect(() => {
-    refreshSupplier();
+    void refreshSupplier();
   }, [refreshSupplier]);
 
   return (

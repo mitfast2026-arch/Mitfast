@@ -1,21 +1,37 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { 
-  Mail, 
-  Search, 
-  FileText, 
-  ExternalLink, 
-  Trash2, 
-  RefreshCw, 
-  X, 
-  Phone, 
-  User, 
-  Building2
+import React, { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
+import {
+  Search,
+  RefreshCw,
+  FileText,
+  ExternalLink,
+  Trash2,
+  ArrowRight,
 } from 'lucide-react';
-import { apiGet, apiPut, apiPost, apiDelete } from '@/lib/client/api-client';
+import { apiPut, apiPost, apiDelete } from '@/lib/client/api-client';
+import {
+  cachedApiGet,
+  markPortalContentReady,
+  peekPortalCache,
+} from '@/lib/client/portal-data-cache';
+import { PORTAL_PAGE_LIMIT } from '@/lib/client/portal-nav-prefetch';
 import { useMutation, mutationKey } from '@/lib/client/use-mutation';
+import { notifyDashboardChanged } from '@/components/portal/ApprovalsCountContext';
 import type { EnquiryStatus } from '@/types/database';
+import { SalesWorkflowBar, ContactGrid } from '@/components/admin/SalesWorkflow';
+import AdminPageHeader from '@/components/admin/AdminPageHeader';
+import AdminToolbar from '@/components/admin/AdminToolbar';
+import AdminSplitView from '@/components/admin/AdminSplitView';
+import {
+  enquiryContact,
+  enquiryTypeLabel,
+  enquiryStatusBadgeClass,
+  formatStatusLabel,
+} from '@/lib/admin/sales-workflow';
+
+const STATUS_TABS = ['all', 'new', 'contacted', 'converted_to_rfq', 'converted_to_order', 'closed'] as const;
 
 export default function AdminEnquiriesPage() {
   const [enquiries, setEnquiries] = useState<any[]>([]);
@@ -23,47 +39,90 @@ export default function AdminEnquiriesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedEnquiry, setSelectedEnquiry] = useState<any>(null);
-  const [convertQty, setConvertQty] = useState(1);
-  const [convertPrice, setConvertPrice] = useState('');
-  const [convertProductId, setConvertProductId] = useState('');
-  const [addr1, setAddr1] = useState('');
-  const [addr2, setAddr2] = useState('');
-  const [city, setCity] = useState('');
-  const [stateName, setStateName] = useState('');
-  const [postalCode, setPostalCode] = useState('');
-  const [convertCountry, setConvertCountry] = useState('India');
-  const [convertLoading, setConvertLoading] = useState(false);
-  const [convertError, setConvertError] = useState('');
-  const [catalogProducts, setCatalogProducts] = useState<any[]>([]);
-  const [orderTrackingUrl, setOrderTrackingUrl] = useState('');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const [catalogSearch, setCatalogSearch] = useState('');
+
+  const [editName, setEditName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editCountry, setEditCountry] = useState('');
+  const [editCompany, setEditCompany] = useState('');
+  const [contactSaving, setContactSaving] = useState(false);
+  const [contactError, setContactError] = useState('');
+
   const [responseDraft, setResponseDraft] = useState('');
   const [responseSaving, setResponseSaving] = useState(false);
   const [responseError, setResponseError] = useState('');
+
+  const [rfqQty, setRfqQty] = useState(1);
+  const [rfqProductId, setRfqProductId] = useState('');
+  const [catalogProducts, setCatalogProducts] = useState<any[]>([]);
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [rfqLoading, setRfqLoading] = useState(false);
+  const [rfqError, setRfqError] = useState('');
+  const [createdRfqId, setCreatedRfqId] = useState('');
+
   const { isPending, run } = useMutation();
 
-  async function loadEnquiries(showLoading = true) {
-    if (showLoading) setLoading(true);
+  const loadEnquiries = useCallback(async (showLoading = true) => {
+    const url = `/api/enquiries?status=${statusFilter}&search=${encodeURIComponent(searchTerm)}&page=${page}&limit=${PORTAL_PAGE_LIMIT}`;
+    const existing = peekPortalCache<{ enquiries: any[]; total: number }>(url);
+    if (existing) {
+      const list = existing.data.enquiries || [];
+      setEnquiries(list);
+      setTotal(existing.data.total || 0);
+      setSelectedEnquiry((prev: any) => {
+        if (prev) {
+          const updated = list.find((e: any) => e.id === prev.id);
+          if (updated) {
+            syncDetailForm(updated);
+            return updated;
+          }
+        }
+        if (list[0]) {
+          syncDetailForm(list[0]);
+          return list[0];
+        }
+        return prev;
+      });
+      setLoading(false);
+    } else if (showLoading) {
+      setLoading(true);
+    }
     try {
-      const result = await apiGet<{ enquiries: any[]; total: number }>(
-        `/api/enquiries?status=${statusFilter}&search=${encodeURIComponent(searchTerm)}&page=${page}&limit=50`
-      );
+      const result = await cachedApiGet<{ enquiries: any[]; total: number }>(url, {
+        force: showLoading && !existing,
+      });
       if (result.ok) {
-        setEnquiries(result.data.enquiries || []);
+        const list = result.data.enquiries || [];
+        setEnquiries(list);
         setTotal(result.data.total || 0);
+        setSelectedEnquiry((prev: any) => {
+          if (prev) {
+            const updated = list.find((e: any) => e.id === prev.id);
+            if (updated) {
+              syncDetailForm(updated);
+              return updated;
+            }
+          }
+          if (list[0]) {
+            syncDetailForm(list[0]);
+            return list[0];
+          }
+          return prev;
+        });
+        markPortalContentReady('/admin/enquiries');
       }
     } catch (err) {
       console.error('Failed to load enquiries:', err);
     } finally {
-      if (showLoading) setLoading(false);
+      setLoading(false);
     }
-  }
+  }, [statusFilter, searchTerm, page]);
 
   useEffect(() => {
     loadEnquiries();
-  }, [statusFilter, searchTerm, page]);
+  }, [loadEnquiries]);
 
   useEffect(() => {
     const q = catalogSearch.trim();
@@ -75,41 +134,66 @@ export default function AdminEnquiriesPage() {
       .catch(() => {});
   }, [catalogSearch]);
 
+  function syncDetailForm(enq: any) {
+    setEditName(enq.guest_name || enq.customer?.full_name || '');
+    setEditEmail(enq.guest_email || enq.customer?.email || '');
+    setEditPhone(enq.guest_phone || enq.customer?.phone || '');
+    setEditCountry(enq.country || '');
+    setEditCompany(enq.company_name || '');
+    setResponseDraft(enq.response_message || '');
+    setRfqQty(1);
+    setRfqProductId(enq.product_id || enq.product?.id || '');
+    setRfqError('');
+    setCreatedRfqId('');
+    setContactError('');
+    setResponseError('');
+  }
+
+  function selectEnquiry(enq: any) {
+    setSelectedEnquiry(enq);
+    syncDetailForm(enq);
+  }
+
   async function handleUpdateStatus(enquiryId: string, newStatus: EnquiryStatus) {
     await run(
       () => apiPut(`/api/enquiries/${enquiryId}`, { status: newStatus }),
       {
         key: mutationKey(enquiryId, `status-${newStatus}`),
         onSuccess: () => {
-          setEnquiries((prev) =>
-            prev.map((e) => (e.id === enquiryId ? { ...e, status: newStatus } : e))
-          );
-          if (selectedEnquiry?.id === enquiryId) {
-            setSelectedEnquiry({ ...selectedEnquiry, status: newStatus });
-          }
+          loadEnquiries(false);
+          notifyDashboardChanged();
         },
       }
     );
   }
 
-  function openEnquiry(enq: any) {
-    setSelectedEnquiry(enq);
-    setConvertError('');
-    setResponseError('');
-    setResponseDraft(enq.response_message || '');
-    setConvertQty(1);
-    const linkedProduct = enq.product;
-    setConvertPrice(
-      linkedProduct?.selling_price != null ? String(linkedProduct.selling_price) : '',
-    );
-    setConvertProductId(enq.product_id || enq.product?.id || '');
-    setAddr1('');
-    setAddr2('');
-    setCity('');
-    setStateName('');
-    setPostalCode('');
-    setConvertCountry('India');
-    setOrderTrackingUrl('');
+  async function handleSaveContact() {
+    if (!selectedEnquiry) return;
+    setContactSaving(true);
+    setContactError('');
+    try {
+      const res = await fetch(`/api/enquiries/${selectedEnquiry.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          guestName: editName.trim(),
+          guestEmail: editEmail.trim(),
+          guestPhone: editPhone.trim(),
+          country: editCountry.trim(),
+          companyName: editCompany.trim() || null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        setContactError(json.error?.message || 'Failed to save contact details');
+        return;
+      }
+      loadEnquiries(false);
+    } catch {
+      setContactError('Failed to save contact details');
+    } finally {
+      setContactSaving(false);
+    }
   }
 
   async function handleSaveResponse() {
@@ -134,462 +218,365 @@ export default function AdminEnquiriesPage() {
         setResponseError(json.error?.message || 'Failed to save response');
         return;
       }
-      setSelectedEnquiry({
-        ...selectedEnquiry,
-        response_message: responseDraft.trim(),
-        responded_at: new Date().toISOString(),
-        status: selectedEnquiry.status === 'new' ? 'contacted' : selectedEnquiry.status,
-      });
-      loadEnquiries();
-    } catch (err) {
-      console.error('Save enquiry response error:', err);
+      loadEnquiries(false);
+    } catch {
       setResponseError('Failed to save response');
     } finally {
       setResponseSaving(false);
     }
   }
 
-  async function handleConvertToOrder() {
+  async function handleCreateRfq() {
     if (!selectedEnquiry) return;
-    const customerId = selectedEnquiry.customer_id || selectedEnquiry.customer?.id;
-    const enquiryProductId = selectedEnquiry.product_id || selectedEnquiry.product?.id;
-    const productId = enquiryProductId || convertProductId.trim();
-    setConvertError('');
-
+    const productId = selectedEnquiry.product_id || selectedEnquiry.product?.id || rfqProductId.trim();
+    setRfqError('');
     if (!productId) {
-      setConvertError('A product is required to convert this enquiry to an order.');
+      setRfqError('Link or select a product before creating an RFQ.');
       return;
     }
-
-    if (!addr1.trim() || !city.trim() || !stateName.trim() || !postalCode.trim()) {
-      setConvertError('Delivery address line 1, city, state, and postal code are required.');
-      return;
-    }
-
-    setConvertLoading(true);
+    setRfqLoading(true);
     try {
-      const payload: Record<string, unknown> = {
-        enquiryId: selectedEnquiry.id,
-        quantity: convertQty,
-        deliveryAddress: {
-          address_line_1: addr1.trim(),
-          address_line_2: addr2.trim() || null,
-          city: city.trim(),
-          state: stateName.trim(),
-          postal_code: postalCode.trim(),
-          country: convertCountry.trim() || 'India',
-        },
-      };
-
-      if (customerId) payload.customerId = customerId;
-      if (!enquiryProductId && convertProductId.trim()) {
-        payload.productId = convertProductId.trim();
-      }
-
-      const res = await fetch('/api/orders/from-enquiry', {
+      const res = await fetch(`/api/enquiries/${selectedEnquiry.id}/convert-to-rfq`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          quantity: rfqQty,
+          productId: selectedEnquiry.product_id ? undefined : productId,
+          deliveryAddress: editCountry.trim()
+            ? {
+                address_line_1: 'To be confirmed',
+                city: 'TBD',
+                state: 'TBD',
+                postal_code: '000000',
+                country: editCountry.trim(),
+              }
+            : undefined,
+        }),
       });
       const json = await res.json();
       if (!res.ok || !json.success) {
-        setConvertError(json.error?.message || 'Failed to convert enquiry to order');
+        setRfqError(json.error?.message || 'Failed to create RFQ');
         return;
       }
-      setSelectedEnquiry({ ...selectedEnquiry, status: 'converted_to_order' });
-      if (json.data?.trackingToken) {
-        setOrderTrackingUrl(`${window.location.origin}/track/${json.data.trackingToken}`);
-      }
-      loadEnquiries();
-    } catch (err) {
-      console.error('Convert enquiry error:', err);
-      setConvertError('Failed to convert enquiry to order');
+      setCreatedRfqId(json.data?.rfqId || '');
+      loadEnquiries(false);
+      notifyDashboardChanged();
+    } catch {
+      setRfqError('Failed to create RFQ');
     } finally {
-      setConvertLoading(false);
+      setRfqLoading(false);
     }
   }
 
   async function handleDeleteEnquiry(enquiryId: string) {
-    if (!confirm('Are you sure you want to delete this enquiry?')) return;
+    if (!confirm('Delete this enquiry?')) return;
     try {
-      await fetch(`/api/enquiries/${enquiryId}`, { method: 'DELETE' });
+      await apiDelete(`/api/enquiries/${enquiryId}`);
       if (selectedEnquiry?.id === enquiryId) setSelectedEnquiry(null);
-      loadEnquiries();
+      loadEnquiries(false);
     } catch (err) {
       console.error('Delete enquiry error:', err);
     }
   }
 
+  const contact = selectedEnquiry ? enquiryContact(selectedEnquiry) : null;
+  const canCreateRfq =
+    selectedEnquiry &&
+    !['converted_to_rfq', 'converted_to_order', 'closed'].includes(selectedEnquiry.status);
+
   return (
     <div className="space-y-6 w-full">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="type-page">
-            Enquiries
-          </h1>
-          <p className="type-subtitle">
-            Manage product enquiries, custom drawing submissions, and buyer leads.
-          </p>
-        </div>
+      <AdminPageHeader
+        title="Enquiries"
+        description="All inbound leads — contact us, product enquiries, and send-enquiry requests."
+        actions={
+          <button onClick={() => loadEnquiries()} className="saas-btn-secondary gap-2">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        }
+      />
 
-        <button 
-          onClick={() => loadEnquiries()} 
-          className="saas-neu-button text-xs py-2 px-3.5 flex items-center gap-2 self-start sm:self-auto"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 text-[#6B7280] ${loading ? 'animate-spin' : ''}`} />
-          <span>Refresh</span>
-        </button>
-      </div>
+      <SalesWorkflowBar active="enquiries" />
 
-      {/* Filter Bar */}
-      <div className="saas-panel p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="relative w-full sm:w-80">
-          <input 
-            type="text"
-            placeholder="Search enquiries by name, company, or message..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="saas-input pl-9 text-xs"
-          />
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#6B7280]" />
-        </div>
-
-        {/* Status Filter Tabs */}
-        <div className="saas-segmented flex-wrap self-start sm:self-auto">
-          {['all', 'new', 'contacted', 'converted_to_order', 'closed'].map((st) => (
-            <button
-              key={st}
-              onClick={() => setStatusFilter(st)}
-              className={statusFilter === st ? 'saas-tab-active' : 'saas-tab-inactive'}
-            >
-              {st.replace(/_/g, ' ').toUpperCase()}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Enquiries Table */}
-      <div className="saas-table-container">
-        <table className="saas-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Name & company</th>
-              <th>Contact</th>
-              <th>Product / subject</th>
-              <th>Status</th>
-              <th className="text-right">ACTIONS</th>
-            </tr>
-          </thead>
-          <tbody>
-            {enquiries.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="py-12 text-center text-[#6B7280] text-xs">
-                  No enquiries found matching your filter.
-                </td>
-              </tr>
-            ) : (
-              enquiries.map((enq) => (
-                <tr key={enq.id}>
-                  <td className="text-[#6B7280] text-xs">
-                    {new Date(enq.created_at).toLocaleDateString()}
-                  </td>
-                  <td>
-                    <div className="font-medium text-[#111315]">{enq.full_name || enq.guest_name}</div>
-                    {enq.company_name && (
-                      <div className="text-xs text-[#6B7280] flex items-center gap-1 mt-0.5">
-                        <Building2 className="w-3 h-3 text-[#6B7280]" />
-                        <span>{enq.company_name}</span>
-                      </div>
-                    )}
-                  </td>
-                  <td className="text-xs text-[#6B7280] space-y-0.5">
-                    <div>{enq.email || enq.guest_email}</div>
-                    <div className="text-[#6B7280]">{enq.phone || enq.guest_phone}</div>
-                  </td>
-                  <td>
-                    <div className="font-medium text-[#111315] text-xs truncate max-w-xs">
-                      {enq.product?.name || 'Custom Drawing Enquiry'}
-                    </div>
-                    {enq.file_url && (
-                      <a 
-                        href={enq.file_url} 
-                        target="_blank" 
-                        rel="noreferrer" 
-                        className="text-xs text-[#111315] hover:underline flex items-center gap-1 mt-0.5 font-medium"
-                      >
-                        <FileText className="w-3 h-3" />
-                        <span>View Attachment</span>
-                      </a>
-                    )}
-                  </td>
-                  <td>
-                    <span className={
-                      enq.status === 'new'
-                        ? 'saas-badge-cyan'
-                        : enq.status === 'converted_to_order'
-                        ? 'saas-badge-success'
-                        : 'saas-badge-neutral'
-                    }>
-                      {enq.status.replace(/_/g, ' ').toUpperCase()}
-                    </span>
-                  </td>
-                  <td className="text-right space-x-1.5">
-                    <button
-                      onClick={() => openEnquiry(enq)}
-                      className="saas-btn-secondary text-xs py-1 px-2.5"
-                    >
-                      View
-                    </button>
-                    <button
-                      onClick={() => handleDeleteEnquiry(enq.id)}
-                      className="p-1.5 rounded-lg text-[#6B7280] hover:text-[#B91C1C] hover:bg-[#FEF2F2]"
-                      title="Delete Enquiry"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Enquiry Detail Modal */}
-      {selectedEnquiry && (
-        <div className="fixed inset-0 z-50 bg-[#111315]/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-xl max-h-[90vh] overflow-y-auto p-6 rounded-2xl bg-white shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-[#E2E4E8] pb-3">
-              <h3 className="text-base text-[#111315]">
-                Enquiry Details
-              </h3>
-              <button 
-                onClick={() => setSelectedEnquiry(null)}
-                className="p-1 rounded-lg text-[#6B7280] hover:text-[#111315]"
+      <AdminToolbar>
+        <div className="flex flex-col lg:flex-row gap-3 lg:items-center w-full">
+          <div className="saas-search-field w-full sm:max-w-xs">
+            <Search className="saas-search-icon" />
+            <input
+              type="text"
+              placeholder="Search name, email, phone, country…"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="saas-input w-full"
+            />
+          </div>
+          <div className="saas-segmented overflow-x-auto flex-nowrap">
+            {STATUS_TABS.map((st) => (
+              <button
+                key={st}
+                onClick={() => setStatusFilter(st)}
+                className={`shrink-0 ${statusFilter === st ? 'saas-tab-active' : 'saas-tab-inactive'}`}
               >
-                <X className="w-4 h-4" />
+                {formatStatusLabel(st)}
               </button>
-            </div>
+            ))}
+          </div>
+        </div>
+      </AdminToolbar>
 
-            <div className="space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-3 bg-[#F7F7F8] p-3 rounded-xl">
-                <div>
-                  <span className="type-meta text-[#6B7280]">Name</span>
-                  <div className="font-medium text-[#111315]">{selectedEnquiry.full_name || selectedEnquiry.guest_name}</div>
-                </div>
-                <div>
-                  <span className="type-meta text-[#6B7280]">Company</span>
-                  <div className="text-[#111315]">{selectedEnquiry.company_name || 'N/A'}</div>
-                </div>
-                <div>
-                  <span className="type-meta text-[#6B7280]">Email</span>
-                  <div className="text-[#111315] truncate">{selectedEnquiry.email || selectedEnquiry.guest_email}</div>
-                </div>
-                <div>
-                  <span className="type-meta text-[#6B7280]">Phone</span>
-                  <div className="text-[#111315]">{selectedEnquiry.phone || selectedEnquiry.guest_phone}</div>
-                </div>
-              </div>
-
-              <div>
-                <span className="type-meta text-[#6B7280]">Subject / Product</span>
-                <div className="text-[#111315] font-medium mt-0.5">
-                  {selectedEnquiry.product?.name || 'Custom Drawing Enquiry'}
-                </div>
-              </div>
-
-              <div>
-                <span className="type-meta text-[#6B7280]">Buyer message</span>
-                <div className="text-[#111315] bg-[#F7F7F8] p-3 rounded-xl mt-1 whitespace-pre-wrap leading-relaxed">
-                  {selectedEnquiry.message || 'No additional message provided.'}
-                </div>
-              </div>
-
-              {selectedEnquiry.attachment_url && (
-                <div className="flex items-center justify-between p-3 rounded-xl bg-[#ECEEF0] text-[#111315]">
-                  <div className="flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-[#111315]" />
-                    <span>Drawing Attachment</span>
+      <AdminSplitView
+        listCols={5}
+        detailCols={7}
+        list={
+          enquiries.length === 0 ? (
+            <div className="saas-panel p-10 text-center text-sm text-portal-muted">No enquiries found.</div>
+          ) : (
+            enquiries.map((enq) => {
+              const c = enquiryContact(enq);
+              const isSelected = selectedEnquiry?.id === enq.id;
+              return (
+                <button
+                  key={enq.id}
+                  type="button"
+                  onClick={() => selectEnquiry(enq)}
+                  className={`saas-list-item space-y-1.5 ${isSelected ? 'saas-list-item-selected' : ''}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium text-portal-text truncate">{c.name}</span>
+                    <span className={enquiryStatusBadgeClass(enq.status)}>
+                      {formatStatusLabel(enq.status)}
+                    </span>
                   </div>
-                  <a 
-                    href={selectedEnquiry.attachment_url} 
-                    target="_blank" 
-                    rel="noreferrer"
-                    className="saas-btn-primary text-xs py-1 px-3 flex items-center gap-1"
-                  >
-                    <span>Open</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
+                  <div className="text-xs text-portal-muted font-mono">
+                    {enquiryTypeLabel(enq.enquiry_type, !!enq.product_id)} ·{' '}
+                    {new Date(enq.created_at).toLocaleDateString()}
+                  </div>
+                  <div className="text-sm text-portal-muted truncate">
+                    {enq.product?.name || enq.message?.slice(0, 60) || '—'}
+                  </div>
+                </button>
+              );
+            })
+          )
+        }
+        detail={
+          selectedEnquiry ? (
+            <div className="saas-panel p-5 space-y-4">
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-portal-border pb-3">
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="type-section">{contact?.name}</h2>
+                    <span className={enquiryStatusBadgeClass(selectedEnquiry.status)}>
+                      {formatStatusLabel(selectedEnquiry.status)}
+                    </span>
+                    <span className="saas-badge-neutral text-[10px]">
+                      {enquiryTypeLabel(selectedEnquiry.enquiry_type, !!selectedEnquiry.product_id)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-portal-muted mt-1">
+                    Received {new Date(selectedEnquiry.created_at).toLocaleString()}
+                  </p>
                 </div>
+                <div className="flex gap-2">
+                  {selectedEnquiry.status === 'new' && (
+                    <button
+                      type="button"
+                      className="saas-btn-secondary text-xs py-1.5 px-3"
+                      disabled={isPending(mutationKey(selectedEnquiry.id, 'status-contacted'))}
+                      onClick={() => handleUpdateStatus(selectedEnquiry.id, 'contacted')}
+                    >
+                      Mark contacted
+                    </button>
+                  )}
+                  {selectedEnquiry.status !== 'closed' && selectedEnquiry.status !== 'converted_to_order' && (
+                    <button
+                      type="button"
+                      className="saas-btn-secondary text-xs py-1.5 px-3"
+                      onClick={() => handleUpdateStatus(selectedEnquiry.id, 'closed')}
+                    >
+                      Close
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="p-1.5 rounded-lg text-portal-muted hover:text-portal-danger"
+                    onClick={() => handleDeleteEnquiry(selectedEnquiry.id)}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {contact && (
+                <ContactGrid
+                  name={contact.name}
+                  email={contact.email}
+                  phone={contact.phone}
+                  country={contact.country}
+                  company={contact.company}
+                />
               )}
 
-              {/* Status Updater */}
-              <div className="pt-3 border-t border-[#E2E4E8] space-y-2">
-                <span className="type-meta text-[#6B7280]">
-                  Update status
-                </span>
-                <div className="saas-segmented flex-wrap">
-                  {(['new', 'contacted', 'closed'] as EnquiryStatus[]).map((st) => (
-                    <button
-                      key={st}
-                      onClick={() => handleUpdateStatus(selectedEnquiry.id, st)}
-                      className={selectedEnquiry.status === st ? 'saas-tab-active' : 'saas-tab-inactive'}
-                    >
-                      {st.replace(/_/g, ' ').toUpperCase()}
-                    </button>
-                  ))}
+              <div className="space-y-2">
+                <span className="type-meta text-portal-muted">Correct contact details</span>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <input className="saas-input text-xs" value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Name" />
+                  <input className="saas-input text-xs" value={editCompany} onChange={(e) => setEditCompany(e.target.value)} placeholder="Company (optional)" />
+                  <input className="saas-input text-xs" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} placeholder="Email" />
+                  <input className="saas-input text-xs" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} placeholder="Phone" />
+                  <input className="saas-input text-xs col-span-2" value={editCountry} onChange={(e) => setEditCountry(e.target.value)} placeholder="Country" />
+                </div>
+                {contactError && <p className="text-xs text-portal-danger">{contactError}</p>}
+                <button type="button" className="saas-btn-secondary text-xs py-1.5 px-3" disabled={contactSaving} onClick={handleSaveContact}>
+                  {contactSaving ? 'Saving…' : 'Save contact'}
+                </button>
+              </div>
+
+              <div>
+                <span className="type-meta text-portal-muted">Product / subject</span>
+                <div className="text-sm font-medium text-portal-text mt-0.5">
+                  {selectedEnquiry.product?.name || 'General enquiry'}
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-[#E2E4E8] space-y-2">
-                <span className="type-meta text-[#6B7280]">Reply to buyer</span>
+              <div>
+                <span className="type-meta text-portal-muted">Message</span>
+                <div className="text-xs text-portal-text bg-portal-inset p-3 rounded-xl mt-1 whitespace-pre-wrap">
+                  {selectedEnquiry.message}
+                </div>
+              </div>
+
+              {Array.isArray(selectedEnquiry.line_items) &&
+                selectedEnquiry.line_items.length > 0 && (
+                  <div>
+                    <span className="type-meta text-portal-muted">Cart lines</span>
+                    <ul className="mt-1 space-y-1 text-xs text-portal-text">
+                      {selectedEnquiry.line_items.map(
+                        (
+                          line: {
+                            product_id?: string;
+                            name?: string | null;
+                            quantity?: number;
+                          },
+                          idx: number,
+                        ) => (
+                          <li
+                            key={line.product_id || idx}
+                            className="flex justify-between gap-2 bg-portal-inset px-3 py-2 rounded-lg"
+                          >
+                            <span>{line.name || line.product_id || 'Product'}</span>
+                            <span className="font-mono text-portal-muted">
+                              × {line.quantity ?? 1}
+                            </span>
+                          </li>
+                        ),
+                      )}
+                    </ul>
+                  </div>
+                )}
+
+              {selectedEnquiry.attachment_url && (
+                <a
+                  href={selectedEnquiry.attachment_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs text-portal-text font-medium"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  View attachment
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
+
+              <div className="pt-3 border-t border-portal-border space-y-2">
+                <span className="type-meta text-portal-muted">Reply to buyer</span>
                 <textarea
-                  className="saas-input text-xs min-h-[88px]"
-                  placeholder="Write a response the buyer can see on tracking and their portal…"
+                  className="saas-input text-xs min-h-[72px]"
                   value={responseDraft}
                   onChange={(e) => setResponseDraft(e.target.value)}
                 />
-                {responseError && (
-                  <p className="text-xs text-[#B91C1C]">{responseError}</p>
-                )}
-                {selectedEnquiry.responded_at && (
-                  <p className="text-[10px] text-[#6B7280] font-mono">
-                    Last replied {new Date(selectedEnquiry.responded_at).toLocaleString()}
-                  </p>
-                )}
-                <button
-                  type="button"
-                  className="saas-btn-secondary text-xs py-1.5 px-3"
-                  disabled={responseSaving}
-                  onClick={handleSaveResponse}
-                >
+                {responseError && <p className="text-xs text-portal-danger">{responseError}</p>}
+                <button type="button" className="saas-btn-secondary text-xs py-1.5 px-3" disabled={responseSaving} onClick={handleSaveResponse}>
                   {responseSaving ? 'Saving…' : 'Save response'}
                 </button>
               </div>
 
-              {selectedEnquiry.status !== 'converted_to_order' && (
-                <div className="pt-3 border-t border-[#E2E4E8] space-y-3">
-                  <span className="type-meta text-[#6B7280]">Convert to production order</span>
-                  {!(selectedEnquiry.customer_id || selectedEnquiry.customer?.id) && (
-                    <p className="text-xs text-[#6B7280] bg-[#F7F7F8] p-2 rounded-lg">
-                      Guest enquiry: converting will create a buyer record from their email and phone.
-                    </p>
-                  )}
-                  {selectedEnquiry.tracking_token && (
-                    <button
-                      type="button"
-                      className="text-xs underline text-[#111315]"
-                      onClick={() => navigator.clipboard.writeText(`${window.location.origin}/track/enquiry/${selectedEnquiry.tracking_token}`)}
-                    >
-                      Copy enquiry tracking link
-                    </button>
-                  )}
-                  <div className="space-y-1">
-                    <label className="type-meta text-[#6B7280]">Product</label>
-                    {selectedEnquiry.product_id || selectedEnquiry.product?.id ? (
-                      <div className="saas-input text-xs bg-[#F7F7F8]">
-                        {selectedEnquiry.product?.name || 'Linked product'}
-                      </div>
-                    ) : (
-                      <>
-                        <input
-                          className="saas-input text-xs mb-1"
-                          placeholder="Search catalog…"
-                          value={catalogSearch}
-                          onChange={(e) => setCatalogSearch(e.target.value)}
-                        />
-                        <select
-                          className="saas-input text-xs"
-                          value={convertProductId}
-                          onChange={(e) => {
-                            const id = e.target.value;
-                            setConvertProductId(id);
-                            const found = catalogProducts.find((p: { id: string; selling_price?: number; sellingPrice?: number }) => p.id === id);
-                            if (found && (found.selling_price != null || found.sellingPrice != null)) {
-                              setConvertPrice(String(found.selling_price ?? found.sellingPrice));
-                            }
-                          }}
-                        >
-                          <option value="">Select catalog product</option>
-                          {catalogProducts.map((p: { id: string; name: string }) => (
-                            <option key={p.id} value={p.id}>
-                              {p.name}
-                            </option>
-                          ))}
-                        </select>
-                      </>
-                    )}
+              {canCreateRfq && (
+                <div className="pt-3 border-t border-portal-border space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="type-meta text-portal-muted">Next step — create RFQ</span>
+                    <ArrowRight className="w-3.5 h-3.5 text-portal-muted" />
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
+                  {!selectedEnquiry.product_id && !selectedEnquiry.product?.id && (
+                    <>
+                      <input
+                        className="saas-input text-xs"
+                        placeholder="Search catalog…"
+                        value={catalogSearch}
+                        onChange={(e) => setCatalogSearch(e.target.value)}
+                      />
+                      <select
+                        className="saas-input text-xs"
+                        value={rfqProductId}
+                        onChange={(e) => setRfqProductId(e.target.value)}
+                      >
+                        <option value="">Select product</option>
+                        {catalogProducts.map((p: { id: string; name: string }) => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                    </>
+                  )}
+                  <div className="flex flex-wrap items-end gap-2">
                     <div className="space-y-1">
-                      <label className="type-meta text-[#6B7280]">Qty</label>
+                      <label className="type-meta text-portal-muted">Qty</label>
                       <input
                         type="number"
                         min={1}
-                        className="saas-input text-xs"
-                        value={convertQty}
-                        onChange={(e) => setConvertQty(Math.max(1, Number(e.target.value) || 1))}
+                        className="saas-input text-xs w-24"
+                        value={rfqQty}
+                        onChange={(e) => setRfqQty(Math.max(1, Number(e.target.value) || 1))}
                       />
                     </div>
-                    <div className="space-y-1">
-                      <label className="type-meta text-[#6B7280]">Unit price (₹)</label>
-                      <input
-                        type="text"
-                        readOnly
-                        className="saas-input text-xs bg-[#F7F7F8]"
-                        value={convertPrice ? `₹ ${convertPrice}` : 'From product catalog'}
-                      />
-                    </div>
+                    <button type="button" className="saas-btn-gold text-xs py-2 px-4" disabled={rfqLoading} onClick={handleCreateRfq}>
+                      {rfqLoading ? 'Creating…' : 'Create RFQ'}
+                    </button>
                   </div>
-                  <div className="space-y-2">
-                    <label className="type-meta text-[#6B7280]">Delivery address</label>
-                    <input className="saas-input text-xs" placeholder="Address line 1" value={addr1} onChange={(e) => setAddr1(e.target.value)} />
-                    <input className="saas-input text-xs" placeholder="Address line 2 (optional)" value={addr2} onChange={(e) => setAddr2(e.target.value)} />
-                    <div className="grid grid-cols-3 gap-2">
-                      <input className="saas-input text-xs" placeholder="City" value={city} onChange={(e) => setCity(e.target.value)} />
-                      <input className="saas-input text-xs" placeholder="State" value={stateName} onChange={(e) => setStateName(e.target.value)} />
-                      <input className="saas-input text-xs" placeholder="PIN" value={postalCode} onChange={(e) => setPostalCode(e.target.value)} />
-                    </div>
-                    <input
-                      className="saas-input text-xs"
-                      placeholder="Country"
-                      value={convertCountry}
-                      onChange={(e) => setConvertCountry(e.target.value)}
-                    />
-                  </div>
-                  {orderTrackingUrl && (
-                    <p className="text-xs text-[#15803D] break-all">
-                      Order tracking: {orderTrackingUrl}
-                    </p>
+                  {rfqError && <p className="text-xs text-portal-danger">{rfqError}</p>}
+                  {createdRfqId && (
+                    <Link href="/admin/rfqs" className="text-xs text-portal-success underline">
+                      RFQ created — open RFQs to negotiate
+                    </Link>
                   )}
-                  {convertError && (
-                    <p className="text-xs text-[#B91C1C]">{convertError}</p>
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleConvertToOrder}
-                    disabled={convertLoading}
-                    className="saas-btn-gold text-xs py-2 px-4"
-                  >
-                    {convertLoading ? 'Converting…' : 'Convert to production order'}
-                  </button>
                 </div>
               )}
-            </div>
 
-            <div className="flex justify-end pt-2 border-t border-[#E2E4E8]">
-              <button 
-                onClick={() => setSelectedEnquiry(null)}
-                className="saas-btn-secondary text-xs py-2 px-4"
-              >
-                Close
-              </button>
+              {selectedEnquiry.status === 'converted_to_rfq' && (
+                <Link href="/admin/rfqs" className="saas-btn-secondary text-xs py-2 px-4 inline-flex items-center gap-1.5">
+                  View in RFQs <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              )}
+
+              {selectedEnquiry.tracking_token && (
+                <button
+                  type="button"
+                  className="text-[11px] underline text-portal-muted"
+                  onClick={() =>
+                    navigator.clipboard.writeText(`${window.location.origin}/track/enquiry/${selectedEnquiry.tracking_token}`)
+                  }
+                >
+                  Copy tracking link
+                </button>
+              )}
             </div>
-          </div>
-        </div>
-      )}
+          ) : (
+            <div className="saas-panel p-16 text-center text-sm text-portal-muted">
+              Select an enquiry to review contact details and actions.
+            </div>
+          )
+        }
+      />
     </div>
   );
 }
