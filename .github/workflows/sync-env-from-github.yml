@@ -35,7 +35,7 @@ jobs:
             echo "RESEND_API_KEY=${RESEND_API_KEY}"
             echo "BREVO_API_KEY=${BREVO_API_KEY}"
             echo "EMAIL_FROM=${EMAIL_FROM}"
-          } > .env.from-github
+          } > env-from-github.txt
           echo "URL_LEN=${#NEXT_PUBLIC_SUPABASE_URL}"
           echo "ANON_LEN=${#NEXT_PUBLIC_SUPABASE_ANON_KEY}"
           echo "SERVICE_LEN=${#SUPABASE_SERVICE_ROLE_KEY}"
@@ -44,6 +44,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: env-from-github
-          path: .env.from-github
+          path: env-from-github.txt
           retention-days: 1
           overwrite: true
+          include-hidden-files: true
