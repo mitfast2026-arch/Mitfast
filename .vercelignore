@@ -4,7 +4,8 @@ reference/
 references/
 .cursor/
 .gemini/
-IMAGE/
+# Root-only IMAGE dump folder — do NOT ignore public/IMAGE (used by the site)
+/IMAGE/
 scratch_*
 test_*.js
 debug_*.js

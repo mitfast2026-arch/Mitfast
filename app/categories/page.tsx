@@ -37,7 +37,7 @@ export default function CategoriesPage() {
     <div className={styles.pageShell}>
       <div className={styles.decorative} aria-hidden="true">
         <Image
-          src="/IMAGE/sourcing_development.jpg"
+          src="/images/sourcing_development.jpg"
           alt=""
           fill
           sizes="100vw"
