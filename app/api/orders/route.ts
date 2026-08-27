@@ -57,9 +57,13 @@ export async function POST(request: NextRequest) {
     if (!auth.ok) return auth.response;
 
     const body = await request.json();
-    const result = await createManualOrder(body);
+    const idempotencyKey = request.headers.get('Idempotency-Key');
+    const result = await createManualOrder(body, idempotencyKey);
 
-    if (!result.success) return NextResponse.json(result, { status: 400 });
+    if (!result.success) {
+      const status = result.error?.code === 'IDEMPOTENCY_IN_PROGRESS' ? 409 : 400;
+      return NextResponse.json(result, { status });
+    }
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     return NextResponse.json(

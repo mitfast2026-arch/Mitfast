@@ -83,11 +83,16 @@ export async function apiGet<T>(url: string): Promise<MutationResult<T>> {
 
 export async function apiPost<T>(
   url: string,
-  body?: unknown
+  body?: unknown,
+  options?: { idempotencyKey?: string }
 ): Promise<MutationResult<T>> {
+  const headers: Record<string, string> = {};
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  if (options?.idempotencyKey) headers['Idempotency-Key'] = options.idempotencyKey;
+
   return apiRequest<T>(url, {
     method: 'POST',
-    headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+    headers: Object.keys(headers).length ? headers : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 }

@@ -465,20 +465,23 @@ export type Database = {
         Row: {
           created_at: string
           key: string
-          response: Json
+          response: Json | null
           scope: string
+          status: string
         }
         Insert: {
           created_at?: string
           key: string
-          response: Json
+          response?: Json | null
           scope: string
+          status?: string
         }
         Update: {
           created_at?: string
           key?: string
-          response?: Json
+          response?: Json | null
           scope?: string
+          status?: string
         }
         Relationships: []
       }
@@ -1206,6 +1209,22 @@ export type Database = {
           tracking_token: string
         }[]
       }
+      create_manual_order_atomic: {
+        Args: {
+          p_customer_id: string
+          p_delivery_address: Json
+          p_order_items: Json
+          p_order_number: string
+          p_subtotal: number
+          p_total: number
+          p_tracking_token: string
+        }
+        Returns: {
+          order_id: string
+          order_number: string
+          tracking_token: string
+        }[]
+      }
       create_rfq_from_enquiry_atomic: {
         Args: {
           p_customer_id: string
@@ -1223,6 +1242,10 @@ export type Database = {
           rfq_id: string
           rfq_number: string
         }[]
+      }
+      edit_order_atomic: {
+        Args: { p_delivery_address?: Json; p_items: Json; p_order_id: string }
+        Returns: boolean
       }
       generate_order_number: { Args: never; Returns: string }
       generate_rfq_number: { Args: never; Returns: string }
@@ -1242,6 +1265,20 @@ export type Database = {
       is_admin: { Args: never; Returns: boolean }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
+      submit_rfq_from_cart_atomic: {
+        Args: {
+          p_customer_id: string
+          p_customer_message: string
+          p_delivery_address: Json
+          p_items: Json
+          p_original_total: number
+          p_rfq_number: string
+        }
+        Returns: {
+          rfq_id: string
+          rfq_number: string
+        }[]
+      }
       supplier_admin_summary_stats: {
         Args: { p_supplier_ids: string[] }
         Returns: {
@@ -1263,6 +1300,14 @@ export type Database = {
           rfqs: number
           views: number
         }[]
+      }
+      try_record_otp_send: {
+        Args: {
+          p_email: string
+          p_max_sends?: number
+          p_window_seconds?: number
+        }
+        Returns: boolean
       }
     }
     Enums: {
@@ -1452,7 +1497,6 @@ export const Constants = {
     },
   },
 } as const
-
 // Convenience aliases (preserved across types:gen — see scripts/append-database-enums.ts)
 export type UserRole = Enums<'user_role'>;
 export type SupplierStatus = Enums<'supplier_status'>;

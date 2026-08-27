@@ -6,6 +6,7 @@ import {
   transitionStatus,
 } from '@/lib/server/db/conditional-update';
 import { invalidateAdminCaches } from '@/lib/server/db/invalidate-caches';
+import { withIdempotency } from '@/lib/server/db/idempotency';
 import type { ServerResult } from '@/lib/server/auth/get-session';
 import type { EnquiryStatus } from '@/types/database';
 import { generateTrackingToken } from '@/lib/server/tracking';
@@ -27,12 +28,15 @@ async function withSignedAttachments<T extends { attachment_path?: string | null
 /**
  * Creates an enquiry submitted by either a Guest or an authenticated Customer.
  * Optional attachmentBuffer is uploaded to the documents bucket after insert.
+ * Pass Idempotency-Key to reject duplicate create on retry/double-click.
  */
 export async function createEnquiry(
   formData: unknown,
   customerId?: string | null,
-  attachment?: { buffer: Buffer; fileName: string; contentType: string } | null
+  attachment?: { buffer: Buffer; fileName: string; contentType: string } | null,
+  idempotencyKey?: string | null
 ): Promise<ServerResult<{ enquiryId: string; trackingToken: string }>> {
+  return withIdempotency('create_enquiry', idempotencyKey, async () => {
   try {
     const validated = createEnquirySchema.safeParse(formData);
     if (!validated.success) {
@@ -115,6 +119,7 @@ export async function createEnquiry(
       error: { message: 'Unexpected error submitting enquiry', code: 'INTERNAL_ERROR' },
     };
   }
+  });
 }
 
 /**
@@ -362,21 +367,56 @@ export async function respondToEnquiry(
       status ||
       (enquiry.status === 'new' ? 'contacted' : (enquiry.status as EnquiryStatus));
 
-    const { error } = await adminClient
-      .from('enquiries')
-      .update({
-        response_message: responseMessage.trim(),
-        responded_at: new Date().toISOString(),
-        responded_by: responderProfileId,
-        status: nextStatus,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', enquiryId);
+    const responseFields = {
+      response_message: responseMessage.trim(),
+      responded_at: new Date().toISOString(),
+      responded_by: responderProfileId,
+    };
 
-    if (error) {
-      return { success: false, error: { message: error.message, code: 'DATABASE_ERROR' } };
+    if (nextStatus === enquiry.status) {
+      // Same status: update reply only (e.g. follow-up on already-contacted)
+      const { error } = await adminClient
+        .from('enquiries')
+        .update({
+          ...responseFields,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', enquiryId)
+        .eq('status', enquiry.status);
+
+      if (error) {
+        return { success: false, error: { message: error.message, code: 'DATABASE_ERROR' } };
+      }
+
+      return { success: true, data: { updated: true } };
     }
 
+    const allowed = allowedFrom(ENQUIRY_TRANSITIONS, nextStatus);
+    if (allowed.length === 0 || !allowed.includes(enquiry.status)) {
+      return {
+        success: false,
+        error: { message: 'Enquiry status cannot be changed from its current state', code: 'INVALID_STATUS' },
+      };
+    }
+
+    const result = await transitionStatus(
+      adminClient,
+      'enquiries',
+      enquiryId,
+      'status',
+      nextStatus,
+      allowed,
+      responseFields
+    );
+
+    if (!result.ok) {
+      return {
+        success: false,
+        error: { message: 'Enquiry status cannot be changed from its current state', code: 'INVALID_STATUS' },
+      };
+    }
+
+    invalidateAdminCaches();
     return { success: true, data: { updated: true } };
   } catch (error) {
     console.error('[respondToEnquiry] Error:', error);

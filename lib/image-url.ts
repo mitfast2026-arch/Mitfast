@@ -1,7 +1,7 @@
 const BLOCKED_HOSTS = /(?:^|\.)facebook\.com$|(?:^|\.)fb\.com$|(?:^|\.)youtube\.com$|(?:^|\.)youtu\.be$|(?:^|\.)twitter\.com$|(?:^|\.)x\.com$/i;
 
 const ALLOWED_IMAGE_HOSTS =
-  /^(?:images\.unsplash\.com|plus\.unsplash\.com|(?:[\w-]+\.)?supabase\.co|qubphaacuuwlpdrsprjl\.supabase\.co)$/i;
+  /^(?:images\.unsplash\.com|plus\.unsplash\.com|(?:[\w-]+\.)?supabase\.co|qubphaacuuwlpdrsprjl\.supabase\.co|(?:[\w-]+\.)?t3\.tigrisfiles\.io|(?:[\w-]+\.)?t3\.storage\.dev)$/i;
 
 /** Reject obvious non-image URLs (social pages, video links, etc.). */
 export function isLikelyImageUrl(src: string): boolean {

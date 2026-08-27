@@ -254,6 +254,12 @@ function EnquiryContent() {
       toast.loading("Sending enquiry...", { id: "enquiry-submit" });
       const res = await fetch("/api/enquiries", {
         method: "POST",
+        headers: {
+          "Idempotency-Key":
+            typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+              ? crypto.randomUUID()
+              : `enq-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+        },
         body: formData,
       });
 

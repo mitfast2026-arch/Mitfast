@@ -12,24 +12,42 @@ function parseFrom(from: string): { name: string; email: string } {
   return { name: 'MITFAST', email: from.trim() };
 }
 
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function sendWithResend(input: SendMailInput): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) throw new Error('RESEND_API_KEY is not configured');
 
   const from = process.env.EMAIL_FROM || 'MITFAST <onboarding@resend.dev>';
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
+  const response = await fetchWithTimeout(
+    'https://api.resend.com/emails',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from,
+        to: [input.to],
+        subject: input.subject,
+        html: input.html,
+      }),
     },
-    body: JSON.stringify({
-      from,
-      to: [input.to],
-      subject: input.subject,
-      html: input.html,
-    }),
-  });
+    10_000
+  );
 
   if (!response.ok) {
     const body = await response.text();
@@ -44,20 +62,24 @@ async function sendWithBrevo(input: SendMailInput): Promise<void> {
   const from = process.env.EMAIL_FROM || 'MITFAST <onboarding@resend.dev>';
   const sender = parseFrom(from);
 
-  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
-    method: 'POST',
-    headers: {
-      accept: 'application/json',
-      'content-type': 'application/json',
-      'api-key': apiKey,
+  const response = await fetchWithTimeout(
+    'https://api.brevo.com/v3/smtp/email',
+    {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+        'api-key': apiKey,
+      },
+      body: JSON.stringify({
+        sender: { name: sender.name, email: sender.email },
+        to: [{ email: input.to }],
+        subject: input.subject,
+        htmlContent: input.html,
+      }),
     },
-    body: JSON.stringify({
-      sender: { name: sender.name, email: sender.email },
-      to: [{ email: input.to }],
-      subject: input.subject,
-      htmlContent: input.html,
-    }),
-  });
+    10_000
+  );
 
   if (!response.ok) {
     const body = await response.text();

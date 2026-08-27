@@ -4,7 +4,7 @@ import AsymmetricShowcase from '@/components/home/AsymmetricShowcase';
 import ServicesScroll from '@/components/home/ServicesScroll';
 import EditorialProducts from '@/components/home/EditorialProducts';
 import FloatingTestimonials from '@/components/home/FloatingTestimonials';
-import { getStorefrontProducts } from '@/lib/server/products/product-service';
+import { getCachedStorefrontProducts } from '@/lib/server/products/cached-storefront';
 
 export const revalidate = 60;
 
@@ -15,7 +15,7 @@ export const metadata = {
 };
 
 export default async function HomePage() {
-  const featured = await getStorefrontProducts({ limit: 12, page: 1, sortBy: 'newest' });
+  const featured = await getCachedStorefrontProducts({ limit: 12, page: 1, sortBy: 'newest' });
   const initialProducts = featured.success ? featured.data.products : [];
 
   return (

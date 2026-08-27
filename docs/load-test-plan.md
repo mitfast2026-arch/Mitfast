@@ -54,8 +54,9 @@
 
 ### Phase 5 — Dependency failure
 
-- Redis unavailable: no change (unused)
+- Redis unavailable: no change (unused; Upstash env reserved only — no page cache)
 - Tigris blocked: enquiry create succeeds without attachment; image upload returns 5xx
+- Postgres down: API mutations fail closed (no CDN/Redis inventing business state)
 
 ## Sample k6 script (reads)
 
@@ -92,6 +93,12 @@ Mark **LOAD-VERIFIED** only when:
 2. No duplicate orders/RFQs in DB after Phase 4
 3. Supabase CPU < 80% sustained at target VUs
 4. Results documented with timestamps and Vercel/Supabase screenshots
+
+## Dependency failure notes (updated)
+
+- **Redis unavailable:** no change — Redis remains unused (Upstash provisioned only). Do not add Redis page cache.
+- **Tigris blocked:** enquiry create may succeed without attachment; image upload returns 5xx.
+- **Postgres down:** fail requests; never invent cart/order state from CDN.
 
 ## Rollback
 

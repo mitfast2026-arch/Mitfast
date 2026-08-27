@@ -195,7 +195,53 @@ export async function submitRfqFromCart(
     // 6. Generate collision-free RFQ number
     const rfqNumber = await getNextRfqNumber(adminClient);
 
-    // 7. Insert RFQ Header
+    // 7–9. Prefer atomic RPC; fall back to multi-step until migration applied
+    const rfqItemPayload = availableItems.map((item) => ({
+      product_id: item.productId,
+      product_name_snapshot: item.product.name,
+      original_quantity: item.quantity,
+      original_unit_price: item.product.actualUnitPrice,
+    }));
+
+    const { data: rpcRows, error: rpcError } = await (adminClient as any).rpc(
+      'submit_rfq_from_cart_atomic',
+      {
+        p_customer_id: customerId,
+        p_rfq_number: rfqNumber,
+        p_delivery_address: addressSnapshot,
+        p_customer_message: customerMessage || null,
+        p_original_total: roundedOriginalTotal,
+        p_items: rfqItemPayload,
+      }
+    );
+
+    if (!rpcError) {
+      const row = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+      if (!row?.rfq_id) {
+        return {
+          success: false,
+          error: { message: 'Failed to create RFQ', code: 'DATABASE_ERROR' },
+        };
+      }
+      invalidateAdminCaches();
+      return {
+        success: true,
+        data: {
+          rfqId: row.rfq_id,
+          rfqNumber: row.rfq_number || rfqNumber,
+        },
+      };
+    }
+
+    const rpcMissing =
+      rpcError.code === 'PGRST202' ||
+      rpcError.message?.includes('Could not find the function') ||
+      rpcError.message?.includes('submit_rfq_from_cart_atomic');
+
+    if (!rpcMissing) {
+      return { success: false, error: mapRpcError(rpcError) };
+    }
+
     const { data: rfq, error: rfqError } = await adminClient
       .from('rfqs')
       .insert({
@@ -217,8 +263,7 @@ export async function submitRfqFromCart(
       };
     }
 
-    // 8. Insert RFQ Line Items — snapshot discounted unit price from server cart calc
-    const rfqItemRows = availableItems.map(item => ({
+    const rfqItemRows = availableItems.map((item) => ({
       rfq_id: rfq.id,
       product_id: item.productId,
       product_name_snapshot: item.product.name,
@@ -229,7 +274,6 @@ export async function submitRfqFromCart(
     }));
 
     const { error: itemsError } = await adminClient.from('rfq_items').insert(rfqItemRows);
-
     if (itemsError) {
       await adminClient.from('rfqs').delete().eq('id', rfq.id);
       return {
@@ -238,9 +282,7 @@ export async function submitRfqFromCart(
       };
     }
 
-    // 9. Clear the customer's cart
     await clearCustomerCart(customerId);
-
     invalidateAdminCaches();
 
     return {

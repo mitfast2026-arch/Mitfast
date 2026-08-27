@@ -564,7 +564,13 @@ function CartRFQPageInner() {
       try {
         const res = await fetch("/api/rfqs", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key":
+              typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+                ? crypto.randomUUID()
+                : `rfq-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+          },
           body: JSON.stringify({
             customerId: customer.id,
             deliveryAddress,
@@ -605,7 +611,13 @@ function CartRFQPageInner() {
 
       const enquiryRes = await fetch("/api/enquiries", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key":
+            typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+              ? crypto.randomUUID()
+              : `enq-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+        },
         body: JSON.stringify({
           name: trimmedName,
           email: trimmedEmail,

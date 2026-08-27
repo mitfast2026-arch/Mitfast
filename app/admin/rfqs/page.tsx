@@ -203,7 +203,15 @@ export default function AdminRfqsPage() {
     if (!selectedRfq) return;
     setActionError(null);
     setConvertSuccess('');
-    await run(() => apiPost(`/api/rfqs/${selectedRfq.id}/convert-to-order`), {
+    await run(
+      () =>
+        apiPost(`/api/rfqs/${selectedRfq.id}/convert-to-order`, undefined, {
+          idempotencyKey:
+            typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+              ? crypto.randomUUID()
+              : `convert-${selectedRfq.id}-${Date.now()}`,
+        }),
+      {
       key: mutationKey(selectedRfq.id, 'convert'),
       onSuccess: (data) => {
         patchRfq(selectedRfq.id, { status: 'converted_to_order' });

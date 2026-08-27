@@ -108,8 +108,12 @@ export async function POST(request: NextRequest) {
     }
 
     const { customerId: _ignored, drawingUrl: _drawing, ...enquiryData } = body;
-    const result = await createEnquiry(enquiryData, customerId || null, attachment);
-    if (!result.success) return NextResponse.json(result, { status: 400 });
+    const idempotencyKey = request.headers.get('Idempotency-Key');
+    const result = await createEnquiry(enquiryData, customerId || null, attachment, idempotencyKey);
+    if (!result.success) {
+      const status = result.error?.code === 'IDEMPOTENCY_IN_PROGRESS' ? 409 : 400;
+      return NextResponse.json(result, { status });
+    }
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     return NextResponse.json(

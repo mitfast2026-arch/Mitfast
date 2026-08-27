@@ -53,12 +53,28 @@ export async function POST(request: NextRequest) {
     const auth = await requireCustomer();
     if (!auth.ok) return auth.response;
 
+    const idempotencyKey = request.headers.get('Idempotency-Key');
+    if (!idempotencyKey?.trim()) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            message: 'Idempotency-Key header is required for RFQ submission',
+            code: 'IDEMPOTENCY_REQUIRED',
+          },
+        },
+        { status: 400 }
+      );
+    }
+
     const body = await request.json();
     const { customerId: _ignored, ...rfqData } = body;
 
-    const idempotencyKey = request.headers.get('Idempotency-Key');
     const result = await submitRfqFromCart(auth.session.profile.id, rfqData, idempotencyKey);
-    if (!result.success) return NextResponse.json(result, { status: 400 });
+    if (!result.success) {
+      const status = result.error?.code === 'IDEMPOTENCY_IN_PROGRESS' ? 409 : 400;
+      return NextResponse.json(result, { status });
+    }
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     return NextResponse.json(

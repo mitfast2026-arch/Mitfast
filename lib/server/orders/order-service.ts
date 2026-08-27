@@ -349,7 +349,11 @@ export async function convertEnquiryToOrder(
 /**
  * Admin creates an order manually from scratch.
  */
-export async function createManualOrder(formData: unknown): Promise<ServerResult<{ orderId: string; orderNumber: string; trackingToken: string }>> {
+export async function createManualOrder(
+  formData: unknown,
+  idempotencyKey?: string | null
+): Promise<ServerResult<{ orderId: string; orderNumber: string; trackingToken: string }>> {
+  return withIdempotency('create_manual_order', idempotencyKey, async () => {
   try {
     const validated = createManualOrderSchema.safeParse(formData);
     if (!validated.success) {
@@ -452,6 +456,44 @@ export async function createManualOrder(formData: unknown): Promise<ServerResult
     const orderNumber = await getNextOrderNumber(adminClient);
 
     const trackingToken = generateTrackingToken();
+    const { data: rpcRows, error: rpcError } = await (adminClient as any).rpc(
+      'create_manual_order_atomic',
+      {
+        p_customer_id: customerId,
+        p_order_number: orderNumber,
+        p_tracking_token: trackingToken,
+        p_delivery_address: deliveryAddress,
+        p_subtotal: orderSubtotal,
+        p_total: orderTotal,
+        p_order_items: itemRows,
+      }
+    );
+
+    if (!rpcError) {
+      const row = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+      if (!row?.order_id) {
+        return { success: false, error: { message: 'Failed to create order header', code: 'DATABASE_ERROR' } };
+      }
+      invalidateAdminCaches();
+      return {
+        success: true,
+        data: {
+          orderId: row.order_id,
+          orderNumber: row.order_number || orderNumber,
+          trackingToken: row.tracking_token || trackingToken,
+        },
+      };
+    }
+
+    const rpcMissing =
+      rpcError.code === 'PGRST202' ||
+      rpcError.message?.includes('Could not find the function') ||
+      rpcError.message?.includes('create_manual_order_atomic');
+
+    if (!rpcMissing) {
+      return { success: false, error: mapRpcError(rpcError) };
+    }
+
     const { data: order, error: orderError } = await adminClient
       .from('orders')
       .insert({
@@ -471,8 +513,12 @@ export async function createManualOrder(formData: unknown): Promise<ServerResult
       return { success: false, error: { message: 'Failed to create order header', code: 'DATABASE_ERROR' } };
     }
 
-    const rowsWithOrderId = itemRows.map(r => ({ ...r, order_id: order.id }));
-    await adminClient.from('order_items').insert(rowsWithOrderId);
+    const rowsWithOrderId = itemRows.map((r) => ({ ...r, order_id: order.id }));
+    const { error: itemsError } = await adminClient.from('order_items').insert(rowsWithOrderId);
+    if (itemsError) {
+      await adminClient.from('orders').delete().eq('id', order.id);
+      return { success: false, error: { message: 'Failed to create order items', code: 'DATABASE_ERROR' } };
+    }
 
     invalidateAdminCaches();
 
@@ -488,6 +534,7 @@ export async function createManualOrder(formData: unknown): Promise<ServerResult
     console.error('[createManualOrder] Error:', error);
     return { success: false, error: { message: 'Failed to create order', code: 'INTERNAL_ERROR' } };
   }
+  });
 }
 
 /**
@@ -596,36 +643,12 @@ export async function editOrder(formData: unknown): Promise<ServerResult<{ updat
     const { orderId, items, deliveryAddress } = validated.data;
     const adminClient = createAdminClient();
 
-    const { data: existing } = await adminClient
-      .from('orders')
-      .select('id, status')
-      .eq('id', orderId)
-      .single();
+    const pricedItems: Array<Record<string, unknown>> = [];
 
-    if (!existing) {
-      return { success: false, error: { message: 'Order not found', code: 'NOT_FOUND' } };
-    }
-    if (existing.status === 'cancelled' || existing.status === 'dispatched') {
-      return { success: false, error: { message: 'Dispatched or cancelled orders cannot be edited', code: 'INVALID_STATUS' } };
-    }
+    // Sort by orderItemId for consistent lock ordering inside the RPC
+    const sortedItems = [...items].sort((a, b) => a.orderItemId.localeCompare(b.orderItemId));
 
-    let orderSubtotal = 0;
-    let orderTotal = 0;
-
-    const itemIds = items.map(i => i.orderItemId);
-    const { data: lines } = await adminClient
-      .from('order_items')
-      .select('*')
-      .in('id', itemIds)
-      .eq('order_id', orderId);
-
-    const lineMap = new Map((lines || []).map(l => [l.id, l]));
-    const updatePromises: PromiseLike<any>[] = [];
-
-    for (const item of items) {
-      const line = lineMap.get(item.orderItemId);
-      if (!line) continue;
-
+    for (const item of sortedItems) {
       const priced = calculatePricing({
         supplier_price: item.unitPrice,
         profit_type: 'fixed',
@@ -636,31 +659,87 @@ export async function editOrder(formData: unknown): Promise<ServerResult<{ updat
         quantity: item.quantity,
       });
 
-      orderSubtotal += priced.subtotal;
-      orderTotal += priced.total;
-
-      updatePromises.push(
-        adminClient
-          .from('order_items')
-          .update({
-            quantity: item.quantity,
-            unit_price: item.unitPrice,
-            gst_rate: item.gstRate,
-            gst_included: item.gstIncluded,
-            discount: item.discount,
-            subtotal: priced.subtotal,
-            gst_amount: priced.total_gst_amount,
-            total: priced.total,
-          })
-          .eq('id', line.id)
-      );
+      pricedItems.push({
+        order_item_id: item.orderItemId,
+        quantity: item.quantity,
+        unit_price: item.unitPrice,
+        gst_rate: item.gstRate,
+        gst_included: item.gstIncluded,
+        discount: item.discount,
+        subtotal: priced.subtotal,
+        gst_amount: priced.total_gst_amount,
+        total: priced.total,
+      });
     }
 
-    if (updatePromises.length > 0) {
-      await Promise.all(updatePromises);
+    const { error: rpcError } = await (adminClient as any).rpc('edit_order_atomic', {
+      p_order_id: orderId,
+      p_items: pricedItems,
+      p_delivery_address: deliveryAddress ?? null,
+    });
+
+    if (!rpcError) {
+      invalidateAdminCaches();
+      return { success: true, data: { updated: true } };
     }
 
-    const header: Record<string, any> = {
+    const rpcMissing =
+      rpcError.code === 'PGRST202' ||
+      rpcError.message?.includes('Could not find the function') ||
+      rpcError.message?.includes('edit_order_atomic');
+
+    if (!rpcMissing) {
+      return { success: false, error: mapRpcError(rpcError) };
+    }
+
+    const { data: existing } = await adminClient
+      .from('orders')
+      .select('id, status')
+      .eq('id', orderId)
+      .single();
+
+    if (!existing) {
+      return { success: false, error: { message: 'Order not found', code: 'NOT_FOUND' } };
+    }
+    if (existing.status === 'cancelled' || existing.status === 'dispatched') {
+      return {
+        success: false,
+        error: { message: 'Dispatched or cancelled orders cannot be edited', code: 'INVALID_STATUS' },
+      };
+    }
+
+    let orderSubtotal = 0;
+    let orderTotal = 0;
+    for (const item of pricedItems) {
+      const quantity = Number(item.quantity);
+      const unitPrice = Number(item.unit_price);
+      const gstRate = Number(item.gst_rate);
+      const gstIncluded = Boolean(item.gst_included);
+      const discount = Number(item.discount);
+      const subtotal = Number(item.subtotal);
+      const gstAmount = Number(item.gst_amount);
+      const total = Number(item.total);
+      const orderItemId = String(item.order_item_id);
+
+      orderSubtotal += subtotal || 0;
+      orderTotal += total || 0;
+      await adminClient
+        .from('order_items')
+        .update({
+          quantity,
+          unit_price: unitPrice,
+          gst_rate: gstRate,
+          gst_included: gstIncluded,
+          discount,
+          subtotal,
+          gst_amount: gstAmount,
+          total,
+        })
+        .eq('id', orderItemId)
+        .eq('order_id', orderId);
+    }
+
+    const header: Record<string, unknown> = {
       subtotal: Math.round(orderSubtotal * 100) / 100,
       total: Math.round(orderTotal * 100) / 100,
       updated_at: new Date().toISOString(),
@@ -669,6 +748,7 @@ export async function editOrder(formData: unknown): Promise<ServerResult<{ updat
 
     await (adminClient.from('orders') as any).update(header).eq('id', orderId);
 
+    invalidateAdminCaches();
     return { success: true, data: { updated: true } };
   } catch (error) {
     console.error('[editOrder] Error:', error);
