@@ -288,7 +288,7 @@ export async function getEnquiriesForAdmin(params: {
       .select(`
         *,
         product:products(id, name, selling_price, moq, category:categories(name)),
-        customer:profiles(id, full_name, email, phone)
+        customer:profiles!enquiries_customer_id_fkey(id, full_name, email, phone)
       `, { count: 'exact' });
 
     if (params.status) {

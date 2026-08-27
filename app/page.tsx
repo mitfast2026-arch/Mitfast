@@ -8,6 +8,7 @@ import {
   getCachedPublicCategories,
   getCachedStorefrontProducts,
 } from '@/lib/server/products/cached-storefront';
+import { getCachedHomepageCms } from '@/lib/server/homepage/cached-homepage';
 
 export const revalidate = 60;
 
@@ -18,22 +19,31 @@ export const metadata = {
 };
 
 export default async function HomePage() {
-  const [featured, categoriesResult] = await Promise.all([
+  const [featured, categoriesResult, homepageCms] = await Promise.all([
     getCachedStorefrontProducts({ limit: 12, page: 1, sortBy: 'newest' }),
     getCachedPublicCategories(),
+    getCachedHomepageCms(),
   ]);
-  const initialProducts = featured.success ? featured.data.products : [];
+
   const productCount = featured.success ? featured.data.total : 0;
   const categoryCount = categoriesResult.success
     ? (categoriesResult.data.categories?.length ?? 0)
     : 0;
 
+  const cms = homepageCms.success ? homepageCms.data : null;
+  const heroSlides = cms?.heroSlides ?? [];
+  const containersImageUrl = cms?.containersImageUrl || '/images/container.png';
+  const carouselProducts = cms?.carouselProducts ?? [];
+
   return (
     <div id="home-page-shell" className="home-shell-transition w-full flex flex-col text-[#111315]">
-      <CinematicHero stats={{ productCount, categoryCount }} />
-      <AsymmetricShowcase />
+      <CinematicHero
+        stats={{ productCount, categoryCount }}
+        slides={heroSlides}
+      />
+      <AsymmetricShowcase imageSrc={containersImageUrl} />
       <ServicesScroll />
-      <EditorialProducts initialProducts={initialProducts} />
+      <EditorialProducts initialProducts={carouselProducts} />
       <FloatingTestimonials />
     </div>
   );

@@ -2,17 +2,21 @@
 
 import React from 'react';
 import { Toaster } from 'sonner';
+import { usePortalColorMode } from '@/components/portal/PortalColorMode';
 
 export function PortalToaster() {
+  const { mode } = usePortalColorMode();
+  const isLight = mode === 'light';
+
   return (
     <Toaster
-      theme="dark"
+      theme={isLight ? 'light' : 'dark'}
       position="top-right"
       toastOptions={{
         style: {
-          background: '#171717',
-          border: '1px solid #262626',
-          color: '#F5F5F5',
+          background: 'var(--portal-panel)',
+          border: '1px solid var(--portal-border)',
+          color: 'var(--portal-text)',
         },
       }}
     />

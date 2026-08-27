@@ -24,6 +24,7 @@ import {
   orderStatusBadgeClass,
   formatStatusLabel,
 } from '@/lib/admin/sales-workflow';
+import { ORDER_STATUS_TRANSITIONS, allowedFrom } from '@/lib/server/db/conditional-update';
 
 const ORDER_STATUS_TABS = ['all', 'accepted', 'packing', 'dispatched', 'cancelled'] as const;
 
@@ -132,6 +133,7 @@ function AdminOrdersPageContent() {
     setActionError(null);
     const currentOrder = orders.find((o) => o.id === orderId);
     const oldStatus = currentOrder?.status;
+    if (oldStatus === newStatus) return;
 
     await run(
       () => apiPut(`/api/orders/${orderId}/status`, { status: newStatus }),
@@ -156,6 +158,7 @@ function AdminOrdersPageContent() {
     setActionError(null);
     const currentOrder = orders.find((o) => o.id === orderId);
     const oldPayment = currentOrder?.payment_status;
+    if (oldPayment === newPaymentStatus) return;
 
     await run(
       () => apiPut(`/api/orders/${orderId}/payment`, { paymentStatus: newPaymentStatus }),
@@ -319,16 +322,22 @@ function AdminOrdersPageContent() {
               <div className="p-3 rounded-xl bg-portal-inset space-y-2">
                 <span className="type-meta text-portal-muted">Order status</span>
                 <div className="saas-segmented flex-wrap">
-                  {(['accepted', 'packing', 'dispatched', 'cancelled'] as OrderStatus[]).map((st) => (
-                    <button
-                      key={st}
-                      disabled={orderBusy}
-                      onClick={() => handleUpdateStatus(selectedOrder.id, st)}
-                      className={selectedOrder.status === st ? 'saas-tab-active' : 'saas-tab-inactive'}
-                    >
-                      {formatStatusLabel(st)}
-                    </button>
-                  ))}
+                  {(['accepted', 'packing', 'dispatched', 'cancelled'] as OrderStatus[]).map((st) => {
+                    const isCurrent = selectedOrder.status === st;
+                    const canMove =
+                      isCurrent || allowedFrom(ORDER_STATUS_TRANSITIONS, st).includes(selectedOrder.status);
+                    return (
+                      <button
+                        key={st}
+                        disabled={orderBusy || !canMove}
+                        onClick={() => handleUpdateStatus(selectedOrder.id, st)}
+                        className={isCurrent ? 'saas-tab-active' : 'saas-tab-inactive'}
+                        title={!canMove ? `Cannot move to ${formatStatusLabel(st)} from current status` : undefined}
+                      >
+                        {formatStatusLabel(st)}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 

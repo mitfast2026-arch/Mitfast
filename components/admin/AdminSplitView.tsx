@@ -7,6 +7,8 @@ type AdminSplitViewProps = {
   listCols?: number;
   detailCols?: number;
   className?: string;
+  /** Independent column scrolling within the viewport (admin work queues). */
+  scrollable?: boolean;
 };
 
 export default function AdminSplitView({
@@ -15,6 +17,7 @@ export default function AdminSplitView({
   listCols = 5,
   detailCols = 7,
   className,
+  scrollable = false,
 }: AdminSplitViewProps) {
   const listClass =
     listCols === 4
@@ -28,6 +31,35 @@ export default function AdminSplitView({
       : detailCols === 7
         ? 'lg:col-span-7'
         : 'lg:col-span-8';
+
+  if (scrollable) {
+    return (
+      <div
+        className={clsx(
+          'grid grid-cols-1 lg:grid-cols-12 gap-4 min-w-0',
+          'lg:h-[calc(100dvh-13.5rem)] lg:min-h-[28rem]',
+          className
+        )}
+      >
+        <div
+          className={clsx(
+            listClass,
+            'min-w-0 min-h-0 max-h-[42vh] lg:max-h-none overflow-y-auto overscroll-contain space-y-2 pr-0.5'
+          )}
+        >
+          {list}
+        </div>
+        <div
+          className={clsx(
+            detailClass,
+            'min-w-0 min-h-0 max-h-[58vh] lg:max-h-none overflow-y-auto overscroll-contain'
+          )}
+        >
+          {detail}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={clsx('grid grid-cols-1 lg:grid-cols-12 gap-4 items-start min-w-0', className)}>

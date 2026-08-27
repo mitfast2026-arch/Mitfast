@@ -13,15 +13,15 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { CHART_COLORS, portalTokens } from '@/lib/portal/theme';
+import { CHART_COLORS } from '@/lib/portal/theme';
 
 type Datum = { name: string; value: number };
 
 const tooltipStyle: React.CSSProperties = {
-  background: '#171717',
-  border: '1px solid #262626',
+  background: 'var(--portal-panel)',
+  border: '1px solid var(--portal-border)',
   borderRadius: 12,
-  color: '#F5F5F5',
+  color: 'var(--portal-text)',
   fontSize: 12,
 };
 
@@ -46,21 +46,21 @@ export function PortalBarChart({ data, height = 220 }: { data: Datum[]; height?:
   return (
     <ResponsiveContainer width="100%" height={height}>
       <ReBarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#262626" vertical={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--portal-border)" vertical={false} />
         <XAxis
           dataKey="name"
-          tick={{ fill: portalTokens.textSecondary, fontSize: 12 }}
+          tick={{ fill: 'var(--portal-muted)', fontSize: 12 }}
           axisLine={false}
           tickLine={false}
         />
         <YAxis
-          tick={{ fill: portalTokens.textSecondary, fontSize: 12 }}
+          tick={{ fill: 'var(--portal-muted)', fontSize: 12 }}
           axisLine={false}
           tickLine={false}
           width={36}
         />
-        <Tooltip cursor={{ fill: 'rgba(255,255,255,0.04)' }} contentStyle={tooltipStyle} />
-        <Bar dataKey="value" fill={portalTokens.accentBlue} radius={[8, 8, 0, 0]} maxBarSize={48} />
+        <Tooltip cursor={{ fill: 'color-mix(in srgb, var(--portal-text) 4%, transparent)' }} contentStyle={tooltipStyle} />
+        <Bar dataKey="value" fill="var(--portal-accent)" radius={[8, 8, 0, 0]} maxBarSize={48} />
       </ReBarChart>
     </ResponsiveContainer>
   );
@@ -98,7 +98,7 @@ export function PortalDonutChart({
               innerRadius={solid ? 0 : 52}
               outerRadius={78}
               paddingAngle={data.length > 1 ? 1.5 : 0}
-              stroke={portalTokens.card}
+              stroke="var(--portal-panel)"
               strokeWidth={2}
               isAnimationActive={false}
             >

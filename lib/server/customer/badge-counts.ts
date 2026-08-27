@@ -11,12 +11,27 @@ export type CustomerBadgeCounts = {
 /**
  * Lightweight head-counts for customer sidebar badges.
  * Avoids loading full order/RFQ/enquiry/wishlist/cart payloads.
+ *
+ * Enquiry count matches `/api/customer/enquiries`: customer_id OR guest_email.
  */
 export async function getCustomerBadgeCounts(
-  customerId: string
+  customerId: string,
+  customerEmail?: string | null
 ): Promise<ServerResult<CustomerBadgeCounts>> {
   try {
     const admin = createAdminClient();
+
+    let enquiriesQuery = admin
+      .from('enquiries')
+      .select('id', { count: 'exact', head: true });
+
+    if (customerId && customerEmail) {
+      enquiriesQuery = enquiriesQuery.or(
+        `customer_id.eq.${customerId},guest_email.eq.${customerEmail}`
+      );
+    } else {
+      enquiriesQuery = enquiriesQuery.eq('customer_id', customerId);
+    }
 
     const [orders, wishlist, carts, rfqs, enquiries] = await Promise.all([
       admin
@@ -32,10 +47,7 @@ export async function getCustomerBadgeCounts(
         .from('rfqs')
         .select('id', { count: 'exact', head: true })
         .eq('customer_id', customerId),
-      admin
-        .from('enquiries')
-        .select('id', { count: 'exact', head: true })
-        .eq('customer_id', customerId),
+      enquiriesQuery,
     ]);
 
     let cartCount = 0;

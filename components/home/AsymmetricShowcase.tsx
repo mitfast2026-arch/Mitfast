@@ -4,7 +4,11 @@ import React from 'react';
 import Image from 'next/image';
 import { Globe } from 'lucide-react';
 
-export default function AsymmetricShowcase() {
+export default function AsymmetricShowcase({
+  imageSrc = '/images/container.png',
+}: {
+  imageSrc?: string;
+}) {
   return (
     <section
       id="asymmetric-showcase"
@@ -119,14 +123,24 @@ export default function AsymmetricShowcase() {
 
         <div className="mt-14 sm:mt-16 lg:mt-24 relative flex justify-center items-center py-4 sm:py-6">
           <div className="relative z-20 w-full max-w-[620px] sm:max-w-[740px] lg:max-w-[840px] drop-shadow-[0_30px_50px_rgba(0,0,0,0.22)] transition-transform duration-500 hover:scale-[1.01]">
-            <Image
-              src="/images/container.png"
-              alt="B2B product sourcing and procurement"
-              width={780}
-              height={460}
-              className="w-full h-auto object-contain"
-              priority
-            />
+            {imageSrc.startsWith('http') ? (
+              // Remote CMS uploads (Tigris) — use native img for contain without crop
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={imageSrc}
+                alt="B2B product sourcing and procurement"
+                className="w-full h-auto object-contain"
+              />
+            ) : (
+              <Image
+                src={imageSrc}
+                alt="B2B product sourcing and procurement"
+                width={780}
+                height={460}
+                className="w-full h-auto object-contain"
+                priority
+              />
+            )}
           </div>
 
           <div className="absolute -bottom-1 w-2/3 max-w-[620px] h-6 bg-black/15 rounded-full blur-xl z-10" />

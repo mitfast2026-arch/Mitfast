@@ -52,6 +52,7 @@ export default function CustomerDashboardPage() {
   const [wishlistCount, setWishlistCount] = useState(0);
   const [cartCount, setCartCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadDashboardData() {
@@ -93,21 +94,33 @@ export default function CustomerDashboardPage() {
           }>(`/api/customer/badge-counts`),
         ]);
 
+        const errors: string[] = [];
         if (orderRes.ok) {
           setRecentOrders(orderRes.data?.orders || []);
+        } else {
+          setRecentOrders([]);
+          errors.push(orderRes.message || 'Failed to load orders');
         }
         if (rfqRes.ok) {
           setRecentRfqs(rfqRes.data?.rfqs || []);
+        } else {
+          setRecentRfqs([]);
+          errors.push(rfqRes.message || 'Failed to load RFQs');
         }
         if (enqRes.ok) {
           setRecentEnquiries(enqRes.data?.enquiries || []);
+        } else {
+          setRecentEnquiries([]);
+          errors.push(enqRes.message || 'Failed to load enquiries');
         }
         if (badgeRes.ok && badgeRes.data) {
           setWishlistCount(badgeRes.data.wishlist ?? 0);
           setCartCount(badgeRes.data.cart ?? 0);
         }
+        setLoadError(errors.length ? errors.join(' · ') : null);
       } catch (err) {
         console.error('Customer dashboard load error:', err);
+        setLoadError('Network error loading dashboard');
       } finally {
         setLoading(false);
       }
@@ -200,6 +213,13 @@ export default function CustomerDashboardPage() {
         </>
       }
     >
+
+      {loadError ? (
+        <div className="buyer-surface px-4 py-3 text-sm text-[#B91C1C] border border-[#FECACA] bg-[#FEF2F2]">
+          {loadError}
+        </div>
+      ) : null}
+
       {/* Stats sit on canvas with soft gradient fills */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 xl:gap-5">
         {stats.map((s) => (

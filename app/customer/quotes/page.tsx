@@ -60,6 +60,7 @@ function CustomerQuotesInner() {
   const [enquiries, setEnquiries] = useState<any[]>([]);
   const [rfqs, setRfqs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [convertingId, setConvertingId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -97,14 +98,25 @@ function CustomerQuotesInner() {
         cachedApiGet<{ rfqs: any[] }>(`/api/rfqs?customerId=${prof.id}`),
       ]);
 
+      const errors: string[] = [];
       if (enqRes.ok) {
         setEnquiries(enqRes.data?.enquiries || []);
+      } else {
+        setEnquiries([]);
+        errors.push(enqRes.message || 'Failed to load enquiries');
       }
       if (rfqRes.ok) {
         setRfqs(rfqRes.data?.rfqs || []);
+      } else {
+        setRfqs([]);
+        errors.push(rfqRes.message || 'Failed to load RFQs');
       }
+      setLoadError(errors.length ? errors.join(' · ') : null);
     } catch (err) {
       console.error('Failed to load quotes:', err);
+      setEnquiries([]);
+      setRfqs([]);
+      setLoadError('Network error loading quotes');
     } finally {
       setLoading(false);
     }
@@ -211,11 +223,27 @@ function CustomerQuotesInner() {
         </div>
       </div>
 
+      {loadError ? (
+        <div className="buyer-surface px-4 py-3 text-sm text-[#B91C1C] flex items-center justify-between gap-3 border border-[#FECACA] bg-[#FEF2F2]">
+          <span className="inline-flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            {loadError}
+          </span>
+          <button type="button" onClick={loadAll} className="buyer-cta-ghost text-xs shrink-0">
+            Retry
+          </button>
+        </div>
+      ) : null}
+
       {tab === 'enquiries' ? (
         <div className="space-y-3">
           {loading ? (
             <div className="buyer-surface p-12 text-center text-sm text-[#6B7280]">
               Loading enquiries…
+            </div>
+          ) : loadError && enquiries.length === 0 ? (
+            <div className="buyer-surface p-12 text-center text-sm text-[#6B7280]">
+              Could not load enquiries. Use Retry above.
             </div>
           ) : enquiries.length === 0 ? (
             <div className="buyer-flush">
@@ -296,6 +324,10 @@ function CustomerQuotesInner() {
         <div className="space-y-3">
           {loading ? (
             <div className="buyer-surface p-12 text-center text-sm text-[#6B7280]">Loading RFQs…</div>
+          ) : loadError && rfqs.length === 0 ? (
+            <div className="buyer-surface p-12 text-center text-sm text-[#6B7280]">
+              Could not load RFQs. Use Retry above.
+            </div>
           ) : rfqs.length === 0 ? (
             <div className="buyer-flush">
               <BuyerEmptyState variant="rfqs" />

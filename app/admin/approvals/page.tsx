@@ -288,7 +288,15 @@ export default function AdminApprovalsPage() {
             >
               <Icon className="w-4 h-4" />
               {tab.label}
-              <span className="px-1.5 py-0.5 rounded-md text-xs font-mono bg-portal-inset">{tab.count}</span>
+              <span
+                className={`px-1.5 py-0.5 rounded-md text-xs font-mono tabular-nums ${
+                  active
+                    ? 'bg-portal-hero-text/15 text-portal-hero-text'
+                    : 'bg-portal-inset text-portal-muted'
+                }`}
+              >
+                {tab.count}
+              </span>
             </button>
           );
         })}

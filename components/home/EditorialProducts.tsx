@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import Link from 'next/link';
 import { ArrowRight, Compass } from 'lucide-react';
 import CurvedProductCarousel from './curved-products/CurvedProductCarousel';
@@ -13,39 +13,7 @@ export default function EditorialProducts({
 }: {
   initialProducts?: ApiProduct[];
 }) {
-  const seeded = (initialProducts || []).map(mapApiProductToCurved);
-  const [products, setProducts] = useState<CurvedProduct[]>(seeded);
-  const [loading, setLoading] = useState(seeded.length === 0);
-
-  useEffect(() => {
-    if (seeded.length > 0) {
-      setLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-
-    async function loadProducts() {
-      try {
-        const res = await fetch('/api/products?limit=12');
-        const json = await res.json();
-        if (cancelled || !json.success) return;
-        const list = (json.data?.products || []) as ApiProduct[];
-        setProducts(list.map(mapApiProductToCurved));
-      } catch {
-        if (!cancelled) setProducts([]);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    loadProducts();
-    return () => {
-      cancelled = true;
-    };
-    // Only fetch when no SSR seed was provided
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const products: CurvedProduct[] = (initialProducts || []).map(mapApiProductToCurved);
 
   return (
     <section
@@ -89,11 +57,7 @@ export default function EditorialProducts({
         </div>
       </div>
 
-      {loading ? (
-        <div className="py-16 text-center text-sm text-[#6B7280]">Loading products…</div>
-      ) : (
-        <CurvedProductCarousel products={products} />
-      )}
+      <CurvedProductCarousel products={products} />
     </section>
   );
 }

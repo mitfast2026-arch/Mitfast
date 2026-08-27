@@ -13,8 +13,10 @@ import {
 import { apiPut, apiPost, apiDelete } from '@/lib/client/api-client';
 import {
   cachedApiGet,
+  invalidatePortalCache,
   markPortalContentReady,
   peekPortalCache,
+  setPortalCache,
 } from '@/lib/client/portal-data-cache';
 import { PORTAL_PAGE_LIMIT } from '@/lib/client/portal-nav-prefetch';
 import { useMutation, mutationKey } from '@/lib/client/use-mutation';
@@ -30,12 +32,14 @@ import {
   enquiryStatusBadgeClass,
   formatStatusLabel,
 } from '@/lib/admin/sales-workflow';
+import { createIdempotencyKey } from '@/lib/client/idempotency-key';
 
 const STATUS_TABS = ['all', 'new', 'contacted', 'converted_to_rfq', 'converted_to_order', 'closed'] as const;
 
 export default function AdminEnquiriesPage() {
   const [enquiries, setEnquiries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -63,24 +67,27 @@ export default function AdminEnquiriesPage() {
   const [rfqError, setRfqError] = useState('');
   const [createdRfqId, setCreatedRfqId] = useState('');
 
-  const { isPending, run } = useMutation();
+  const { isPending, run, lastError, clearError } = useMutation();
 
-  const loadEnquiries = useCallback(async (showLoading = true) => {
+  const loadEnquiries = useCallback(async (showLoading = true, opts?: { force?: boolean }) => {
     const url = `/api/enquiries?status=${statusFilter}&search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=${PORTAL_PAGE_LIMIT}`;
-    const existing = peekPortalCache<{ enquiries: any[]; total: number }>(url);
+    const force = Boolean(opts?.force);
+    const existing = force ? null : peekPortalCache<{ enquiries: any[]; total: number }>(url);
+
     if (existing) {
       const list = existing.data.enquiries || [];
       setEnquiries(list);
       setTotal(existing.data.total || 0);
+      setLoadError(null);
       setSelectedEnquiry((prev: any) => {
         if (prev) {
           const updated = list.find((e: any) => e.id === prev.id);
           if (updated) {
-            syncDetailForm(updated);
-            return updated;
+            // Keep draft fields unless selection changed identity
+            return { ...prev, ...updated };
           }
         }
-        if (list[0]) {
+        if (!prev && list[0]) {
           syncDetailForm(list[0]);
           return list[0];
         }
@@ -90,21 +97,24 @@ export default function AdminEnquiriesPage() {
     } else if (showLoading) {
       setLoading(true);
     }
+
     try {
       const result = await cachedApiGet<{ enquiries: any[]; total: number }>(url, {
-        force: showLoading && !existing,
+        force: force || (showLoading && !existing),
       });
       if (result.ok) {
         const list = result.data.enquiries || [];
         setEnquiries(list);
         setTotal(result.data.total || 0);
+        setLoadError(null);
         setSelectedEnquiry((prev: any) => {
           if (prev) {
             const updated = list.find((e: any) => e.id === prev.id);
             if (updated) {
-              syncDetailForm(updated);
-              return updated;
+              return { ...prev, ...updated, response_message: updated.response_message };
             }
+            // Filtered out after status change — keep selection with last known patch
+            return prev;
           }
           if (list[0]) {
             syncDetailForm(list[0]);
@@ -113,13 +123,44 @@ export default function AdminEnquiriesPage() {
           return prev;
         });
         markPortalContentReady('/admin/enquiries');
+      } else {
+        if (!existing) {
+          setEnquiries([]);
+          setTotal(0);
+        }
+        setLoadError(result.message || 'Failed to load enquiries');
       }
     } catch (err) {
       console.error('Failed to load enquiries:', err);
+      if (!peekPortalCache(url)) {
+        setEnquiries([]);
+        setTotal(0);
+      }
+      setLoadError('Network error loading enquiries');
     } finally {
       setLoading(false);
     }
   }, [statusFilter, debouncedSearch, page]);
+
+  const enquiryListUrl = useCallback(() => {
+    return `/api/enquiries?status=${statusFilter}&search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=${PORTAL_PAGE_LIMIT}`;
+  }, [statusFilter, debouncedSearch, page]);
+
+  function patchEnquiry(enquiryId: string, patch: Record<string, unknown>) {
+    setEnquiries((prev) => {
+      const next = prev.map((e) => (e.id === enquiryId ? { ...e, ...patch } : e));
+      setPortalCache(enquiryListUrl(), { enquiries: next, total });
+      return next;
+    });
+    setSelectedEnquiry((prev: any) =>
+      prev?.id === enquiryId ? { ...prev, ...patch } : prev
+    );
+  }
+
+  async function refreshEnquiries() {
+    invalidatePortalCache('/api/enquiries');
+    await loadEnquiries(false, { force: true });
+  }
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
@@ -174,12 +215,19 @@ export default function AdminEnquiriesPage() {
   }
 
   async function handleUpdateStatus(enquiryId: string, newStatus: EnquiryStatus) {
+    const current = enquiries.find((e) => e.id === enquiryId) || selectedEnquiry;
+    const oldStatus = current?.status as EnquiryStatus | undefined;
+    if (oldStatus === newStatus) return;
+    clearError();
     await run(
       () => apiPut(`/api/enquiries/${enquiryId}`, { status: newStatus }),
       {
         key: mutationKey(enquiryId, `status-${newStatus}`),
+        optimistic: () => patchEnquiry(enquiryId, { status: newStatus }),
+        rollback: () => oldStatus && patchEnquiry(enquiryId, { status: oldStatus }),
         onSuccess: () => {
-          loadEnquiries(false);
+          patchEnquiry(enquiryId, { status: newStatus });
+          void refreshEnquiries();
           notifyDashboardChanged();
         },
       }
@@ -207,7 +255,14 @@ export default function AdminEnquiriesPage() {
         setContactError(json.error?.message || 'Failed to save contact details');
         return;
       }
-      loadEnquiries(false);
+      patchEnquiry(selectedEnquiry.id, {
+        guest_name: editName.trim(),
+        guest_email: editEmail.trim(),
+        guest_phone: editPhone.trim(),
+        country: editCountry.trim(),
+        company_name: editCompany.trim() || null,
+      });
+      await refreshEnquiries();
     } catch {
       setContactError('Failed to save contact details');
     } finally {
@@ -223,13 +278,15 @@ export default function AdminEnquiriesPage() {
     }
     setResponseSaving(true);
     setResponseError('');
+    const nextStatus =
+      selectedEnquiry.status === 'new' ? ('contacted' as EnquiryStatus) : undefined;
     try {
       const res = await fetch(`/api/enquiries/${selectedEnquiry.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           responseMessage: responseDraft.trim(),
-          status: selectedEnquiry.status === 'new' ? 'contacted' : undefined,
+          status: nextStatus,
         }),
       });
       const json = await res.json();
@@ -237,7 +294,13 @@ export default function AdminEnquiriesPage() {
         setResponseError(json.error?.message || 'Failed to save response');
         return;
       }
-      loadEnquiries(false);
+      patchEnquiry(selectedEnquiry.id, {
+        response_message: responseDraft.trim(),
+        responded_at: new Date().toISOString(),
+        ...(nextStatus ? { status: nextStatus } : {}),
+      });
+      await refreshEnquiries();
+      notifyDashboardChanged();
     } catch {
       setResponseError('Failed to save response');
     } finally {
@@ -257,7 +320,10 @@ export default function AdminEnquiriesPage() {
     try {
       const res = await fetch(`/api/enquiries/${selectedEnquiry.id}/convert-to-rfq`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': createIdempotencyKey(),
+        },
         body: JSON.stringify({
           quantity: rfqQty,
           productId: selectedEnquiry.product_id ? undefined : productId,
@@ -278,7 +344,8 @@ export default function AdminEnquiriesPage() {
         return;
       }
       setCreatedRfqId(json.data?.rfqId || '');
-      loadEnquiries(false);
+      patchEnquiry(selectedEnquiry.id, { status: 'converted_to_rfq' });
+      await refreshEnquiries();
       notifyDashboardChanged();
     } catch {
       setRfqError('Failed to create RFQ');
@@ -292,7 +359,10 @@ export default function AdminEnquiriesPage() {
     try {
       await apiDelete(`/api/enquiries/${enquiryId}`);
       if (selectedEnquiry?.id === enquiryId) setSelectedEnquiry(null);
-      loadEnquiries(false);
+      setEnquiries((prev) => prev.filter((e) => e.id !== enquiryId));
+      setTotal((t) => Math.max(0, t - 1));
+      await refreshEnquiries();
+      notifyDashboardChanged();
     } catch (err) {
       console.error('Delete enquiry error:', err);
     }
@@ -304,17 +374,26 @@ export default function AdminEnquiriesPage() {
     !['converted_to_rfq', 'converted_to_order', 'closed'].includes(selectedEnquiry.status);
 
   return (
-    <div className="space-y-6 w-full">
+    <div className="space-y-4 w-full min-w-0 flex flex-col">
       <AdminPageHeader
         title="Enquiries"
         description="All inbound leads — contact us, product enquiries, and send-enquiry requests."
         actions={
-          <button onClick={() => loadEnquiries()} className="saas-btn-secondary gap-2">
+          <button onClick={() => void refreshEnquiries()} className="saas-btn-secondary gap-2">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
         }
       />
+
+      {loadError ? (
+        <div className="rounded-2xl border border-portal-danger/30 bg-portal-danger-soft px-4 py-3 text-sm text-portal-danger flex items-center justify-between gap-3">
+          <span>{loadError}</span>
+          <button type="button" className="saas-btn-secondary text-xs" onClick={() => void refreshEnquiries()}>
+            Retry
+          </button>
+        </div>
+      ) : null}
 
       <SalesWorkflowBar active="enquiries" />
 
@@ -345,10 +424,15 @@ export default function AdminEnquiriesPage() {
       </AdminToolbar>
 
       <AdminSplitView
+        scrollable
         listCols={5}
         detailCols={7}
         list={
-          enquiries.length === 0 ? (
+          loadError && enquiries.length === 0 ? (
+            <div className="saas-panel p-10 text-center text-sm text-portal-muted">
+              Could not load enquiries. Use Retry above.
+            </div>
+          ) : enquiries.length === 0 ? (
             <div className="saas-panel p-10 text-center text-sm text-portal-muted">No enquiries found.</div>
           ) : (
             enquiries.map((enq) => {
@@ -408,10 +492,12 @@ export default function AdminEnquiriesPage() {
                       Mark contacted
                     </button>
                   )}
-                  {selectedEnquiry.status !== 'closed' && selectedEnquiry.status !== 'converted_to_order' && (
+                  {selectedEnquiry.status !== 'closed' &&
+                    selectedEnquiry.status !== 'converted_to_order' && (
                     <button
                       type="button"
                       className="saas-btn-secondary text-xs py-1.5 px-3"
+                      disabled={isPending(mutationKey(selectedEnquiry.id, 'status-closed'))}
                       onClick={() => handleUpdateStatus(selectedEnquiry.id, 'closed')}
                     >
                       Close
@@ -426,6 +512,10 @@ export default function AdminEnquiriesPage() {
                   </button>
                 </div>
               </div>
+
+              {lastError ? (
+                <p className="text-xs text-portal-danger">{lastError}</p>
+              ) : null}
 
               {contact && (
                 <ContactGrid

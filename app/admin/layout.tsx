@@ -10,6 +10,7 @@ import {
   ShoppingCart,
   Mail,
   Layers,
+  Images,
   Settings,
 } from 'lucide-react';
 import { ApprovalsCountProvider, useApprovalsCount } from '@/components/portal/ApprovalsCountContext';
@@ -37,6 +38,7 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
     { label: 'RFQs', href: '/admin/rfqs', icon: FileText },
     { label: 'Orders', href: '/admin/orders', icon: ShoppingCart },
     { label: 'Categories', href: '/admin/categories', icon: Layers },
+    { label: 'Homepage', href: '/admin/homepage', icon: Images },
     { label: 'Settings', href: '/admin/settings', icon: Settings },
   ];
 

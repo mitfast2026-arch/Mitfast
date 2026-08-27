@@ -482,6 +482,119 @@ export type Database = {
           },
         ]
       }
+      homepage_assets: {
+        Row: {
+          containers_image_url: string | null
+          containers_storage_path: string | null
+          id: number
+          updated_at: string
+        }
+        Insert: {
+          containers_image_url?: string | null
+          containers_storage_path?: string | null
+          id?: number
+          updated_at?: string
+        }
+        Update: {
+          containers_image_url?: string | null
+          containers_storage_path?: string | null
+          id?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      homepage_carousel_products: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          override_image_url: string | null
+          override_storage_path: string | null
+          product_id: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          override_image_url?: string | null
+          override_storage_path?: string | null
+          product_id: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          override_image_url?: string | null
+          override_storage_path?: string | null
+          product_id?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "homepage_carousel_products_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: true
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      homepage_hero_slides: {
+        Row: {
+          created_at: string
+          cta1_href: string
+          cta1_label: string
+          cta2_href: string
+          cta2_label: string
+          eyebrow: string
+          id: string
+          image_url: string
+          is_active: boolean
+          sort_order: number
+          storage_path: string | null
+          subtitle: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          cta1_href?: string
+          cta1_label?: string
+          cta2_href?: string
+          cta2_label?: string
+          eyebrow?: string
+          id?: string
+          image_url: string
+          is_active?: boolean
+          sort_order?: number
+          storage_path?: string | null
+          subtitle?: string
+          title?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          cta1_href?: string
+          cta1_label?: string
+          cta2_href?: string
+          cta2_label?: string
+          eyebrow?: string
+          id?: string
+          image_url?: string
+          is_active?: boolean
+          sort_order?: number
+          storage_path?: string | null
+          subtitle?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       idempotency_keys: {
         Row: {
           created_at: string

@@ -12,6 +12,7 @@ import {
   RotateCcw,
   Pencil,
   Loader2,
+  Upload,
   X,
 } from 'lucide-react';
 import { apiPost, apiPut, apiDelete } from '@/lib/client/api-client';
@@ -404,26 +405,38 @@ export default function AdminCategoriesPage() {
                       <td>
                         <div className="font-medium text-portal-text">{cat.name}</div>
                         {statusFilter === 'active' && (
-                          <div className="flex items-center gap-2 mt-1">
-                            <input
-                              type="file"
-                              accept="image/*"
-                              disabled={isUploading}
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) handleCategoryImageUpload(cat.id, file);
-                                e.target.value = '';
-                              }}
-                              className="text-[10px] max-w-[140px]"
-                            />
+                          <div className="flex items-center gap-2 mt-1.5">
+                            <label
+                              className={`saas-btn-secondary inline-flex items-center gap-1.5 !h-7 !px-2.5 !text-[11px] cursor-pointer ${
+                                isUploading ? 'opacity-50 pointer-events-none' : ''
+                              }`}
+                            >
+                              {isUploading ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Upload className="w-3 h-3" />
+                              )}
+                              {isUploading ? 'Uploading…' : imageUrl ? 'Replace' : 'Upload'}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                disabled={isUploading}
+                                className="sr-only"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) handleCategoryImageUpload(cat.id, file);
+                                  e.target.value = '';
+                                }}
+                              />
+                            </label>
                             {imageUrl && (
                               <button
                                 type="button"
                                 onClick={() => handleRemoveImage(cat.id)}
                                 disabled={isUploading}
-                                className="text-[10px] text-portal-muted hover:text-portal-danger disabled:opacity-50"
+                                className="text-[11px] text-portal-muted hover:text-portal-danger disabled:opacity-50"
                               >
-                                {isUploading ? '…' : 'Remove'}
+                                Remove
                               </button>
                             )}
                           </div>

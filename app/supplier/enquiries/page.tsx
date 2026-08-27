@@ -11,6 +11,7 @@ import {
 export default function SupplierEnquiriesPage() {
   const [enquiries, setEnquiries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selected, setSelected] = useState<any>(null);
@@ -33,6 +34,7 @@ export default function SupplierEnquiriesPage() {
       if (json.success) {
         const list = json.data.enquiries || [];
         setEnquiries(list);
+        setLoadError(null);
         if (selected) {
           const refreshed = list.find((e: any) => e.id === selected.id);
           if (refreshed) {
@@ -40,9 +42,14 @@ export default function SupplierEnquiriesPage() {
             setResponseDraft(refreshed.response_message || '');
           }
         }
+      } else {
+        setEnquiries([]);
+        setLoadError(json.error?.message || 'Failed to load enquiries');
       }
     } catch (err) {
       console.error('Failed to load supplier enquiries:', err);
+      setEnquiries([]);
+      setLoadError('Network error loading enquiries');
     } finally {
       setLoading(false);
     }
@@ -123,11 +130,24 @@ export default function SupplierEnquiriesPage() {
         </div>
       </div>
 
+      {loadError ? (
+        <div className="rounded-2xl border border-portal-danger/30 bg-portal-danger-soft px-4 py-3 text-sm text-portal-danger flex items-center justify-between gap-3">
+          <span>{loadError}</span>
+          <button type="button" className="saas-btn-secondary text-xs" onClick={loadEnquiries}>
+            Retry
+          </button>
+        </div>
+      ) : null}
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-5 space-y-2.5 max-h-[700px] overflow-y-auto pr-1">
           {loading ? (
             <div className="saas-panel p-12 text-center text-xs text-portal-muted">
               Loading enquiries…
+            </div>
+          ) : loadError && enquiries.length === 0 ? (
+            <div className="saas-panel p-12 text-center text-xs text-portal-muted">
+              Could not load enquiries. Use Retry above.
             </div>
           ) : enquiries.length === 0 ? (
             <div className="saas-panel p-12 text-center space-y-2">

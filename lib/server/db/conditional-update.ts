@@ -64,17 +64,20 @@ export const ENQUIRY_TRANSITIONS: Record<string, string[]> = {
   contacted: ['new'],
   converted_to_rfq: ['new', 'contacted'],
   converted_to_order: ['new', 'contacted'],
-  closed: ['new', 'contacted'],
+  closed: ['new', 'contacted', 'converted_to_rfq'],
 };
 
 export const ORDER_STATUS_TRANSITIONS: Record<string, string[]> = {
-  packing: ['accepted'],
+  // Admin may move forward or reverse between open fulfillment states.
+  accepted: ['packing'],
+  packing: ['accepted', 'dispatched'],
   dispatched: ['packing'],
   cancelled: ['accepted', 'packing'],
 };
 
 export const PAYMENT_TRANSITIONS: Record<string, string[]> = {
   payment_done: ['payment_required'],
+  payment_required: ['payment_done'],
 };
 
 export const PRODUCT_APPROVAL_TRANSITIONS: Record<string, string[]> = {

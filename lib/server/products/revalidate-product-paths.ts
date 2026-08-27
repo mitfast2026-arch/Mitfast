@@ -6,6 +6,7 @@ import { revalidatePath, revalidateTag } from 'next/cache';
 export function revalidateProductCaches(productId?: string | null) {
   revalidateTag('products');
   revalidateTag('categories');
+  revalidateTag('homepage');
   if (productId) {
     revalidateTag(`product:${productId}`);
   }

@@ -7,7 +7,10 @@ export async function GET() {
     const auth = await requireCustomer();
     if (!auth.ok) return auth.response;
 
-    const result = await getCustomerBadgeCounts(auth.session.profile.id);
+    const result = await getCustomerBadgeCounts(
+      auth.session.profile.id,
+      auth.session.profile.email
+    );
     if (!result.success) {
       return NextResponse.json(result, { status: 400 });
     }

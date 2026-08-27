@@ -53,6 +53,7 @@
     --portal-focus: #5B8DEF;
     --portal-hero: #FFFFFF;
     --portal-hero-text: #0A0A0A;
+    --portal-hero-hover: #E5E5E5;
     --portal-hover: #212121;
     --portal-success: #34D399;
     --portal-success-soft: rgba(52, 211, 153, 0.15);
@@ -915,6 +916,7 @@
     --portal-focus: #111315;
     --portal-hero: #111315;
     --portal-hero-text: #FFFFFF;
+    --portal-hero-hover: #2A2E32;
     --portal-hover: #E8EAED;
     --portal-success: #15803D;
     --portal-success-soft: #F0FDF4;
@@ -932,6 +934,88 @@
     color-scheme: light;
   }
 
+  /* Admin / Supplier Soft Graphite light mode
+     html[data-portal-theme] is set before paint (blocking script) to avoid flash */
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer),
+  .portal-ui.portal-theme-light {
+    --portal-canvas: #ECEEF0;
+    --portal-sidebar: #F3F4F5;
+    --portal-panel: #F7F7F8;
+    --portal-inset: #E8EAED;
+    --portal-border: #D9DCE1;
+    --portal-border-strong: #C8CCD2;
+    --portal-text: #111315;
+    --portal-muted: #6B7280;
+    --portal-subtle: #9CA3AF;
+    --portal-accent: #111315;
+    --portal-accent-hover: #2A2E32;
+    --portal-selected: #E2E4E8;
+    --portal-selected-border: #111315;
+    --portal-focus: #111315;
+    --portal-hero: #111315;
+    --portal-hero-text: #FFFFFF;
+    --portal-hero-hover: #2A2E32;
+    --portal-hover: #E8EAED;
+    --portal-success: #15803D;
+    --portal-success-soft: #F0FDF4;
+    --portal-warning: #B45309;
+    --portal-warning-soft: #FEF3C7;
+    --portal-danger: #B91C1C;
+    --portal-danger-soft: #FEF2F2;
+    --portal-info: #1D4ED8;
+    --portal-info-soft: #EFF6FF;
+    --portal-status-blue: #1D4ED8;
+    --portal-status-orange: #B45309;
+    --portal-status-yellow: #A16207;
+    --portal-status-green: #15803D;
+    --portal-status-text: #FFFFFF;
+    color-scheme: light;
+  }
+
+  /* Smooth theme crossfade (CSS fallback when View Transitions unavailable) */
+  .portal-ui.portal-theme-animating,
+  .portal-ui.portal-theme-animating .saas-sidebar,
+  .portal-ui.portal-theme-animating .saas-panel,
+  .portal-ui.portal-theme-animating .saas-kpi-card,
+  .portal-ui.portal-theme-animating .saas-table-container,
+  .portal-ui.portal-theme-animating .saas-input,
+  .portal-ui.portal-theme-animating .saas-btn-primary,
+  .portal-ui.portal-theme-animating .saas-btn-secondary,
+  .portal-ui.portal-theme-animating .saas-btn-ghost,
+  .portal-ui.portal-theme-animating .saas-nav-active,
+  .portal-ui.portal-theme-animating .saas-nav-inactive,
+  .portal-ui.portal-theme-animating .saas-topbar,
+  .portal-ui.portal-theme-animating .saas-page-header,
+  .portal-ui.portal-theme-animating [class*="bg-portal"],
+  .portal-ui.portal-theme-animating [class*="text-portal"],
+  .portal-ui.portal-theme-animating [class*="border-portal"] {
+    transition:
+      background-color 0.28s ease,
+      color 0.28s ease,
+      border-color 0.28s ease,
+      box-shadow 0.28s ease,
+      fill 0.28s ease,
+      stroke 0.28s ease;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .portal-ui.portal-theme-animating,
+    .portal-ui.portal-theme-animating * {
+      transition: none !important;
+    }
+
+    ::view-transition-old(root),
+    ::view-transition-new(root) {
+      animation: none !important;
+    }
+  }
+
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 0.28s;
+    animation-timing-function: ease;
+  }
+
   .portal-ui.portal-theme-customer .saas-panel,
   .portal-ui.portal-theme-customer .saas-kpi-card,
   .portal-ui.portal-theme-customer .saas-table-container {
@@ -947,9 +1031,9 @@
 
   .portal-ui.portal-theme-customer .saas-btn-primary:hover,
   .portal-ui.portal-theme-customer .saas-btn-gold:hover {
-    background: #2A2E32;
-    border-color: #2A2E32;
-    color: #FFFFFF;
+    background: var(--portal-hero-hover);
+    border-color: var(--portal-hero-hover);
+    color: var(--portal-hero-text);
   }
 
   .portal-ui.portal-theme-customer .saas-input:focus {
@@ -959,6 +1043,117 @@
 
   .portal-ui.portal-theme-customer .saas-sidebar {
     box-shadow: none;
+  }
+
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) .saas-panel,
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) .saas-kpi-card,
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) .saas-table-container,
+  .portal-ui.portal-theme-light .saas-panel,
+  .portal-ui.portal-theme-light .saas-kpi-card,
+  .portal-ui.portal-theme-light .saas-table-container {
+    background: var(--portal-panel);
+    box-shadow: 0 1px 2px rgba(17, 19, 21, 0.04);
+  }
+
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) .saas-nav-active,
+  .portal-ui.portal-theme-light .saas-nav-active {
+    color: var(--portal-text);
+    background: var(--portal-selected);
+    border: 1px solid var(--portal-border);
+  }
+
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) .saas-btn-primary:hover,
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) .saas-btn-gold:hover,
+  .portal-ui.portal-theme-light .saas-btn-primary:hover,
+  .portal-ui.portal-theme-light .saas-btn-gold:hover {
+    background: var(--portal-hero-hover);
+    border-color: var(--portal-hero-hover);
+    color: var(--portal-hero-text);
+  }
+
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) .saas-input:focus,
+  .portal-ui.portal-theme-light .saas-input:focus {
+    border-color: var(--portal-accent);
+    box-shadow: 0 0 0 3px rgba(17, 19, 21, 0.12);
+  }
+
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) .saas-sidebar,
+  .portal-ui.portal-theme-light .saas-sidebar {
+    box-shadow: none;
+  }
+
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) .saas-badge-neutral,
+  .portal-ui.portal-theme-light .saas-badge-neutral {
+    color: var(--portal-text);
+    background: var(--portal-inset);
+    border-color: var(--portal-border);
+  }
+
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) .saas-input,
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) .saas-search-field .saas-input,
+  .portal-ui.portal-theme-light .saas-input,
+  .portal-ui.portal-theme-light .saas-search-field .saas-input {
+    color: #111315;
+    background: #E8EAED;
+    border-color: #D9DCE1;
+  }
+
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) .saas-label,
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) .type-subtitle,
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) .text-portal-muted,
+  .portal-ui.portal-theme-light .saas-label,
+  .portal-ui.portal-theme-light .type-subtitle,
+  .portal-ui.portal-theme-light .text-portal-muted {
+    color: #6B7280;
+  }
+
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) .type-page,
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) .type-section,
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) .text-portal-text,
+  .portal-ui.portal-theme-light .type-page,
+  .portal-ui.portal-theme-light .type-section,
+  .portal-ui.portal-theme-light .text-portal-text {
+    color: #111315;
+  }
+
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) .saas-btn-secondary,
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) .saas-neu-button,
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) .saas-btn-ghost,
+  .portal-ui.portal-theme-light .saas-btn-secondary,
+  .portal-ui.portal-theme-light .saas-neu-button,
+  .portal-ui.portal-theme-light .saas-btn-ghost {
+    color: #111315;
+    background: #F7F7F8;
+    border-color: #D9DCE1;
+  }
+
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) .saas-btn-secondary:hover,
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) .saas-neu-button:hover,
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) .saas-btn-ghost:hover,
+  .portal-ui.portal-theme-light .saas-btn-secondary:hover,
+  .portal-ui.portal-theme-light .saas-neu-button:hover,
+  .portal-ui.portal-theme-light .saas-btn-ghost:hover {
+    color: #111315;
+    background: #E8EAED;
+  }
+
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) .saas-btn-primary,
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) .saas-btn-gold,
+  .portal-ui.portal-theme-light .saas-btn-primary,
+  .portal-ui.portal-theme-light .saas-btn-gold {
+    color: #FFFFFF;
+    background: #111315;
+    border-color: #111315;
+  }
+
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) .saas-table th,
+  .portal-ui.portal-theme-light .saas-table th {
+    color: #6B7280;
+  }
+
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) .saas-table td,
+  .portal-ui.portal-theme-light .saas-table td {
+    color: #111315;
   }
 
   .portal-ui {
@@ -1069,7 +1264,13 @@
   .portal-ui input,
   .portal-ui select,
   .portal-ui textarea {
-    color: #F5F5F5;
+    color: var(--portal-text);
+  }
+
+  .portal-ui input::placeholder,
+  .portal-ui textarea::placeholder {
+    color: var(--portal-muted);
+    opacity: 1;
   }
 
   .portal-ui input:-webkit-autofill,
@@ -1082,10 +1283,53 @@
   .portal-ui select:-webkit-autofill,
   .portal-ui select:-webkit-autofill:hover,
   .portal-ui select:-webkit-autofill:focus {
-    -webkit-text-fill-color: #F5F5F5 !important;
-    caret-color: #F5F5F5 !important;
-    -webkit-box-shadow: 0 0 0 1000px #171717 inset !important;
-    box-shadow: 0 0 0 1000px #171717 inset !important;
+    -webkit-text-fill-color: var(--portal-text) !important;
+    caret-color: var(--portal-text) !important;
+    -webkit-box-shadow: 0 0 0 1000px var(--portal-inset) inset !important;
+    box-shadow: 0 0 0 1000px var(--portal-inset) inset !important;
+  }
+
+  /* Soft Graphite light mode — keep form controls readable */
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) input,
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) select,
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) textarea,
+  .portal-ui.portal-theme-light input,
+  .portal-ui.portal-theme-light select,
+  .portal-ui.portal-theme-light textarea {
+    color: #111315;
+    background-color: var(--portal-inset);
+  }
+
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) option,
+  .portal-ui.portal-theme-light option {
+    color: #111315;
+    background-color: #F7F7F8;
+  }
+
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) input:-webkit-autofill,
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) input:-webkit-autofill:hover,
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) input:-webkit-autofill:focus,
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) input:-webkit-autofill:active,
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) textarea:-webkit-autofill,
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) textarea:-webkit-autofill:hover,
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) textarea:-webkit-autofill:focus,
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) select:-webkit-autofill,
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) select:-webkit-autofill:hover,
+  html[data-portal-theme="light"] .portal-ui:not(.portal-theme-customer) select:-webkit-autofill:focus,
+  .portal-ui.portal-theme-light input:-webkit-autofill,
+  .portal-ui.portal-theme-light input:-webkit-autofill:hover,
+  .portal-ui.portal-theme-light input:-webkit-autofill:focus,
+  .portal-ui.portal-theme-light input:-webkit-autofill:active,
+  .portal-ui.portal-theme-light textarea:-webkit-autofill,
+  .portal-ui.portal-theme-light textarea:-webkit-autofill:hover,
+  .portal-ui.portal-theme-light textarea:-webkit-autofill:focus,
+  .portal-ui.portal-theme-light select:-webkit-autofill,
+  .portal-ui.portal-theme-light select:-webkit-autofill:hover,
+  .portal-ui.portal-theme-light select:-webkit-autofill:focus {
+    -webkit-text-fill-color: #111315 !important;
+    caret-color: #111315 !important;
+    -webkit-box-shadow: 0 0 0 1000px #E8EAED inset !important;
+    box-shadow: 0 0 0 1000px #E8EAED inset !important;
   }
 }
 
@@ -1607,8 +1851,9 @@
   }
 
   .saas-nav-active {
-    @apply font-medium text-portal-hero-text;
-    background: #F5F5F5;
+    @apply font-medium;
+    color: var(--portal-hero-text);
+    background: var(--portal-hero);
     border-radius: 12px;
   }
 
@@ -1705,8 +1950,9 @@
 
   .saas-btn-primary:hover,
   .saas-btn-gold:hover {
-    background: #E5E5E5;
-    border-color: #E5E5E5;
+    background: var(--portal-hero-hover);
+    border-color: var(--portal-hero-hover);
+    color: var(--portal-hero-text);
   }
 
   .saas-btn-secondary,
@@ -1758,6 +2004,29 @@
 
   .saas-tab-inactive:hover {
     color: var(--portal-text);
+    background: var(--portal-hover);
+  }
+
+  /* Native file pickers — match portal chrome (avoid browser white “Choose File”) */
+  .portal-ui input[type='file']:not(.sr-only):not(.hidden) {
+    color: var(--portal-muted);
+    font-size: 0.75rem;
+    max-width: 12rem;
+  }
+
+  .portal-ui input[type='file']:not(.sr-only):not(.hidden)::file-selector-button {
+    margin-right: 0.5rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--portal-border);
+    background: var(--portal-panel);
+    color: var(--portal-text);
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .portal-ui input[type='file']:not(.sr-only):not(.hidden)::file-selector-button:hover {
     background: var(--portal-hover);
   }
 

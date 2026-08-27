@@ -56,7 +56,15 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${inter.variable} ${instrumentSans.variable}`}
+      suppressHydrationWarning
     >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var m=localStorage.getItem('mitfast-portal-color-mode');document.documentElement.dataset.portalTheme=m==='light'?'light':'dark';}catch(e){document.documentElement.dataset.portalTheme='dark';}})();`,
+          }}
+        />
+      </head>
       <body className={`${inter.className} min-h-screen bg-white text-[#111315] antialiased`}>
         <script
           type="application/ld+json"

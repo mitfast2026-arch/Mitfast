@@ -17,6 +17,7 @@ import {
 import { clsx } from 'clsx';
 import { PortalToaster } from '@/components/portal/ds';
 import PortalRouteSkeleton from '@/components/portal/PortalRouteSkeleton';
+import PortalColorModeToggle from '@/components/portal/PortalColorModeToggle';
 import { prefetchPortalRouteData } from '@/lib/client/portal-nav-prefetch';
 import { markPortalNavClick } from '@/lib/client/portal-data-cache';
 
@@ -300,6 +301,7 @@ export default function PortalShell({
               <span className="hidden sm:inline font-mono text-xs text-portal-muted whitespace-nowrap">
                 {currentDate}
               </span>
+              <PortalColorModeToggle />
               {settingsHref ? (
                 <Link
                   href={settingsHref}

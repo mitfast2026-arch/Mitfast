@@ -21,6 +21,7 @@ export const PORTAL_ROUTE_PREFETCH: Record<string, string[]> = {
     `/api/orders?convertedOnly=true&page=1&limit=${PORTAL_PAGE_LIMIT}&search=`,
   ],
   '/admin/categories': ['/api/categories?mode=admin&status=active'],
+  '/admin/homepage': ['/api/admin/homepage'],
   '/admin/settings': ['/api/settings'],
   '/supplier/dashboard': [], // stats URL needs supplier id — warmed by layout
   '/supplier/products': [

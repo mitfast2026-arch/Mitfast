@@ -6,6 +6,7 @@ import { Toaster } from 'sonner';
 import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
 import SmoothScroll from '@/components/providers/SmoothScroll';
+import { PortalColorModeProvider, PortalUiRoot } from '@/components/portal/PortalColorMode';
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -26,18 +27,27 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         : '';
 
     return (
-      <div
-        className={`portal-ui h-dvh max-h-dvh w-full overflow-hidden saas-canvas-bg text-portal-text ${portalTheme}`.trim()}
-      >
-        <Toaster
-          position="top-right"
-          richColors
-          closeButton
-          duration={2500}
-          theme="dark"
-        />
-        {children}
-      </div>
+      <PortalColorModeProvider>
+        <PortalUiRoot
+          className={`portal-ui h-dvh max-h-dvh w-full overflow-hidden saas-canvas-bg text-portal-text ${portalTheme}`.trim()}
+        >
+          <Toaster
+            position="top-right"
+            richColors
+            closeButton
+            duration={2500}
+            theme="system"
+            toastOptions={{
+              style: {
+                background: 'var(--portal-panel)',
+                border: '1px solid var(--portal-border)',
+                color: 'var(--portal-text)',
+              },
+            }}
+          />
+          {children}
+        </PortalUiRoot>
+      </PortalColorModeProvider>
     );
   }
 
