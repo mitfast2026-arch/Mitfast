@@ -77,8 +77,6 @@ export default function SupplierRfqsPage() {
   function handleSelectRfq(rfq: any) {
     setSelectedRfq(rfq);
     initNegotiationQtys(rfq);
-    setShowReject(false);
-    setRejectReason('');
     setActionError('');
     setActionSuccess('');
   }
