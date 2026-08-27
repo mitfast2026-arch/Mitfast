@@ -7,6 +7,7 @@ import {
 } from '@/lib/server/db/conditional-update';
 import { invalidateAdminCaches } from '@/lib/server/db/invalidate-caches';
 import { withIdempotency } from '@/lib/server/db/idempotency';
+import { sanitizePostgrestSearch } from '@/lib/server/db/sanitize-search';
 import type { ServerResult } from '@/lib/server/auth/get-session';
 import type { EnquiryStatus } from '@/types/database';
 import { generateTrackingToken } from '@/lib/server/tracking';
@@ -295,9 +296,12 @@ export async function getEnquiriesForAdmin(params: {
     }
 
     if (params.search) {
-      query = query.or(
-        `guest_name.ilike.%${params.search}%,guest_email.ilike.%${params.search}%,guest_phone.ilike.%${params.search}%,message.ilike.%${params.search}%,company_name.ilike.%${params.search}%,country.ilike.%${params.search}%`
-      );
+      const q = sanitizePostgrestSearch(params.search);
+      if (q) {
+        query = query.or(
+          `guest_name.ilike.%${q}%,guest_email.ilike.%${q}%,guest_phone.ilike.%${q}%,message.ilike.%${q}%,company_name.ilike.%${q}%,country.ilike.%${q}%`
+        );
+      }
     }
 
     query = query.order('created_at', { ascending: false });
@@ -524,9 +528,12 @@ export async function getEnquiriesForSupplier(
       .order('created_at', { ascending: false });
 
     if (params?.search) {
-      query = query.or(
-        `guest_name.ilike.%${params.search}%,guest_email.ilike.%${params.search}%,message.ilike.%${params.search}%`
-      );
+      const q = sanitizePostgrestSearch(params.search);
+      if (q) {
+        query = query.or(
+          `guest_name.ilike.%${q}%,guest_email.ilike.%${q}%,message.ilike.%${q}%`
+        );
+      }
     }
 
     const { data: enquiries, count, error } = await query.range(offset, offset + limit - 1);

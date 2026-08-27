@@ -1,15 +1,27 @@
 'use client';
 
-import React, { useState } from 'react';
-import { 
-  Lock, 
-  Bell, 
-  Save, 
-  Check, 
+import React, { useEffect, useState } from 'react';
+import {
+  Lock,
+  Bell,
+  Save,
+  Check,
   AlertCircle,
-  Key
+  Key,
 } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
+
+type NotificationPreferences = {
+  emailRfqs: boolean;
+  emailOrders: boolean;
+  emailApprovals: boolean;
+};
+
+const DEFAULT_PREFS: NotificationPreferences = {
+  emailRfqs: true,
+  emailOrders: true,
+  emailApprovals: true,
+};
 
 export default function SupplierSettingsPage() {
   const [password, setPassword] = useState('');
@@ -18,10 +30,44 @@ export default function SupplierSettingsPage() {
   const [passwordSuccess, setPasswordSuccess] = useState('');
   const [passwordError, setPasswordError] = useState('');
 
-  // Notification toggles — local-only preview (not persisted)
   const [emailRfqs, setEmailRfqs] = useState(true);
   const [emailOrders, setEmailOrders] = useState(true);
   const [emailApprovals, setEmailApprovals] = useState(true);
+  const [loadingPrefs, setLoadingPrefs] = useState(true);
+  const [savingPrefs, setSavingPrefs] = useState(false);
+  const [prefsSuccess, setPrefsSuccess] = useState('');
+  const [prefsError, setPrefsError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadPrefs() {
+      setLoadingPrefs(true);
+      try {
+        const res = await fetch('/api/supplier/profile');
+        const json = await res.json();
+        if (!res.ok || !json.success) {
+          throw new Error(json.error?.message || 'Failed to load preferences');
+        }
+        const prefs = (json.data?.supplier?.notification_preferences ||
+          DEFAULT_PREFS) as NotificationPreferences;
+        if (!cancelled) {
+          setEmailRfqs(prefs.emailRfqs !== false);
+          setEmailOrders(prefs.emailOrders !== false);
+          setEmailApprovals(prefs.emailApprovals !== false);
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          setPrefsError(err.message || 'Could not load notification preferences');
+        }
+      } finally {
+        if (!cancelled) setLoadingPrefs(false);
+      }
+    }
+    void loadPrefs();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleUpdatePassword(e: React.FormEvent) {
     e.preventDefault();
@@ -55,9 +101,45 @@ export default function SupplierSettingsPage() {
     }
   }
 
+  async function handleSavePreferences() {
+    setPrefsError('');
+    setPrefsSuccess('');
+    setSavingPrefs(true);
+    try {
+      const res = await fetch('/api/supplier/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          notificationPreferences: {
+            emailRfqs,
+            emailOrders,
+            emailApprovals,
+          },
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error?.message || 'Failed to save preferences');
+      }
+      const prefs = (json.data?.supplier?.notification_preferences || {
+        emailRfqs,
+        emailOrders,
+        emailApprovals,
+      }) as NotificationPreferences;
+      setEmailRfqs(prefs.emailRfqs !== false);
+      setEmailOrders(prefs.emailOrders !== false);
+      setEmailApprovals(prefs.emailApprovals !== false);
+      setPrefsSuccess('Notification preferences saved.');
+      setTimeout(() => setPrefsSuccess(''), 4000);
+    } catch (err: any) {
+      setPrefsError(err.message || 'Could not save preferences');
+    } finally {
+      setSavingPrefs(false);
+    }
+  }
+
   return (
     <div className="space-y-6 w-full">
-      {/* Header */}
       <div>
         <h1 className="type-page">
           Supplier account settings & security
@@ -68,7 +150,6 @@ export default function SupplierSettingsPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Password Update Form */}
         <form onSubmit={handleUpdatePassword} className="saas-panel p-6 space-y-4">
           <div className="flex items-center gap-2 border-b border-portal-border pb-3">
             <Key className="w-4 h-4 text-portal-text" />
@@ -94,7 +175,7 @@ export default function SupplierSettingsPage() {
           <div className="space-y-3">
             <div>
               <label className="saas-label">New Password</label>
-              <input 
+              <input
                 type="password"
                 required
                 placeholder="••••••••"
@@ -106,7 +187,7 @@ export default function SupplierSettingsPage() {
 
             <div>
               <label className="saas-label">Confirm New Password</label>
-              <input 
+              <input
                 type="password"
                 required
                 placeholder="••••••••"
@@ -118,7 +199,7 @@ export default function SupplierSettingsPage() {
           </div>
 
           <div className="pt-2">
-            <button 
+            <button
               type="submit"
               disabled={savingPassword}
               className="saas-btn-primary text-xs py-2 px-4 w-full flex items-center justify-center gap-2"
@@ -129,7 +210,6 @@ export default function SupplierSettingsPage() {
           </div>
         </form>
 
-        {/* Notifications — local-only */}
         <div className="saas-panel p-6 space-y-4">
           <div className="flex items-center gap-2 border-b border-portal-border pb-3">
             <Bell className="w-4 h-4 text-portal-text" />
@@ -138,15 +218,26 @@ export default function SupplierSettingsPage() {
             </h3>
           </div>
 
-          <div className="p-3 rounded-xl bg-portal-inset text-[11px] text-portal-muted">
-            Local-only preview — preferences are not saved to the server in this environment.
-          </div>
+          {prefsSuccess && (
+            <div className="p-3 rounded-xl bg-portal-success-soft text-xs text-portal-success flex items-center gap-2 font-medium">
+              <Check className="w-4 h-4 text-portal-success shrink-0" />
+              <span>{prefsSuccess}</span>
+            </div>
+          )}
 
-          <div className="space-y-3 text-xs opacity-80">
+          {prefsError && (
+            <div className="p-3 rounded-xl bg-portal-danger-soft text-xs text-portal-danger flex items-center gap-2 font-medium">
+              <AlertCircle className="w-4 h-4 text-portal-danger shrink-0" />
+              <span>{prefsError}</span>
+            </div>
+          )}
+
+          <div className="space-y-3 text-xs">
             <label className="flex items-start gap-3 p-3 rounded-xl bg-portal-inset cursor-pointer hover:bg-portal-inset">
-              <input 
+              <input
                 type="checkbox"
                 checked={emailRfqs}
+                disabled={loadingPrefs || savingPrefs}
                 onChange={(e) => setEmailRfqs(e.target.checked)}
                 className="w-4 h-4 mt-0.5 rounded text-portal-text focus:ring-portal-accent"
               />
@@ -157,9 +248,10 @@ export default function SupplierSettingsPage() {
             </label>
 
             <label className="flex items-start gap-3 p-3 rounded-xl bg-portal-inset cursor-pointer hover:bg-portal-inset">
-              <input 
+              <input
                 type="checkbox"
                 checked={emailOrders}
+                disabled={loadingPrefs || savingPrefs}
                 onChange={(e) => setEmailOrders(e.target.checked)}
                 className="w-4 h-4 mt-0.5 rounded text-portal-text focus:ring-portal-accent"
               />
@@ -170,9 +262,10 @@ export default function SupplierSettingsPage() {
             </label>
 
             <label className="flex items-start gap-3 p-3 rounded-xl bg-portal-inset cursor-pointer hover:bg-portal-inset">
-              <input 
+              <input
                 type="checkbox"
                 checked={emailApprovals}
+                disabled={loadingPrefs || savingPrefs}
                 onChange={(e) => setEmailApprovals(e.target.checked)}
                 className="w-4 h-4 mt-0.5 rounded text-portal-text focus:ring-portal-accent"
               />
@@ -184,14 +277,14 @@ export default function SupplierSettingsPage() {
           </div>
 
           <div className="pt-2">
-            <button 
+            <button
               type="button"
-              disabled
-              title="Notification preferences are not persisted in this environment"
-              className="saas-btn-secondary text-xs py-2 px-4 w-full flex items-center justify-center gap-2 opacity-50 cursor-not-allowed"
+              disabled={loadingPrefs || savingPrefs}
+              onClick={() => void handleSavePreferences()}
+              className="saas-btn-primary text-xs py-2 px-4 w-full flex items-center justify-center gap-2"
             >
               <Save className="w-3.5 h-3.5" />
-              <span>Save Preferences (unavailable)</span>
+              <span>{savingPrefs ? 'Saving…' : loadingPrefs ? 'Loading…' : 'Save Preferences'}</span>
             </button>
           </div>
         </div>

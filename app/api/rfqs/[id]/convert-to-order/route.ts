@@ -28,6 +28,18 @@ export async function POST(
     }
 
     const idempotencyKey = request.headers.get('Idempotency-Key');
+    if (!idempotencyKey?.trim()) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            message: 'Idempotency-Key header is required',
+            code: 'IDEMPOTENCY_REQUIRED',
+          },
+        },
+        { status: 400 }
+      );
+    }
     const result = await convertRfqToOrder({ rfqId: params.id }, idempotencyKey);
     if (!result.success) return NextResponse.json(result, { status: 400 });
     return NextResponse.json(result, { status: 201 });

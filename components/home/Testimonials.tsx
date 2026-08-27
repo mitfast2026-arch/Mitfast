@@ -116,14 +116,25 @@ export default function Testimonials() {
 
                 {/* Author Info */}
                 <div className="flex items-center gap-4 pt-4 border-t border-slate-200">
-                  <div className="relative w-12 h-12 rounded-full overflow-hidden border-2 border-white shadow-xs shrink-0">
-                    <Image
-                      src={item.photo}
-                      alt={item.name}
-                      fill
-                      sizes="48px"
-                      className="object-cover"
-                    />
+                  <div className="relative w-12 h-12 rounded-full overflow-hidden border-2 border-white shadow-xs shrink-0 bg-[#ECEEF0]">
+                    {item.photo ? (
+                      <Image
+                        src={item.photo}
+                        alt={item.name}
+                        fill
+                        sizes="48px"
+                        className="object-cover"
+                      />
+                    ) : (
+                      <span className="flex h-full w-full items-center justify-center text-xs font-semibold tracking-wide text-[#111315]">
+                        {item.name
+                          .split(/\s+/)
+                          .filter(Boolean)
+                          .slice(0, 2)
+                          .map((p) => p[0]?.toUpperCase() ?? '')
+                          .join('')}
+                      </span>
+                    )}
                   </div>
                   <div>
                     <div className="font-display font-bold text-sm text-[#090e17]">

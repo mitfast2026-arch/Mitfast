@@ -3,6 +3,7 @@ import { Inter, Instrument_Sans } from 'next/font/google';
 import './globals.css';
 import AppShell from '@/components/layout/AppShell';
 import { buildOrganizationJsonLd, buildWebSiteJsonLd, siteUrl } from '@/lib/seo/product-json-ld';
+import { serializeJsonLd } from '@/lib/server/seo/json-ld';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -59,11 +60,11 @@ export default function RootLayout({
       <body className={`${inter.className} min-h-screen bg-white text-[#111315] antialiased`}>
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(orgLd) }}
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(orgLd) }}
         />
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(siteLd) }}
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(siteLd) }}
         />
         <AppShell>{children}</AppShell>
       </body>

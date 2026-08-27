@@ -51,8 +51,12 @@ export async function POST(request: NextRequest) {
         limitError.message?.includes('try_record_otp_send');
 
       if (!rpcMissing) {
+        console.error('[POST /api/auth/otp/send] rate-limit RPC', limitError);
         return NextResponse.json(
-          { success: false, error: { message: limitError.message, code: 'DATABASE_ERROR' } },
+          {
+            success: false,
+            error: { message: 'Unable to send verification code. Try again later.', code: 'DATABASE_ERROR' },
+          },
           { status: 500 }
         );
       }
@@ -84,8 +88,12 @@ export async function POST(request: NextRequest) {
     });
 
     if (error) {
+      console.error('[POST /api/auth/otp/send] generateLink', error);
       return NextResponse.json(
-        { success: false, error: { message: error.message, code: 'AUTH_ERROR' } },
+        {
+          success: false,
+          error: { message: 'Unable to send verification code. Try again later.', code: 'AUTH_ERROR' },
+        },
         { status: 400 }
       );
     }
@@ -113,9 +121,11 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('[POST /api/auth/otp/send]', error);
-    const message = error instanceof Error ? error.message : 'Failed to send verification code';
     return NextResponse.json(
-      { success: false, error: { message, code: 'EMAIL_ERROR' } },
+      {
+        success: false,
+        error: { message: 'Unable to send verification code. Try again later.', code: 'EMAIL_ERROR' },
+      },
       { status: 500 }
     );
   }

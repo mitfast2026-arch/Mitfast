@@ -19,6 +19,7 @@ export function buildProductJsonLd(product: {
   sku?: string | null;
   selling_price?: number | null;
   discount?: number | null;
+  stock_quantity?: number | null;
   images?: Array<{ image_url: string; is_primary?: boolean }>;
   category?: { name?: string } | null;
 }): Record<string, unknown> {
@@ -31,6 +32,10 @@ export function buildProductJsonLd(product: {
     product.images?.[0]?.image_url ||
     undefined;
   const url = `${siteUrl()}/products/${product.id}`;
+
+  // stock_quantity is informational only — never reserved/decremented.
+  const inStock =
+    product.stock_quantity == null || Number(product.stock_quantity) > 0;
 
   return {
     '@context': 'https://schema.org',
@@ -50,7 +55,9 @@ export function buildProductJsonLd(product: {
       url,
       priceCurrency: 'INR',
       price: unitPrice,
-      availability: 'https://schema.org/InStock',
+      availability: inStock
+        ? 'https://schema.org/InStock'
+        : 'https://schema.org/OutOfStock',
       itemCondition: 'https://schema.org/NewCondition',
     },
   };

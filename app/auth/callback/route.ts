@@ -24,8 +24,9 @@ export async function GET(request: NextRequest) {
   const errorParam = searchParams.get('error_description') || searchParams.get('error');
 
   if (errorParam) {
+    console.error('[GET /auth/callback] provider error', errorParam);
     return NextResponse.redirect(
-      `${origin}/auth?mode=signin&error=${encodeURIComponent(errorParam)}`
+      `${origin}/auth?mode=signin&error=${encodeURIComponent('Authentication failed. Please try again.')}`
     );
   }
 
@@ -37,8 +38,9 @@ export async function GET(request: NextRequest) {
   const { error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error) {
+    console.error('[GET /auth/callback] exchangeCodeForSession', error);
     return NextResponse.redirect(
-      `${origin}/auth?mode=signin&error=${encodeURIComponent(error.message)}`
+      `${origin}/auth?mode=signin&error=${encodeURIComponent('Authentication failed. Please try again.')}`
     );
   }
 
@@ -105,7 +107,14 @@ export async function GET(request: NextRequest) {
       .eq('user_id', user.id)
       .maybeSingle();
     if (customerProfile?.id) {
-      await mergeGuestStateIntoCustomer(customerProfile.id);
+      const mergeResult = await mergeGuestStateIntoCustomer(customerProfile.id);
+      if (!mergeResult.success) {
+        console.error('[auth/callback] guest merge failed', {
+          customerId: customerProfile.id,
+          code: mergeResult.error?.code,
+          message: mergeResult.error?.message,
+        });
+      }
     }
   }
 

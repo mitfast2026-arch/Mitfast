@@ -151,11 +151,6 @@ export default function HomeFooter() {
                   My Account
                 </Link>
               </li>
-              <li>
-                <Link href="/admin/dashboard" className="hover:text-[#090e17] transition-colors">
-                  Admin Dashboard
-                </Link>
-              </li>
             </ul>
           </div>
         </div>

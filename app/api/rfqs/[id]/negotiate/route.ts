@@ -11,12 +11,26 @@ export async function POST(
     if (!auth.ok) return auth.response;
 
     const body = await request.json();
-    const result = await adminNegotiateRfq({
-      rfqId: params.id,
-      items: body.items,
-    });
+    const result = await adminNegotiateRfq(
+      {
+        rfqId: params.id,
+        items: body.items,
+      },
+      {
+        isAdmin: auth.isAdmin,
+        supplierId: auth.isAdmin ? null : auth.session.supplier?.id ?? null,
+      }
+    );
 
-    if (!result.success) return NextResponse.json(result, { status: 400 });
+    if (!result.success) {
+      const status =
+        result.error?.code === 'FORBIDDEN'
+          ? 403
+          : result.error?.code === 'DATABASE_MISCONFIGURED'
+            ? 503
+            : 400;
+      return NextResponse.json(result, { status });
+    }
     return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json(

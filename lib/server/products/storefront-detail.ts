@@ -16,15 +16,20 @@ export function normalizeStorefrontSupplier<T extends { supplier?: unknown }>(pr
   };
 }
 
-export async function incrementProductView(productId: string): Promise<void> {
-  // Truly deferred — fires asynchronously after response is generated
+export async function incrementProductView(
+  productId: string,
+  sampleKey = 'anon'
+): Promise<void> {
   setTimeout(() => {
     const adminClient = createAdminClient();
-    // Atomic fire-and-forget view count increment via database RPC
     void Promise.resolve(
-      (adminClient as any).rpc('increment_product_view', { p_id: productId })
+      (adminClient as any).rpc('increment_product_view_sampled', {
+        p_id: productId,
+        p_sample_key: sampleKey,
+        p_window_seconds: 60,
+      })
     ).catch(() => {
-      /* silently ignore — vanity counter */
+      /* vanity counter */
     });
   }, 0);
 }

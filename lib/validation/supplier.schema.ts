@@ -17,6 +17,13 @@ export const updateSupplierProfileSchema = z.object({
   address: z.string().optional(),
   country: z.string().min(2, 'Country is required').optional(),
   website: z.string().url('Invalid website URL').optional().or(z.literal('')),
+  notificationPreferences: z
+    .object({
+      emailRfqs: z.boolean(),
+      emailOrders: z.boolean(),
+      emailApprovals: z.boolean(),
+    })
+    .optional(),
 });
 
 export const rejectSupplierSchema = z.object({

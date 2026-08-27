@@ -9,7 +9,11 @@
     "lint": "next lint",
     "db:push": "powershell -ExecutionPolicy Bypass -File scripts/apply-pending-migrations.ps1",
     "types:gen": "supabase gen types typescript --project-id qubphaacuuwlpdrsprjl > types/database.ts && tsx scripts/append-database-enums.ts",
-    "test:concurrency": "tsx scripts/concurrency-test.ts"
+    "test:concurrency": "tsx scripts/concurrency-test.ts",
+    "test:rls-supplier": "tsx scripts/rls-supplier-product-probe.ts",
+    "test:hardening-smoke": "tsx scripts/hardening-smoke-probe.ts",
+    "test:supplier-load": "tsx scripts/supplier-load-test.ts",
+    "test:supplier-k6": "k6 run scripts/k6-supplier-portal-smoke.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1118.0",

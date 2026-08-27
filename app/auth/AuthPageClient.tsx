@@ -476,8 +476,13 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
     e.preventDefault();
     setErrorMsg('');
     setSuccessMsg('');
-    if (!email.trim()) {
+    const trimmed = email.trim();
+    if (!trimmed) {
       setErrorMsg('Email is required');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      setErrorMsg('Enter a valid work email address');
       return;
     }
     setRegisterStep('password');
@@ -872,7 +877,11 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
                   />
                 </div>
               </div>
-              <button type="submit" disabled={loading} className="saas-btn-primary w-full py-2.5">
+              <button
+                type="submit"
+                disabled={loading || !email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())}
+                className="saas-btn-primary w-full py-2.5"
+              >
                 Continue
                 {!loading && <ArrowRight className="w-4 h-4" />}
               </button>

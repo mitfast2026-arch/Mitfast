@@ -11,6 +11,10 @@ import {
   getStorefrontProductDetail,
 } from '@/lib/server/products/storefront-detail';
 import {
+  sanitizeIlikePattern,
+  sanitizePostgrestSearch,
+} from '@/lib/server/db/sanitize-search';
+import {
   createProductSchema,
   createProductByAdminSchema,
   saveProductDraftSchema,
@@ -843,28 +847,6 @@ export async function approveProduct(requestId: string, adminUserId?: string): P
       };
     }
 
-    const reqTransition = await transitionStatus(
-      adminClient,
-      'product_approval_requests',
-      requestId,
-      'status',
-      'approved',
-      allowedFrom(PRODUCT_APPROVAL_TRANSITIONS, 'approved'),
-      {
-        reviewed_at: new Date().toISOString(),
-        reviewed_by: adminUserId || null,
-      }
-    );
-
-    if (!reqTransition.ok) {
-      return {
-        success: false,
-        error: { message: 'Approval request is no longer open', code: 'INVALID_STATUS' },
-      };
-    }
-
-    // 3. Recalculate selling price with proposed supplier price if updated
-    // Keep admin-controlled margin/discount/MOQ — do not overwrite from supplier proposal.
     const supplierPrice = proposed.supplier_price ?? currentProduct.supplier_price;
     const discount = currentProduct.discount;
     const gstRate = currentProduct.gst_rate;
@@ -878,25 +860,84 @@ export async function approveProduct(requestId: string, adminUserId?: string): P
       gst_included: gstIncluded,
     });
 
-    // 4. Update the live product with proposed fields
     const productUpdate: Record<string, any> = {
       approval_status: 'approved',
-      rejection_reason: null,
       supplier_price: supplierPrice,
       selling_price: pricing.selling_price,
-      updated_at: new Date().toISOString(),
     };
-
     if (proposed.name) productUpdate.name = proposed.name;
     if (proposed.category_id) productUpdate.category_id = proposed.category_id;
     if (proposed.description !== undefined) productUpdate.description = proposed.description;
     if (proposed.sku !== undefined) productUpdate.sku = proposed.sku;
     if (proposed.suggested_moq !== undefined) productUpdate.suggested_moq = proposed.suggested_moq;
-    // Legacy proposals may include moq/stock — ignore; catalog MOQ & availability stay admin-owned.
 
-    await (adminClient as any).from('products').update(productUpdate).eq('id', productId);
+    const { error: approveRpcError } = await (adminClient as any).rpc('approve_product_core_atomic', {
+      p_request_id: requestId,
+      p_admin_user_id: adminUserId || null,
+      p_product_update: productUpdate,
+    });
 
-    // 5. Update specifications if included in proposal
+    if (approveRpcError) {
+      const { isRpcMissing, allowUnsafeDbFallback, databaseMisconfiguredError } = await import(
+        '@/lib/server/db/production-guards'
+      );
+      if (isRpcMissing(approveRpcError, 'approve_product_core_atomic')) {
+        if (!allowUnsafeDbFallback()) {
+          return databaseMisconfiguredError('Product approve');
+        }
+      } else if (approveRpcError.message?.includes('STALE_PROPOSAL')) {
+        return {
+          success: false,
+          error: {
+            message:
+              'This proposal is stale because an admin edited the live product. Ask the supplier to resubmit.',
+            code: 'STALE_PROPOSAL',
+          },
+        };
+      } else if (
+        approveRpcError.message?.includes('no longer open') ||
+        approveRpcError.code === 'check_violation'
+      ) {
+        return {
+          success: false,
+          error: { message: 'Approval request is no longer open', code: 'INVALID_STATUS' },
+        };
+      } else if (!isRpcMissing(approveRpcError, 'approve_product_core_atomic')) {
+        return { success: false, error: { message: approveRpcError.message, code: 'DATABASE_ERROR' } };
+      }
+
+      // Dev fallback: previous multi-step path
+      const reqTransition = await transitionStatus(
+        adminClient,
+        'product_approval_requests',
+        requestId,
+        'status',
+        'approved',
+        allowedFrom(PRODUCT_APPROVAL_TRANSITIONS, 'approved'),
+        {
+          reviewed_at: new Date().toISOString(),
+          reviewed_by: adminUserId || null,
+        }
+      );
+
+      if (!reqTransition.ok) {
+        return {
+          success: false,
+          error: { message: 'Approval request is no longer open', code: 'INVALID_STATUS' },
+        };
+      }
+
+      await (adminClient as any)
+        .from('products')
+        .update({
+          ...productUpdate,
+          rejection_reason: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', productId);
+    }
+
+    // Specs / images after core approve (best-effort; core status already committed)
     if (proposed.specifications && Array.isArray(proposed.specifications)) {
       await adminClient.from('product_specifications').delete().eq('product_id', productId);
       if (proposed.specifications.length > 0) {
@@ -910,7 +951,6 @@ export async function approveProduct(requestId: string, adminUserId?: string): P
       }
     }
 
-    // 6. Update images if included in proposal
     if (proposed.image_urls && Array.isArray(proposed.image_urls)) {
       await replaceProductImages(productId, proposed.image_urls);
     }
@@ -1306,7 +1346,7 @@ export async function getStorefrontProducts(params: {
     }
 
     if (params.search) {
-      const q = params.search.trim();
+      const q = sanitizePostgrestSearch(params.search);
       if (q) {
         query = query.or(`name.ilike.%${q}%,sku.ilike.%${q}%`);
       }
@@ -1454,7 +1494,10 @@ export async function getProductsForAdmin(params: {
     if (params.approvalStatus) query = query.eq('approval_status', params.approvalStatus);
     if (params.publicationStatus) query = query.eq('publication_status', params.publicationStatus);
     if (params.archiveStatus) query = query.eq('archive_status', params.archiveStatus);
-    if (params.search) query = query.ilike('name', `%${params.search}%`);
+    if (params.search) {
+      const q = sanitizeIlikePattern(params.search.trim());
+      if (q) query = query.ilike('name', `%${q}%`);
+    }
 
     if (params.sortBy === 'oldest') {
       query = query.order('created_at', { ascending: true });
@@ -1549,7 +1592,8 @@ export async function getProductForAdminDetail(
 }
 
 /**
- * Admin permanently deletes a product. Blocked while published.
+ * Admin permanently deletes a product.
+ * Requires unpublished + archived; deletes Tigris objects before DB row.
  */
 export async function deleteProduct(productId: string): Promise<ServerResult<{ deleted: boolean }>> {
   try {
@@ -1557,7 +1601,7 @@ export async function deleteProduct(productId: string): Promise<ServerResult<{ d
 
     const { data: product, error: fetchError } = await adminClient
       .from('products')
-      .select('id, publication_status')
+      .select('id, publication_status, archive_status')
       .eq('id', productId)
       .single();
 
@@ -1573,6 +1617,32 @@ export async function deleteProduct(productId: string): Promise<ServerResult<{ d
           code: 'PUBLISHED',
         },
       };
+    }
+
+    if (product.archive_status !== 'archived') {
+      return {
+        success: false,
+        error: {
+          message: 'Archive this product before deleting it',
+          code: 'NOT_ARCHIVED',
+        },
+      };
+    }
+
+    const { data: images } = await adminClient
+      .from('product_images')
+      .select('storage_path, image_url')
+      .eq('product_id', productId);
+
+    for (const img of images || []) {
+      const path = img.storage_path;
+      if (path) {
+        try {
+          await deleteProductImageFromStorage(path);
+        } catch (err) {
+          console.error('[deleteProduct] Tigris cleanup failed for', path, err);
+        }
+      }
     }
 
     const { error: deleteError } = await adminClient.from('products').delete().eq('id', productId);

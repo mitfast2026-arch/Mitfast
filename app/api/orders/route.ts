@@ -58,6 +58,18 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const idempotencyKey = request.headers.get('Idempotency-Key');
+    if (!idempotencyKey?.trim()) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            message: 'Idempotency-Key header is required for order creation',
+            code: 'IDEMPOTENCY_REQUIRED',
+          },
+        },
+        { status: 400 }
+      );
+    }
     const result = await createManualOrder(body, idempotencyKey);
 
     if (!result.success) {

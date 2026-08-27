@@ -7,10 +7,15 @@
  * Requires env: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
  */
 
+import { config } from 'dotenv';
+import { resolve } from 'path';
+config({ path: resolve(process.cwd(), '.env.local') });
+config();
+
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim().replace(/^["']|["']$/g, '');
+const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim().replace(/^["']|["']$/g, '');
 
 if (!supabaseUrl || !serviceKey) {
   console.error('Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
@@ -257,28 +262,37 @@ async function testGuestMergeClaimExclusive() {
 }
 
 async function testSubmitRfqRpcExists() {
-  console.log('\n[rfq] submit_rfq_from_cart_atomic exists...');
-  const { error } = await admin.rpc('submit_rfq_from_cart_atomic', {
+  console.log('\n[rfq] submit_rfqs_from_cart_atomic exists...');
+  const { error } = await admin.rpc('submit_rfqs_from_cart_atomic', {
     p_customer_id: '00000000-0000-0000-0000-000000000000',
-    p_rfq_number: 'RFQ-TEST',
     p_delivery_address: {},
     p_customer_message: null,
-    p_original_total: 0,
-    p_items: [],
+    p_groups: [],
   });
 
   if (error?.message?.includes('Could not find the function') || error?.code === 'PGRST202') {
-    console.log('  SKIP — submit_rfq_from_cart_atomic not deployed yet');
+    console.log('  SKIP — submit_rfqs_from_cart_atomic not deployed yet');
     return;
   }
 
-  // Empty items should fail with check_violation — proves function is live
-  if (!error || (!error.message?.includes('empty') && !error.message?.includes('check'))) {
-    // UUID not found / empty — either is fine
-    console.log('  PASS — RPC callable (error expected for empty/invalid):', error?.message || 'ok');
+  console.log('  PASS — RPC callable (error expected for empty/invalid):', error?.message || 'ok');
+}
+
+async function testRateLimitRpcExists() {
+  console.log('\n[rate] try_record_rate_limit exists...');
+  const { data, error } = await admin.rpc('try_record_rate_limit', {
+    p_scope: 'concurrency_test',
+    p_key: `probe-${Date.now()}`,
+    p_window_seconds: 60,
+    p_max_hits: 5,
+  });
+  if (error?.message?.includes('Could not find the function') || error?.code === 'PGRST202') {
+    console.log('  SKIP — try_record_rate_limit not deployed yet');
     return;
   }
-  console.log('  PASS — RPC rejects empty cart items');
+  if (error) throw new Error(error.message);
+  if (data !== true) throw new Error('Expected first rate limit hit to succeed');
+  console.log('  PASS — try_record_rate_limit records hit');
 }
 
 async function main() {
@@ -289,6 +303,7 @@ async function main() {
   await testOtpRateLimitAtomic();
   await testGuestMergeClaimExclusive();
   await testSubmitRfqRpcExists();
+  await testRateLimitRpcExists();
   console.log('\nAll runnable checks passed.');
 }
 

@@ -588,8 +588,14 @@ function CartRFQPageInner() {
           setErrorMsg(json.error?.message || "Failed to submit official RFQ");
           setSubmitting(false);
         } else {
+          const count = Array.isArray(json.data?.rfqs) ? json.data.rfqs.length : 1;
           notifyCartUpdated();
-          router.push("/customer/rfqs");
+          if (count > 1) {
+            // Multi-supplier cart → one RFQ per supplier
+            router.push(`/customer/rfqs?created=${count}`);
+          } else {
+            router.push("/customer/rfqs");
+          }
         }
       } catch (err: any) {
         setErrorMsg(err.message || "Server error while submitting RFQ");
@@ -643,6 +649,11 @@ function CartRFQPageInner() {
       } catch {
         /* best-effort */
       }
+      setCart((prev: any) =>
+        prev
+          ? { ...prev, items: [], itemCount: 0, subtotal: 0 }
+          : { cartId: "guest", items: [], itemCount: 0, subtotal: 0 }
+      );
       notifyCartUpdated();
 
       const trackingToken = enquiryJson.data?.trackingToken || enquiryJson.data?.enquiryId;

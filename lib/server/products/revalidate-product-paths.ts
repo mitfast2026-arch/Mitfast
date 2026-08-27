@@ -29,8 +29,9 @@ export function deferRevalidateProduct(productId?: string | null) {
   void Promise.resolve().then(() => {
     try {
       revalidateProductCaches(productId);
+      revalidatePath('/sitemap.xml');
     } catch (error) {
-      console.error('[deferRevalidateProduct]', error);
+      console.error('[deferRevalidateProduct]', { productId, error });
     }
   });
 }

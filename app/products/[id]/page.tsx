@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getCachedStorefrontProductDetail } from '@/lib/server/products/cached-storefront';
 import { buildProductJsonLd, siteUrl } from '@/lib/seo/product-json-ld';
+import { serializeJsonLd } from '@/lib/server/seo/json-ld';
 import ProductDetailClient from './ProductDetailClient';
 
 export const revalidate = 60;
@@ -67,7 +68,7 @@ export default async function ProductDetailPage({ params }: PageProps) {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }}
       />
       <noscript>
         <article>

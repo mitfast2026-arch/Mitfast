@@ -13,15 +13,17 @@ import {
   removeGuestCartItem,
   clearGuestCart,
 } from '@/lib/server/guest/guest-cart';
-import { ensureGuestSessionId } from '@/lib/server/guest/session';
+import { ensureGuestSessionId, peekGuestSessionId } from '@/lib/server/guest/session';
 import { getServerSession } from '@/lib/server/auth/get-session';
+import { assertRateLimit } from '@/lib/server/db/rate-limit';
 
 type CartActor =
   | { kind: 'customer'; customerId: string }
   | { kind: 'guest'; guestSessionId: string }
-  | { kind: 'forbidden'; role: string };
+  | { kind: 'forbidden'; role: string }
+  | { kind: 'anonymous' };
 
-async function resolveCartActor(): Promise<CartActor> {
+async function resolveCartActor(options?: { createGuest?: boolean }): Promise<CartActor> {
   const session = await getServerSession();
   const role = session?.profile.role;
   if (role === 'admin' || role === 'supplier') {
@@ -29,6 +31,11 @@ async function resolveCartActor(): Promise<CartActor> {
   }
   if (role === 'customer' && session?.profile?.id) {
     return { kind: 'customer', customerId: session.profile.id };
+  }
+  if (options?.createGuest === false) {
+    const existing = await peekGuestSessionId();
+    if (!existing) return { kind: 'anonymous' };
+    return { kind: 'guest', guestSessionId: existing };
   }
   const guestSessionId = await ensureGuestSessionId();
   return { kind: 'guest', guestSessionId };
@@ -48,13 +55,42 @@ function forbiddenCartResponse(role: string) {
   );
 }
 
+async function rateLimitOrResponse(scope: string, key: string) {
+  const limited = await assertRateLimit({
+    scope,
+    key,
+    windowSeconds: 60,
+    maxHits: 60,
+  });
+  if (!limited.ok) {
+    const status = limited.code === 'DATABASE_MISCONFIGURED' ? 503 : 429;
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          message: limited.code === 'RATE_LIMITED' ? 'Too many requests' : 'Rate limit unavailable',
+          code: limited.code,
+        },
+      },
+      { status }
+    );
+  }
+  return null;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const countOnly = new URL(request.url).searchParams.get('countOnly') === '1';
-    const actor = await resolveCartActor();
+    const actor = await resolveCartActor({ createGuest: !countOnly });
     if (actor.kind === 'forbidden') return forbiddenCartResponse(actor.role);
 
     if (countOnly) {
+      if (actor.kind === 'anonymous') {
+        return NextResponse.json({
+          success: true,
+          data: { itemCount: 0, items: [], isGuest: true },
+        });
+      }
       if (actor.kind === 'customer') {
         const admin = (await import('@/lib/supabase/admin')).createAdminClient();
         const { data: cart } = await admin
@@ -75,15 +111,26 @@ export async function GET(request: NextRequest) {
           data: { itemCount, items: [], isGuest: false },
         });
       }
-      const guest = await getGuestCart(actor.guestSessionId);
-      if (!guest.success) return NextResponse.json(guest, { status: 400 });
+      // Cheap count — avoid product_images embed used by getGuestCart.
+      const admin = (await import('@/lib/supabase/admin')).createAdminClient();
+      const { count } = await admin
+        .from('guest_cart_items')
+        .select('id', { count: 'exact', head: true })
+        .eq('guest_session_id', actor.guestSessionId);
       return NextResponse.json({
         success: true,
         data: {
-          itemCount: guest.data.itemCount,
+          itemCount: count || 0,
           items: [],
           isGuest: true,
         },
+      });
+    }
+
+    if (actor.kind === 'anonymous') {
+      return NextResponse.json({
+        success: true,
+        data: { cartId: 'guest', items: [], itemCount: 0, subtotal: 0, isGuest: true },
       });
     }
 
@@ -118,8 +165,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const actor = await resolveCartActor();
+    const actor = await resolveCartActor({ createGuest: true });
     if (actor.kind === 'forbidden') return forbiddenCartResponse(actor.role);
+    if (actor.kind === 'anonymous') {
+      return NextResponse.json(
+        { success: false, error: { message: 'Failed to create guest session', code: 'INTERNAL_ERROR' } },
+        { status: 500 }
+      );
+    }
+
+    const rateKey =
+      actor.kind === 'customer' ? `customer:${actor.customerId}` : `guest:${actor.guestSessionId}`;
+    const limited = await rateLimitOrResponse('cart_write', rateKey);
+    if (limited) return limited;
+
     const result =
       actor.kind === 'customer'
         ? await addToCart(actor.customerId, productId, quantity || 1)
@@ -148,8 +207,15 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const actor = await resolveCartActor();
+    const actor = await resolveCartActor({ createGuest: true });
     if (actor.kind === 'forbidden') return forbiddenCartResponse(actor.role);
+    if (actor.kind === 'anonymous') {
+      return NextResponse.json(
+        { success: false, error: { message: 'No cart session', code: 'NOT_FOUND' } },
+        { status: 404 }
+      );
+    }
+
     const result =
       actor.kind === 'customer'
         ? await updateCartItemQuantity(actor.customerId, cartItemId, quantity)
@@ -174,8 +240,11 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const cartItemId = searchParams.get('cartItemId');
     const clearAll = searchParams.get('clear');
-    const actor = await resolveCartActor();
+    const actor = await resolveCartActor({ createGuest: false });
     if (actor.kind === 'forbidden') return forbiddenCartResponse(actor.role);
+    if (actor.kind === 'anonymous') {
+      return NextResponse.json({ success: true, data: { cleared: true } });
+    }
 
     if (cartItemId) {
       const result =

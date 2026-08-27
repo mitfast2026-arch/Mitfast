@@ -6,7 +6,6 @@ import {
   RefreshCw, 
   Calendar,
   Check,
-  XCircle,
   MessageSquare,
   AlertCircle
 } from 'lucide-react';
@@ -24,8 +23,6 @@ export default function SupplierRfqsPage() {
   const { isPending, run } = useMutation();
   const [actionError, setActionError] = useState('');
   const [actionSuccess, setActionSuccess] = useState('');
-  const [rejectReason, setRejectReason] = useState('');
-  const [showReject, setShowReject] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
@@ -112,48 +109,8 @@ export default function SupplierRfqsPage() {
     );
   }
 
-  async function handleAccept() {
-    if (!selectedRfq) return;
-    setActionError('');
-    setActionSuccess('');
-    await run(() => apiPost(`/api/rfqs/${selectedRfq.id}/accept`), {
-      key: mutationKey(selectedRfq.id, 'accept'),
-      onSuccess: () => {
-        setActionSuccess('RFQ accepted.');
-        patchRfq(selectedRfq.id, { status: 'accepted' });
-      },
-      onError: (msg) => setActionError(msg),
-    });
-  }
-
-  async function handleReject() {
-    if (!selectedRfq) return;
-    const reason = rejectReason.trim();
-    if (reason.length < 3) {
-      setActionError('A rejection reason is required (at least 3 characters).');
-      return;
-    }
-    setActionError('');
-    setActionSuccess('');
-    await run(
-      () => apiPost(`/api/rfqs/${selectedRfq.id}/reject`, { rejectionReason: reason }),
-      {
-        key: mutationKey(selectedRfq.id, 'reject'),
-        onSuccess: () => {
-          setShowReject(false);
-          setRejectReason('');
-          setActionSuccess('RFQ rejected.');
-          patchRfq(selectedRfq.id, { status: 'rejected' });
-        },
-        onError: (msg) => setActionError(msg),
-      }
-    );
-  }
-
   const rfqBusy = selectedRfq
-    ? isPending(mutationKey(selectedRfq.id, 'negotiate')) ||
-      isPending(mutationKey(selectedRfq.id, 'accept')) ||
-      isPending(mutationKey(selectedRfq.id, 'reject'))
+    ? isPending(mutationKey(selectedRfq.id, 'negotiate'))
     : false;
 
   const canAct =
@@ -279,29 +236,11 @@ export default function SupplierRfqsPage() {
                       className="saas-btn-secondary text-xs py-2 px-3.5 flex items-center gap-1.5"
                     >
                       <MessageSquare className="w-3.5 h-3.5 text-portal-text" />
-                      <span>{rfqBusy ? 'Working…' : 'Negotiate'}</span>
+                      <span>{rfqBusy ? 'Working…' : 'Negotiate quantities'}</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={handleAccept}
-                      disabled={rfqBusy}
-                      className="saas-btn-primary text-xs py-2 px-4 flex items-center gap-1.5"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Accept</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowReject((v) => !v);
-                        setActionError('');
-                      }}
-                      disabled={rfqBusy}
-                      className="saas-btn-secondary text-xs py-2 px-3.5 flex items-center gap-1.5 text-portal-danger"
-                    >
-                      <XCircle className="w-3.5 h-3.5" />
-                      <span>Reject</span>
-                    </button>
+                    <p className="w-full text-[11px] text-portal-muted">
+                      Accept / reject is handled by MITFAST admin after negotiation.
+                    </p>
                   </div>
                 )}
               </div>
@@ -317,26 +256,6 @@ export default function SupplierRfqsPage() {
                 <div className="p-3 rounded-xl bg-portal-danger-soft text-xs text-portal-danger flex items-center gap-2 font-medium">
                   <AlertCircle className="w-4 h-4 text-portal-danger shrink-0" />
                   <span>{actionError}</span>
-                </div>
-              )}
-
-              {showReject && canAct && (
-                <div className="space-y-2 p-3 rounded-xl bg-portal-danger-soft border border-portal-danger/30">
-                  <label className="type-meta text-portal-danger">Rejection reason (required)</label>
-                  <textarea
-                    className="saas-input text-xs min-h-[72px]"
-                    value={rejectReason}
-                    onChange={(e) => setRejectReason(e.target.value)}
-                    placeholder="Explain why you cannot fulfill this RFQ"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleReject}
-                    disabled={rfqBusy}
-                    className="saas-btn-primary text-xs py-1.5 px-3 bg-rose-700"
-                  >
-                    Confirm reject
-                  </button>
                 </div>
               )}
 
@@ -397,7 +316,7 @@ export default function SupplierRfqsPage() {
 
               <p className="text-xs text-portal-muted">
                 Buyer identity, destination address, and selling prices are withheld. Fulfill from SKU demand only.
-                {canAct ? ' Use Negotiate to propose quantity changes, then Accept or Reject.' : ''}
+                {canAct ? ' Use Negotiate to propose quantity changes; MITFAST admin accepts or rejects.' : ''}
               </p>
             </div>
           ) : (

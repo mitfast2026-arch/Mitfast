@@ -70,6 +70,26 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { customerId: _ignored, ...rfqData } = body;
 
+    const { assertRateLimit } = await import('@/lib/server/db/rate-limit');
+    const limited = await assertRateLimit({
+      scope: 'rfq_submit',
+      key: auth.session.profile.id,
+      windowSeconds: 900,
+      maxHits: 20,
+    });
+    if (!limited.ok) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            message: limited.code === 'RATE_LIMITED' ? 'Too many RFQ submissions' : 'Rate limit unavailable',
+            code: limited.code,
+          },
+        },
+        { status: limited.code === 'DATABASE_MISCONFIGURED' ? 503 : 429 }
+      );
+    }
+
     const result = await submitRfqFromCart(auth.session.profile.id, rfqData, idempotencyKey);
     if (!result.success) {
       const status = result.error?.code === 'IDEMPOTENCY_IN_PROGRESS' ? 409 : 400;

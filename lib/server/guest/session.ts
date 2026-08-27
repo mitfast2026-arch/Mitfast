@@ -42,6 +42,17 @@ export async function ensureGuestSessionId(): Promise<string> {
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + GUEST_TTL_DAYS);
 
+  const { assertRateLimit } = await import('@/lib/server/db/rate-limit');
+  const limited = await assertRateLimit({
+    scope: 'guest_session_create',
+    key: existing || 'new',
+    windowSeconds: 60,
+    maxHits: 30,
+  });
+  if (!limited.ok && limited.code === 'RATE_LIMITED') {
+    throw new Error('Too many guest sessions');
+  }
+
   const { data: created, error } = await admin
     .from('guest_sessions')
     .insert({ expires_at: expiresAt.toISOString() })

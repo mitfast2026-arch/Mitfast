@@ -109,6 +109,44 @@ export async function POST(request: NextRequest) {
 
     const { customerId: _ignored, drawingUrl: _drawing, ...enquiryData } = body;
     const idempotencyKey = request.headers.get('Idempotency-Key');
+    if (!idempotencyKey?.trim()) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            message: 'Idempotency-Key header is required for enquiry create',
+            code: 'IDEMPOTENCY_REQUIRED',
+          },
+        },
+        { status: 400 }
+      );
+    }
+
+    const { assertRateLimit } = await import('@/lib/server/db/rate-limit');
+    const rateKey =
+      customerId ||
+      (typeof enquiryData.email === 'string' ? enquiryData.email.toLowerCase() : null) ||
+      request.headers.get('x-forwarded-for') ||
+      'anon';
+    const limited = await assertRateLimit({
+      scope: 'enquiry_create',
+      key: String(rateKey),
+      windowSeconds: 900,
+      maxHits: 10,
+    });
+    if (!limited.ok) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            message: limited.code === 'RATE_LIMITED' ? 'Too many enquiries' : 'Rate limit unavailable',
+            code: limited.code,
+          },
+        },
+        { status: limited.code === 'DATABASE_MISCONFIGURED' ? 503 : 429 }
+      );
+    }
+
     const result = await createEnquiry(enquiryData, customerId || null, attachment, idempotencyKey);
     if (!result.success) {
       const status = result.error?.code === 'IDEMPOTENCY_IN_PROGRESS' ? 409 : 400;

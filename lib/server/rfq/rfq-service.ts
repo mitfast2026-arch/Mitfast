@@ -8,6 +8,7 @@ import { isProfileIdentityComplete } from '@/lib/server/auth/profile-complete';
 import type { ServerResult } from '@/lib/server/auth/get-session';
 import type { RfqStatus } from '@/types/database';
 import { mapRpcError } from '@/lib/server/db/rpc-errors';
+import { sanitizePostgrestSearch } from '@/lib/server/db/sanitize-search';
 import {
   allowedFrom,
   ENQUIRY_TRANSITIONS,
@@ -33,21 +34,32 @@ export async function getNextRfqNumber(adminClient: any): Promise<string> {
 }
 
 /**
- * Submits an RFQ from the customer's active cart.
- * Enforces Minimum RFQ Value from business settings and snapshots delivery address & item prices.
+ * Submits RFQ(s) from the customer's active cart — one RFQ per supplier group.
+ * Enforces Minimum RFQ Value (cart total) and snapshots delivery address & item prices.
  */
 export async function submitRfqFromCart(
   customerId: string,
   formData: unknown,
   idempotencyKey?: string | null
-): Promise<ServerResult<{ rfqId: string; rfqNumber: string }>> {
+): Promise<
+  ServerResult<{
+    rfqId: string;
+    rfqNumber: string;
+    rfqs: Array<{ rfqId: string; rfqNumber: string; supplierKey: string }>;
+  }>
+> {
   return withIdempotency('submit_rfq_from_cart', idempotencyKey, async () => {
   try {
     const validated = submitRfqSchema.safeParse(formData);
     if (!validated.success) {
+      const issue = validated.error.errors[0];
+      const path = issue?.path?.length ? issue.path.join('.') + ': ' : '';
       return {
         success: false,
-        error: { message: validated.error.errors[0].message, code: 'VALIDATION_ERROR' },
+        error: {
+          message: `${path}${issue?.message || 'Invalid RFQ payload'}`,
+          code: 'VALIDATION_ERROR',
+        },
       };
     }
 
@@ -100,14 +112,12 @@ export async function submitRfqFromCart(
       };
     }
 
-    // 1. Fetch business settings to check minimum RFQ value (cached)
     const settingsRes = await getBusinessSettings();
     const settings = settingsRes.success ? settingsRes.data : null;
 
     const minRfqValue = settings?.minimumRfqValue || 500000;
     const currency = settings?.currency || 'INR';
 
-    // 2. Fetch customer cart
     const cartRes = await getCustomerCart(customerId);
     if (!cartRes.success) return cartRes;
 
@@ -119,16 +129,17 @@ export async function submitRfqFromCart(
       };
     }
 
-    // 3. Verify all products are available and re-evaluate server-side prices
-    const availableItems = cart.items.filter(item => item.product.isAvailable);
+    const availableItems = cart.items.filter((item) => item.product.isAvailable);
     if (availableItems.length === 0) {
       return {
         success: false,
-        error: { message: 'None of the products in your RFQ cart are currently available for RFQ.', code: 'PRODUCTS_UNAVAILABLE' },
+        error: {
+          message: 'None of the products in your RFQ cart are currently available for RFQ.',
+          code: 'PRODUCTS_UNAVAILABLE',
+        },
       };
     }
 
-    // Recalculate original total strictly server-side
     const originalTotal = availableItems.reduce((acc, item) => acc + item.itemTotal, 0);
 
     for (const item of availableItems) {
@@ -151,7 +162,6 @@ export async function submitRfqFromCart(
 
     const roundedOriginalTotal = Math.round(originalTotal * 100) / 100;
 
-    // 4. Validate Minimum RFQ Value rule
     if (roundedOriginalTotal < minRfqValue) {
       const formattedMin = minRfqValue.toLocaleString('en-IN');
       const formattedTotal = roundedOriginalTotal.toLocaleString('en-IN');
@@ -164,7 +174,6 @@ export async function submitRfqFromCart(
       };
     }
 
-    // 5. Resolve delivery address snapshot
     let addressSnapshot: any = customAddress;
     if (!addressSnapshot) {
       const { data: savedAddr } = await adminClient
@@ -192,106 +201,145 @@ export async function submitRfqFromCart(
       }
     }
 
-    // 6. Generate collision-free RFQ number
-    const rfqNumber = await getNextRfqNumber(adminClient);
+    // Group by supplier (null → platform)
+    const groupsMap = new Map<string, typeof availableItems>();
+    for (const item of availableItems) {
+      const key = item.product.supplierId || 'platform';
+      const list = groupsMap.get(key) || [];
+      list.push(item);
+      groupsMap.set(key, list);
+    }
 
-    // 7–9. Prefer atomic RPC; fall back to multi-step until migration applied
-    const rfqItemPayload = availableItems.map((item) => ({
-      product_id: item.productId,
-      product_name_snapshot: item.product.name,
-      original_quantity: item.quantity,
-      original_unit_price: item.product.actualUnitPrice,
-    }));
+    const groupsPayload: Array<{
+      rfq_number: string;
+      supplier_key: string;
+      original_total: number;
+      items: Array<{
+        product_id: string;
+        product_name_snapshot: string;
+        original_quantity: number;
+        original_unit_price: number;
+      }>;
+    }> = [];
+
+    for (const [supplierKey, items] of groupsMap) {
+      const groupTotal = Math.round(items.reduce((a, i) => a + i.itemTotal, 0) * 100) / 100;
+      groupsPayload.push({
+        rfq_number: await getNextRfqNumber(adminClient),
+        supplier_key: supplierKey,
+        original_total: groupTotal,
+        items: items.map((item) => ({
+          product_id: item.productId,
+          product_name_snapshot: item.product.name,
+          original_quantity: item.quantity,
+          original_unit_price: item.product.actualUnitPrice,
+        })),
+      });
+    }
 
     const { data: rpcRows, error: rpcError } = await (adminClient as any).rpc(
-      'submit_rfq_from_cart_atomic',
+      'submit_rfqs_from_cart_atomic',
       {
         p_customer_id: customerId,
-        p_rfq_number: rfqNumber,
         p_delivery_address: addressSnapshot,
         p_customer_message: customerMessage || null,
-        p_original_total: roundedOriginalTotal,
-        p_items: rfqItemPayload,
+        p_groups: groupsPayload,
       }
     );
 
     if (!rpcError) {
-      const row = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
-      if (!row?.rfq_id) {
+      const rows = Array.isArray(rpcRows) ? rpcRows : rpcRows ? [rpcRows] : [];
+      if (rows.length === 0 || !rows[0]?.rfq_id) {
         return {
           success: false,
           error: { message: 'Failed to create RFQ', code: 'DATABASE_ERROR' },
         };
       }
+      const rfqs = rows.map((row: any) => ({
+        rfqId: row.rfq_id as string,
+        rfqNumber: (row.rfq_number as string) || '',
+        supplierKey: (row.supplier_key as string) || 'platform',
+      }));
       invalidateAdminCaches();
       return {
         success: true,
         data: {
-          rfqId: row.rfq_id,
-          rfqNumber: row.rfq_number || rfqNumber,
+          rfqId: rfqs[0].rfqId,
+          rfqNumber: rfqs[0].rfqNumber,
+          rfqs,
         },
       };
     }
 
-    const rpcMissing =
-      rpcError.code === 'PGRST202' ||
-      rpcError.message?.includes('Could not find the function') ||
-      rpcError.message?.includes('submit_rfq_from_cart_atomic');
+    const {
+      isRpcMissing,
+      allowUnsafeDbFallback,
+      databaseMisconfiguredError,
+    } = await import('@/lib/server/db/production-guards');
 
-    if (!rpcMissing) {
-      return { success: false, error: mapRpcError(rpcError) };
-    }
-
-    const { data: rfq, error: rfqError } = await adminClient
-      .from('rfqs')
-      .insert({
-        rfq_number: rfqNumber,
-        customer_id: customerId,
-        status: 'submitted',
-        delivery_address_snapshot: addressSnapshot,
-        customer_message: customerMessage || null,
-        original_total: roundedOriginalTotal,
-        final_total: null,
-      })
-      .select()
-      .single();
-
-    if (rfqError || !rfq) {
+    if (isRpcMissing(rpcError, 'submit_rfqs_from_cart_atomic')) {
+      if (!allowUnsafeDbFallback()) {
+        return databaseMisconfiguredError('Split RFQ submit');
+      }
+      // Dev-only fallback: create one RFQ per group then clear cart
+      const created: Array<{ rfqId: string; rfqNumber: string; supplierKey: string }> = [];
+      for (const group of groupsPayload) {
+        const { data: rfq, error: rfqError } = await adminClient
+          .from('rfqs')
+          .insert({
+            rfq_number: group.rfq_number,
+            customer_id: customerId,
+            status: 'submitted',
+            delivery_address_snapshot: addressSnapshot,
+            customer_message: customerMessage || null,
+            original_total: group.original_total,
+            final_total: null,
+          })
+          .select()
+          .single();
+        if (rfqError || !rfq) {
+          return {
+            success: false,
+            error: { message: rfqError?.message || 'Failed to create RFQ', code: 'DATABASE_ERROR' },
+          };
+        }
+        const { error: itemsError } = await adminClient.from('rfq_items').insert(
+          group.items.map((item) => ({
+            rfq_id: rfq.id,
+            product_id: item.product_id,
+            product_name_snapshot: item.product_name_snapshot,
+            original_quantity: item.original_quantity,
+            original_unit_price: item.original_unit_price,
+            final_quantity: null,
+            final_unit_price: null,
+          }))
+        );
+        if (itemsError) {
+          await adminClient.from('rfqs').delete().eq('id', rfq.id);
+          return {
+            success: false,
+            error: { message: 'Failed to record RFQ line items', code: 'DATABASE_ERROR' },
+          };
+        }
+        created.push({
+          rfqId: rfq.id,
+          rfqNumber: group.rfq_number,
+          supplierKey: group.supplier_key,
+        });
+      }
+      await clearCustomerCart(customerId);
+      invalidateAdminCaches();
       return {
-        success: false,
-        error: { message: rfqError?.message || 'Failed to create RFQ', code: 'DATABASE_ERROR' },
+        success: true,
+        data: {
+          rfqId: created[0].rfqId,
+          rfqNumber: created[0].rfqNumber,
+          rfqs: created,
+        },
       };
     }
 
-    const rfqItemRows = availableItems.map((item) => ({
-      rfq_id: rfq.id,
-      product_id: item.productId,
-      product_name_snapshot: item.product.name,
-      original_quantity: item.quantity,
-      original_unit_price: item.product.actualUnitPrice,
-      final_quantity: null,
-      final_unit_price: null,
-    }));
-
-    const { error: itemsError } = await adminClient.from('rfq_items').insert(rfqItemRows);
-    if (itemsError) {
-      await adminClient.from('rfqs').delete().eq('id', rfq.id);
-      return {
-        success: false,
-        error: { message: 'Failed to record RFQ line items', code: 'DATABASE_ERROR' },
-      };
-    }
-
-    await clearCustomerCart(customerId);
-    invalidateAdminCaches();
-
-    return {
-      success: true,
-      data: {
-        rfqId: rfq.id,
-        rfqNumber,
-      },
-    };
+    return { success: false, error: mapRpcError(rpcError) };
   } catch (error) {
     console.error('[submitRfqFromCart] Error:', error);
     return {
@@ -456,11 +504,13 @@ export async function supplierOwnsRfqItems(supplierId: string, rfqId: string): P
 }
 
 /**
- * Admin (or authorized supplier) negotiates an RFQ — quantities and optional unit prices.
- * Preserves original request values and computes final_total.
- * When finalUnitPrice is omitted, existing DB price is retained (supplier quantity negotiate).
+ * Negotiates RFQ line items. Admin may touch any line; suppliers only their own product lines.
+ * Uses atomic RPC that recomputes final_total from ALL lines.
  */
-export async function adminNegotiateRfq(formData: unknown): Promise<ServerResult<{ negotiated: boolean }>> {
+export async function adminNegotiateRfq(
+  formData: unknown,
+  options?: { supplierId?: string | null; isAdmin?: boolean }
+): Promise<ServerResult<{ negotiated: boolean }>> {
   try {
     const validated = negotiateRfqSchema.safeParse(formData);
     if (!validated.success) {
@@ -472,24 +522,37 @@ export async function adminNegotiateRfq(formData: unknown): Promise<ServerResult
 
     const { rfqId, items } = validated.data;
     const adminClient = createAdminClient();
-
-    // Verify RFQ exists
-    const { data: rfq, error: rfqError } = await adminClient
-      .from('rfqs')
-      .select('id, status')
-      .eq('id', rfqId)
-      .single();
-
-    if (rfqError || !rfq) {
-      return { success: false, error: { message: 'RFQ not found', code: 'NOT_FOUND' } };
-    }
+    const {
+      isRpcMissing,
+      allowUnsafeDbFallback,
+      databaseMisconfiguredError,
+    } = await import('@/lib/server/db/production-guards');
 
     const itemIds = items.map((i) => i.rfqItemId);
-    const { data: existingItems } = await adminClient
+    const { data: existingItems, error: existingError } = await adminClient
       .from('rfq_items')
-      .select('id, final_unit_price, original_unit_price')
+      .select('id, final_unit_price, original_unit_price, product_id, product:products(supplier_id)')
       .eq('rfq_id', rfqId)
       .in('id', itemIds);
+
+    if (existingError) {
+      return { success: false, error: { message: existingError.message, code: 'DATABASE_ERROR' } };
+    }
+
+    if (!options?.isAdmin && options?.supplierId) {
+      for (const row of existingItems || []) {
+        const supplierId = (row.product as { supplier_id?: string } | null)?.supplier_id;
+        if (supplierId !== options.supplierId) {
+          return {
+            success: false,
+            error: {
+              message: 'Suppliers may only negotiate their own RFQ line items',
+              code: 'FORBIDDEN',
+            },
+          };
+        }
+      }
+    }
 
     const priceById = new Map<string, number>();
     for (const row of existingItems || []) {
@@ -500,17 +563,49 @@ export async function adminNegotiateRfq(formData: unknown): Promise<ServerResult
       priceById.set(row.id, existing);
     }
 
-    let calculatedFinalTotal = 0;
+    const payload = items.map((item) => ({
+      rfq_item_id: item.rfqItemId,
+      final_quantity: item.finalQuantity,
+      final_unit_price:
+        item.finalUnitPrice !== undefined
+          ? item.finalUnitPrice
+          : (priceById.get(item.rfqItemId) ?? 0),
+    }));
 
-    // Update each item's final quantity and final unit price
+    const { error: rpcError } = await (adminClient as any).rpc('negotiate_rfq_items_atomic', {
+      p_rfq_id: rfqId,
+      p_items: payload,
+    });
+
+    if (!rpcError) {
+      invalidateAdminCaches();
+      return { success: true, data: { negotiated: true } };
+    }
+
+    if (isRpcMissing(rpcError, 'negotiate_rfq_items_atomic')) {
+      if (!allowUnsafeDbFallback()) {
+        return databaseMisconfiguredError('RFQ negotiate');
+      }
+    } else {
+      return { success: false, error: mapRpcError(rpcError) };
+    }
+
+    // Dev-only fallback (legacy multi-step)
+    const { data: rfq, error: rfqError } = await adminClient
+      .from('rfqs')
+      .select('id, status')
+      .eq('id', rfqId)
+      .single();
+
+    if (rfqError || !rfq) {
+      return { success: false, error: { message: 'RFQ not found', code: 'NOT_FOUND' } };
+    }
+
     for (const item of items) {
       const unitPrice =
         item.finalUnitPrice !== undefined
           ? item.finalUnitPrice
           : (priceById.get(item.rfqItemId) ?? 0);
-      const lineTotal = Math.round(item.finalQuantity * unitPrice * 100) / 100;
-      calculatedFinalTotal += lineTotal;
-
       await adminClient
         .from('rfq_items')
         .update({
@@ -521,21 +616,25 @@ export async function adminNegotiateRfq(formData: unknown): Promise<ServerResult
         .eq('rfq_id', rfqId);
     }
 
+    const { data: allLines } = await adminClient
+      .from('rfq_items')
+      .select('final_quantity, original_quantity, final_unit_price, original_unit_price')
+      .eq('rfq_id', rfqId);
+
+    let calculatedFinalTotal = 0;
+    for (const row of allLines || []) {
+      const qty = Number(row.final_quantity ?? row.original_quantity ?? 0);
+      const unit = Number(row.final_unit_price ?? row.original_unit_price ?? 0);
+      calculatedFinalTotal += Math.round(qty * unit * 100) / 100;
+    }
     calculatedFinalTotal = Math.round(calculatedFinalTotal * 100) / 100;
 
-    // Update RFQ header with final total and status
     const targetStatus: RfqStatus = rfq.status === 'submitted' ? 'under_review' : rfq.status;
     if (targetStatus !== rfq.status) {
       const allowed = allowedFrom(RFQ_TRANSITIONS, targetStatus);
-      const tr = await transitionStatus(adminClient, 'rfqs', rfqId, 'status', targetStatus, allowed, {
+      await transitionStatus(adminClient, 'rfqs', rfqId, 'status', targetStatus, allowed, {
         final_total: calculatedFinalTotal,
       });
-      if (!tr.ok) {
-        await adminClient
-          .from('rfqs')
-          .update({ final_total: calculatedFinalTotal, updated_at: new Date().toISOString() })
-          .eq('id', rfqId);
-      }
     } else {
       await adminClient
         .from('rfqs')
@@ -547,11 +646,7 @@ export async function adminNegotiateRfq(formData: unknown): Promise<ServerResult
     }
 
     invalidateAdminCaches();
-
-    return {
-      success: true,
-      data: { negotiated: true },
-    };
+    return { success: true, data: { negotiated: true } };
   } catch (error) {
     console.error('[adminNegotiateRfq] Error:', error);
     return { success: false, error: { message: 'Failed to save negotiation', code: 'INTERNAL_ERROR' } };
@@ -733,9 +828,10 @@ export async function getRfqsForAdmin(params: {
     }
 
     if (params.search) {
-      query = query.or(
-        `rfq_number.ilike.%${params.search}%,customer_message.ilike.%${params.search}%`
-      );
+      const q = sanitizePostgrestSearch(params.search);
+      if (q) {
+        query = query.or(`rfq_number.ilike.%${q}%,customer_message.ilike.%${q}%`);
+      }
     }
 
     query = query.order('created_at', { ascending: false });

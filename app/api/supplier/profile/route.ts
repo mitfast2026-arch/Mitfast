@@ -65,6 +65,15 @@ export async function PUT(request: NextRequest) {
     if (body.country !== undefined) updatePayload.country = body.country.trim();
     if (body.website !== undefined) updatePayload.website = body.website?.trim() || null;
 
+    if (body.notificationPreferences !== undefined) {
+      const prefs = body.notificationPreferences;
+      updatePayload.notification_preferences = {
+        emailRfqs: Boolean(prefs.emailRfqs),
+        emailOrders: Boolean(prefs.emailOrders),
+        emailApprovals: Boolean(prefs.emailApprovals),
+      };
+    }
+
     // Resubmission flow: If resubmitting from rejected state
     if (body.resubmit && (supplier as any).status === 'rejected') {
       updatePayload.status = 'pending';

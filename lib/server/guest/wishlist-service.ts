@@ -66,8 +66,8 @@ export async function getCustomerWishlist(
     .from('wishlist_items')
     .select(`id, product_id, added_at, product:products(${PRODUCT_SELECT})`)
     .eq('customer_id', customerId)
-    .order('is_primary', { ascending: false, foreignTable: 'product_images' })
-    .limit(1, { foreignTable: 'product_images' })
+    // Primary image is picked in JS — do not order/limit on product_images
+    // via foreignTable here (PostgREST rejects embeds nested under wishlist_items).
     .order('added_at', { ascending: false })
     .limit(limit);
 
@@ -87,8 +87,8 @@ export async function getGuestWishlist(
     .from('guest_wishlist_items')
     .select(`id, product_id, added_at, product:products(${PRODUCT_SELECT})`)
     .eq('guest_session_id', guestSessionId)
-    .order('is_primary', { ascending: false, foreignTable: 'product_images' })
-    .limit(1, { foreignTable: 'product_images' })
+    // Primary image is picked in JS — do not order/limit on product_images
+    // via foreignTable here (PostgREST rejects embeds nested under guest_wishlist_items).
     .order('added_at', { ascending: false });
 
   if (error) {

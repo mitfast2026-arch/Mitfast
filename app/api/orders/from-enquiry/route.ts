@@ -9,6 +9,15 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const idempotencyKey = request.headers.get('Idempotency-Key');
+    if (!idempotencyKey?.trim()) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: { message: 'Idempotency-Key header is required', code: 'IDEMPOTENCY_REQUIRED' },
+        },
+        { status: 400 }
+      );
+    }
     const result = await convertEnquiryToOrder(body, idempotencyKey);
 
     if (!result.success) return NextResponse.json(result, { status: 400 });

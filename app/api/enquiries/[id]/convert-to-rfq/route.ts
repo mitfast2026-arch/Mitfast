@@ -12,6 +12,15 @@ export async function POST(
 
     const body = await request.json();
     const idempotencyKey = request.headers.get('Idempotency-Key');
+    if (!idempotencyKey?.trim()) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: { message: 'Idempotency-Key header is required', code: 'IDEMPOTENCY_REQUIRED' },
+        },
+        { status: 400 }
+      );
+    }
     const result = await createRfqFromEnquiry(
       {
         enquiryId: params.id,

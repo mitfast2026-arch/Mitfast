@@ -265,6 +265,72 @@ export async function middleware(request: NextRequest) {
 
   // 2. Redirect authenticated users visiting login/register pages
   // Allow onboarding pages: complete-profile, supplier apply, pending, rejected
+  // Pending/rejected require a session — anonymous visitors go to supplier sign-in.
+  if (
+    !user &&
+    (pathname.includes('/auth/supplier/pending') || pathname.includes('/auth/supplier/rejected'))
+  ) {
+    const redirect = NextResponse.redirect(
+      new URL('/auth?role=supplier&mode=signin', request.url)
+    );
+    clearPortalGateCookie(redirect);
+    return redirect;
+  }
+
+  // Active suppliers should not linger on pending/rejected; matching status may stay.
+  if (
+    user &&
+    (pathname.includes('/auth/supplier/pending') || pathname.includes('/auth/supplier/rejected'))
+  ) {
+    const cached = parsePortalGate(request.cookies.get(PORTAL_GATE_COOKIE)?.value);
+    if (cached?.userId === user.id && cached.role === 'supplier') {
+      if (cached.supplierStatus === 'active') {
+        return NextResponse.redirect(new URL('/supplier/dashboard', request.url));
+      }
+      if (
+        cached.supplierStatus === 'rejected' &&
+        pathname.includes('/auth/supplier/pending')
+      ) {
+        return NextResponse.redirect(new URL('/auth/supplier/rejected', request.url));
+      }
+      if (
+        cached.supplierStatus === 'pending' &&
+        pathname.includes('/auth/supplier/rejected')
+      ) {
+        return NextResponse.redirect(new URL('/auth/supplier/pending', request.url));
+      }
+    } else {
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if ((profileData as { role?: string } | null)?.role === 'supplier') {
+        const { data: supplierData } = await supabase
+          .from('suppliers')
+          .select('status')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        const status = (supplierData as { status?: string } | null)?.status;
+        if (status === 'active') {
+          const redirect = NextResponse.redirect(new URL('/supplier/dashboard', request.url));
+          setPortalGateCookie(redirect, {
+            userId: user.id,
+            role: 'supplier',
+            supplierStatus: 'active',
+          });
+          return redirect;
+        }
+        if (status === 'rejected' && pathname.includes('/auth/supplier/pending')) {
+          return NextResponse.redirect(new URL('/auth/supplier/rejected', request.url));
+        }
+        if (status === 'pending' && pathname.includes('/auth/supplier/rejected')) {
+          return NextResponse.redirect(new URL('/auth/supplier/pending', request.url));
+        }
+      }
+    }
+  }
+
   if (
     isAuthRoute &&
     user &&

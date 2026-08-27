@@ -4,7 +4,10 @@ import AsymmetricShowcase from '@/components/home/AsymmetricShowcase';
 import ServicesScroll from '@/components/home/ServicesScroll';
 import EditorialProducts from '@/components/home/EditorialProducts';
 import FloatingTestimonials from '@/components/home/FloatingTestimonials';
-import { getCachedStorefrontProducts } from '@/lib/server/products/cached-storefront';
+import {
+  getCachedPublicCategories,
+  getCachedStorefrontProducts,
+} from '@/lib/server/products/cached-storefront';
 
 export const revalidate = 60;
 
@@ -15,12 +18,19 @@ export const metadata = {
 };
 
 export default async function HomePage() {
-  const featured = await getCachedStorefrontProducts({ limit: 12, page: 1, sortBy: 'newest' });
+  const [featured, categoriesResult] = await Promise.all([
+    getCachedStorefrontProducts({ limit: 12, page: 1, sortBy: 'newest' }),
+    getCachedPublicCategories(),
+  ]);
   const initialProducts = featured.success ? featured.data.products : [];
+  const productCount = featured.success ? featured.data.total : 0;
+  const categoryCount = categoriesResult.success
+    ? (categoriesResult.data.categories?.length ?? 0)
+    : 0;
 
   return (
     <div id="home-page-shell" className="home-shell-transition w-full flex flex-col text-[#111315]">
-      <CinematicHero />
+      <CinematicHero stats={{ productCount, categoryCount }} />
       <AsymmetricShowcase />
       <ServicesScroll />
       <EditorialProducts initialProducts={initialProducts} />

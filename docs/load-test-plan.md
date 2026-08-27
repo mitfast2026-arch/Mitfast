@@ -1,6 +1,6 @@
 # MITFAST Staging Load Test Plan
 
-**Status:** CODE-READY until this plan is executed on staging. Do not run against production.
+**Status:** CODE-READY for staging execution after 2026-08-27 remediation (migrations 040–041 applied). Do not run against production. **LOAD-VERIFIED** only after Phases 1–4 pass with screenshots.
 
 ## Environment
 
@@ -42,6 +42,35 @@
 - `GET /api/suppliers/{id}/stats`
 - `GET /api/supplier/orders?limit=50`
 - `GET /api/supplier/rfqs?limit=50`
+
+### Phase 3b — Multi-supplier product CRUD (free-tier safe)
+
+**Do not** open 1000 simultaneous connections against free Supabase/Vercel.
+
+Script: `scripts/supplier-load-test.ts` (PostgREST via service role; always cleans `[LOADTEST:…]` rows).
+
+```powershell
+$env:LOAD_TEST_CONFIRM=1
+$env:MAX_CONCURRENCY=25
+$env:TARGET_OPS=1000
+$env:SUPPLIER_COUNT=5
+npm run test:supplier-load
+```
+
+| Guard | Value |
+|-------|--------|
+| Max workers | ≤50 (default 25) |
+| Target ops | up to 1000 total, pooled — not 1000 open sockets |
+| Abort | error rate > 15% |
+| Cleanup | always deletes tagged products + approval requests |
+
+Read-only HTTP companion (localhost / staging only):
+
+```powershell
+k6 run -e TEST_BASE_URL=http://localhost:3000 -e MAX_VUS=25 scripts/k6-supplier-portal-smoke.js
+```
+
+**Note:** Suppliers create + submit update-requests; hard delete is admin-only (unpublished). The script mirrors that model.
 
 ### Phase 4 — Concurrent writes
 

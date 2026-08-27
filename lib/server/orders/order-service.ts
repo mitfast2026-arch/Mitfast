@@ -13,6 +13,7 @@ import type { ServerResult } from '@/lib/server/auth/get-session';
 import type { OrderStatus, PaymentStatus } from '@/types/database';
 import { generateTrackingToken } from '@/lib/server/tracking';
 import { ensureCustomerFromGuest } from '@/lib/server/auth/ensure-customer-from-guest';
+import { sanitizeIlikePattern } from '@/lib/server/db/sanitize-search';
 import { mapRpcError } from '@/lib/server/db/rpc-errors';
 import {
   allowedFrom,
@@ -494,6 +495,13 @@ export async function createManualOrder(
       return { success: false, error: mapRpcError(rpcError) };
     }
 
+    const { allowUnsafeDbFallback, databaseMisconfiguredError } = await import(
+      '@/lib/server/db/production-guards'
+    );
+    if (!allowUnsafeDbFallback()) {
+      return databaseMisconfiguredError('Manual order create');
+    }
+
     const { data: order, error: orderError } = await adminClient
       .from('orders')
       .insert({
@@ -692,6 +700,13 @@ export async function editOrder(formData: unknown): Promise<ServerResult<{ updat
       return { success: false, error: mapRpcError(rpcError) };
     }
 
+    const { allowUnsafeDbFallback, databaseMisconfiguredError } = await import(
+      '@/lib/server/db/production-guards'
+    );
+    if (!allowUnsafeDbFallback()) {
+      return databaseMisconfiguredError('Order edit');
+    }
+
     const { data: existing } = await adminClient
       .from('orders')
       .select('id, status')
@@ -850,7 +865,10 @@ export async function getOrdersForAdmin(params: {
 
     if (params.status) query = query.eq('status', params.status);
     if (params.paymentStatus) query = query.eq('payment_status', params.paymentStatus);
-    if (params.search) query = query.ilike('order_number', `%${params.search}%`);
+    if (params.search) {
+      const q = sanitizeIlikePattern(params.search.trim());
+      if (q) query = query.ilike('order_number', `%${q}%`);
+    }
 
     query = query.order('created_at', { ascending: false });
 

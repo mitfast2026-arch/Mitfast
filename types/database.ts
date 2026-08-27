@@ -39,6 +39,27 @@ export type Database = {
   }
   public: {
     Tables: {
+      api_rate_limit_log: {
+        Row: {
+          created_at: string
+          id: number
+          rate_key: string
+          scope: string
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+          rate_key: string
+          scope: string
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          rate_key?: string
+          scope?: string
+        }
+        Relationships: []
+      }
       audit_logs: {
         Row: {
           action: string
@@ -1063,6 +1084,7 @@ export type Database = {
           created_at: string
           email: string
           id: string
+          notification_preferences: Json
           phone: string
           rejection_reason: string | null
           status: Database["public"]["Enums"]["supplier_status"]
@@ -1079,6 +1101,7 @@ export type Database = {
           created_at?: string
           email: string
           id?: string
+          notification_preferences?: Json
           phone: string
           rejection_reason?: string | null
           status?: Database["public"]["Enums"]["supplier_status"]
@@ -1095,6 +1118,7 @@ export type Database = {
           created_at?: string
           email?: string
           id?: string
+          notification_preferences?: Json
           phone?: string
           rejection_reason?: string | null
           status?: Database["public"]["Enums"]["supplier_status"]
@@ -1146,6 +1170,14 @@ export type Database = {
     }
     Functions: {
       admin_dashboard_metrics: { Args: never; Returns: Json }
+      approve_product_core_atomic: {
+        Args: {
+          p_admin_user_id: string
+          p_product_update: Json
+          p_request_id: string
+        }
+        Returns: boolean
+      }
       category_product_counts: {
         Args: never
         Returns: {
@@ -1249,20 +1281,48 @@ export type Database = {
       }
       generate_order_number: { Args: never; Returns: string }
       generate_rfq_number: { Args: never; Returns: string }
-      increment_cart_item_quantity: {
-        Args: { p_cart_id: string; p_delta: number; p_product_id: string }
-        Returns: number
-      }
-      increment_guest_cart_item_quantity: {
-        Args: {
-          p_delta: number
-          p_guest_session_id: string
-          p_product_id: string
-        }
-        Returns: number
-      }
+      increment_cart_item_quantity:
+        | {
+            Args: { p_cart_id: string; p_delta: number; p_product_id: string }
+            Returns: number
+          }
+        | {
+            Args: {
+              p_cart_id: string
+              p_delta: number
+              p_moq?: number
+              p_product_id: string
+            }
+            Returns: number
+          }
+      increment_guest_cart_item_quantity:
+        | {
+            Args: {
+              p_delta: number
+              p_guest_session_id: string
+              p_product_id: string
+            }
+            Returns: number
+          }
+        | {
+            Args: {
+              p_delta: number
+              p_guest_session_id: string
+              p_moq?: number
+              p_product_id: string
+            }
+            Returns: number
+          }
       increment_product_view: { Args: { p_id: string }; Returns: undefined }
+      increment_product_view_sampled: {
+        Args: { p_id: string; p_sample_key?: string; p_window_seconds?: number }
+        Returns: undefined
+      }
       is_admin: { Args: never; Returns: boolean }
+      negotiate_rfq_items_atomic: {
+        Args: { p_items: Json; p_rfq_id: string }
+        Returns: boolean
+      }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
       submit_rfq_from_cart_atomic: {
@@ -1277,6 +1337,19 @@ export type Database = {
         Returns: {
           rfq_id: string
           rfq_number: string
+        }[]
+      }
+      submit_rfqs_from_cart_atomic: {
+        Args: {
+          p_customer_id: string
+          p_customer_message: string
+          p_delivery_address: Json
+          p_groups: Json
+        }
+        Returns: {
+          rfq_id: string
+          rfq_number: string
+          supplier_key: string
         }[]
       }
       supplier_admin_summary_stats: {
@@ -1306,6 +1379,15 @@ export type Database = {
           p_email: string
           p_max_sends?: number
           p_window_seconds?: number
+        }
+        Returns: boolean
+      }
+      try_record_rate_limit: {
+        Args: {
+          p_key: string
+          p_max_hits: number
+          p_scope: string
+          p_window_seconds: number
         }
         Returns: boolean
       }

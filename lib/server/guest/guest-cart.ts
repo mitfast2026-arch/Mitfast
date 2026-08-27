@@ -6,6 +6,7 @@ import type { CartItemWithProduct, CustomerCartData } from '@/lib/server/cart/ca
 type ProductRow = {
   id: string;
   name: string;
+  supplier_id?: string | null;
   selling_price: number;
   discount: number | null;
   gst_rate: number | null;
@@ -59,6 +60,7 @@ function formatGuestItems(
       product: {
         id: p.id,
         name: p.name,
+        supplierId: p.supplier_id ?? null,
         sellingPrice: p.selling_price,
         discount: p.discount || 0,
         gstRate: p.gst_rate || 0,
@@ -84,7 +86,7 @@ function formatGuestItems(
 }
 
 const PRODUCT_SELECT = `
-  id, name, selling_price, discount, gst_rate, gst_included, moq, min_order_value, ribbon_label,
+  id, name, supplier_id, selling_price, discount, gst_rate, gst_included, moq, min_order_value, ribbon_label,
   approval_status, publication_status, archive_status,
   category:categories(name),
   images:product_images(image_url, is_primary, sort_order)
@@ -97,9 +99,8 @@ export async function getGuestCart(guestSessionId: string): Promise<ServerResult
       .from('guest_cart_items')
       .select(`id, product_id, quantity, added_at, product:products(${PRODUCT_SELECT})`)
       .eq('guest_session_id', guestSessionId)
-      .order('is_primary', { ascending: false, foreignTable: 'product_images' })
-      .order('sort_order', { ascending: true, foreignTable: 'product_images' })
-      .limit(1, { foreignTable: 'product_images' })
+      // Primary image is picked in JS — do not order/limit on product_images
+      // via foreignTable here (PostgREST rejects embeds nested under guest_cart_items).
       .order('added_at', { ascending: false });
 
     if (error) {
@@ -148,33 +149,48 @@ export async function addToGuestCart(
       };
     }
 
-    const nextQty = quantity;
-    if (nextQty < (product.moq || 1)) {
+    const moq = product.moq || 1;
+    const { data: existing } = await admin
+      .from('guest_cart_items')
+      .select('quantity')
+      .eq('guest_session_id', guestSessionId)
+      .eq('product_id', productId)
+      .maybeSingle();
+
+    const projectedQty = (existing?.quantity || 0) + quantity;
+    if (projectedQty < moq) {
       return {
         success: false,
-        error: { message: `Minimum order quantity is ${product.moq}`, code: 'BELOW_MOQ' },
+        error: { message: `Minimum order quantity is ${moq}`, code: 'BELOW_MOQ' },
       };
     }
 
-    const { data: newQty, error: rpcError } = await (admin as any).rpc(
-      'increment_guest_cart_item_quantity',
-      {
-        p_guest_session_id: guestSessionId,
-        p_product_id: productId,
-        p_delta: quantity,
-      }
-    );
+    const unit = Math.max(0, (product.selling_price || 0) - (product.discount || 0));
+    if (product.min_order_value && unit * projectedQty < Number(product.min_order_value)) {
+      return {
+        success: false,
+        error: {
+          message: `Minimum order value for this product is ₹${Number(product.min_order_value).toLocaleString('en-IN')}`,
+          code: 'BELOW_MIN_ORDER_VALUE',
+        },
+      };
+    }
+
+    const { error: rpcError } = await (admin as any).rpc('increment_guest_cart_item_quantity', {
+      p_guest_session_id: guestSessionId,
+      p_product_id: productId,
+      p_delta: quantity,
+      p_moq: moq,
+    });
 
     if (rpcError) {
+      if (rpcError.message?.includes('Below MOQ')) {
+        return {
+          success: false,
+          error: { message: `Minimum order quantity is ${moq}`, code: 'BELOW_MOQ' },
+        };
+      }
       return { success: false, error: { message: rpcError.message, code: 'DATABASE_ERROR' } };
-    }
-
-    const finalQty = Number(newQty);
-    if (finalQty < (product.moq || 1)) {
-      return {
-        success: false,
-        error: { message: `Minimum order quantity is ${product.moq}`, code: 'BELOW_MOQ' },
-      };
     }
 
     return { success: true, data: { added: true } };

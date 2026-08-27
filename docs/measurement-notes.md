@@ -1,59 +1,53 @@
-# MITFAST Measurement Notes (2026-08-27)
+# MITFAST Measurement Notes (updated 2026-08-27)
 
-## Vercel CLI (verified)
+## Supabase CLI / plugin
 
-- Account: `mitfast2026-9166`
-- Project: `mitfast-b2b` (region `bom1`, Node 24.x)
-- Production alias: `https://mitfast-b2b-puce.vercel.app`
-- Latest production deployment inspected: `dpl_3ZCwjWouAe7uN7amWqs8bE3qmjfH` → Ready
-- Commands used: `vercel ls mitfast-b2b`, `vercel inspect https://mitfast-b2b-puce.vercel.app --format json`
+- Linked project: `qubphaacuuwlpdrsprjl` (ACTIVE_HEALTHY, region `ap-southeast-1`)
+- Cursor Supabase plugin: authorized as **mitfast2026@gmail.com's Org** (correct MITFAST project)
+- Applied through: `20260827000052_fix_trigger_actor_checks.sql`
+  - `050` profiles.role freeze
+  - `051` soft product INSERT lock
+  - `052` fix `SECURITY DEFINER` actor checks (`auth.role()`)
+- Hardening smoke: **PASS** (`npm run test:hardening-smoke`)
+- Triggers verified live via plugin SQL: `trg_profiles_freeze_role`, `trg_products_soft_lock_client_insert`, `trg_products_block_privileged_client_update` (all use `auth.role()`)
 
-## Local browser verification (dev)
+## Ultra-safe hardening (Tier 0–2) — shipped + applied
 
-- `/products` → title `Products Catalog | MITFAST`, SSR catalog seed + crawlable links
-- `/products/{id}` → product title + Product JSON-LD script present
-- `/robots.txt` → Allow `/`, disallow portals/api/auth, sitemap link
-- `/sitemap.xml` → generated
+- Tier 0: OTP/auth generic errors, search sanitize, footer admin link removed, QA sessions gitignored/deleted, JSON-LD escape, `GET /api/health`
+- Tier 1–2: migrations 050–052 + smoke green
+- Tier 3 (DROP insert policies, REVOKE supplier_price, middleware fail-closed, EMAIL_FROM hard fail): **deferred**
 
-## Supabase CLI (blocked)
+## Vercel
 
-- Linked temp ref: `qubphaacuuwlpdrsprjl` (correct MITFAST project)
-- CLI session currently authenticates as account that only sees `ictnoydmxlywwxwnugal` (forbidden)
-- `supabase db push --project-ref qubphaacuuwlpdrsprjl` → **403 access-control**
-- `supabase inspect db … --project-ref qubphaacuuwlpdrsprjl` → **403**
-
-**Action required:** `supabase login` as MITFAST owner (`mitfast2026@…`), then:
-
-```powershell
-npm run db:push
-supabase inspect db calls --project-ref qubphaacuuwlpdrsprjl
-supabase inspect db outliers --project-ref qubphaacuuwlpdrsprjl
-```
-
-Pending migration to apply: `20260827000032_production_correctness_p0.sql`
-
-App code includes **fallback paths** so RFQ/order/OTP/idempotency keep working until that migration is applied.
-
-## Concurrency script (`npx tsx scripts/concurrency-test.ts`)
-
-- PASS: admin_dashboard_metrics, cart increment race, idempotency unique claim
-- SKIP until migration: OTP atomic limit, guest-merge exclusive claim, submit_rfq_from_cart_atomic
+- Project: `mitfast-b2b` (region `bom1`)
+- Production must fail-closed (`DATABASE_MISCONFIGURED` / 503) if atomic RPCs missing — unsafe multi-step fallbacks disabled when `VERCEL_ENV=production`
 
 ## Load test
 
-- Status: **LOAD-TEST REQUIRED** (not executed against production)
-- Plan: `docs/load-test-plan.md`
-- Sample k6 script: `scripts/k6-catalog-smoke.js` (staging only)
+- Status: **CODE-READY** for staging k6 (Phases 1–4 in `docs/load-test-plan.md`)
+- Not yet **LOAD-VERIFIED** — do not claim ≥85 production score until staging evidence exists
+- Local `.env.local` currently has empty Supabase URL/service-role placeholders; use `.env.development.local` or restore real keys before:
+  ```powershell
+  npm run test:concurrency
+  k6 run -e TEST_BASE_URL=https://YOUR-STAGING.vercel.app scripts/k6-catalog-smoke.js
+  ```
+
+## Staging load verification checklist (required for ≥85)
+
+1. Deploy remediations to a **staging** Vercel project (not production).
+2. Confirm staging DB has migrations through `20260827000052`.
+3. Run Phase 1–4 from `docs/load-test-plan.md`.
+4. Capture: P95, error rate, Supabase CPU/connections, Vercel 5xx.
+5. Only then flip status to **LOAD-VERIFIED** and raise audit overall to ≥85.
 
 ## Redis
 
-- Upstash env present on Vercel; **zero app usage** (by design)
-- Do not add Redis page/catalog cache
+- Upstash env may exist; **zero app usage** for business state (by design)
 
-## Before / after for this change set
+## Concurrency / security scripts
 
-```
-CHANGE: P0 correctness + SEO SSR + tagged Next cache
-BEFORE / AFTER: NEEDS LIVE VERIFICATION after migration deploy + staging k6
-Redis ops: 0 → 0
+```powershell
+npm run test:concurrency
+npm run test:rls-supplier
+npm run test:hardening-smoke
 ```

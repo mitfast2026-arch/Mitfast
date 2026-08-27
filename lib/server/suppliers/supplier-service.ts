@@ -12,6 +12,7 @@ import {
   transitionStatus,
 } from '@/lib/server/db/conditional-update';
 import { invalidateAdminCaches } from '@/lib/server/db/invalidate-caches';
+import { sanitizePostgrestSearch } from '@/lib/server/db/sanitize-search';
 import type { SupplierStatus } from '@/types/database';
 
 /**
@@ -623,9 +624,12 @@ export async function getSuppliersForAdmin(params: {
     }
 
     if (params.search) {
-      query = query.or(
-        `company_name.ilike.%${params.search}%,contact_person.ilike.%${params.search}%,email.ilike.%${params.search}%`
-      );
+      const q = sanitizePostgrestSearch(params.search);
+      if (q) {
+        query = query.or(
+          `company_name.ilike.%${q}%,contact_person.ilike.%${q}%,email.ilike.%${q}%`
+        );
+      }
     }
 
     switch (params.sortBy) {

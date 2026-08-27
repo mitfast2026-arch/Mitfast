@@ -10,6 +10,7 @@ export interface CartItemWithProduct {
   product: {
     id: string;
     name: string;
+    supplierId: string | null;
     sellingPrice: number;
     discount: number;
     gstRate: number;
@@ -79,6 +80,7 @@ export async function getCustomerCart(customerId: string): Promise<ServerResult<
         product:products(
           id,
           name,
+          supplier_id,
           selling_price,
           discount,
           gst_rate,
@@ -94,9 +96,8 @@ export async function getCustomerCart(customerId: string): Promise<ServerResult<
         )
       `)
       .eq('cart_id', cart.id)
-      .order('is_primary', { ascending: false, foreignTable: 'product_images' })
-      .order('sort_order', { ascending: true, foreignTable: 'product_images' })
-      .limit(1, { foreignTable: 'product_images' })
+      // Primary image is picked in JS — do not order/limit on product_images
+      // via foreignTable here (PostgREST rejects embeds nested under cart_items).
       .order('added_at', { ascending: false });
 
     if (itemsError) {
@@ -143,6 +144,7 @@ export async function getCustomerCart(customerId: string): Promise<ServerResult<
         product: {
           id: p.id,
           name: p.name,
+          supplierId: p.supplier_id ?? null,
           sellingPrice: p.selling_price,
           discount: p.discount || 0,
           gstRate: p.gst_rate || 0,
@@ -211,32 +213,76 @@ export async function addToCart(
       };
     }
 
-    // Get or create cart
-    const cartRes = await getCustomerCart(customerId);
-    if (!cartRes.success) return cartRes;
+    // Ensure cart exists without hydrating full cart lines
+    let { data: cart } = await adminClient
+      .from('carts')
+      .select('id')
+      .eq('customer_id', customerId)
+      .maybeSingle();
 
-    const cartId = cartRes.data.cartId;
-
-    const { data: newQty, error: rpcError } = await (adminClient as any).rpc(
-      'increment_cart_item_quantity',
-      {
-        p_cart_id: cartId,
-        p_product_id: productId,
-        p_delta: quantity,
+    if (!cart) {
+      const { data: newCart, error: createError } = await adminClient
+        .from('carts')
+        .insert({ customer_id: customerId })
+        .select('id')
+        .single();
+      if (createError || !newCart) {
+        const { data: retryCart } = await adminClient
+          .from('carts')
+          .select('id')
+          .eq('customer_id', customerId)
+          .maybeSingle();
+        if (!retryCart) {
+          return { success: false, error: { message: 'Failed to load cart', code: 'DATABASE_ERROR' } };
+        }
+        cart = retryCart;
+      } else {
+        cart = newCart;
       }
-    );
+    }
+
+    const { data: existingItem } = await adminClient
+      .from('cart_items')
+      .select('quantity')
+      .eq('cart_id', cart.id)
+      .eq('product_id', productId)
+      .maybeSingle();
+
+    const moq = product.moq || 1;
+    const projectedQty = (existingItem?.quantity || 0) + quantity;
+    if (projectedQty < moq) {
+      return {
+        success: false,
+        error: { message: `Minimum order quantity is ${moq}`, code: 'BELOW_MOQ' },
+      };
+    }
+
+    const unit = Math.max(0, (product.selling_price || 0) - (product.discount || 0));
+    if (product.min_order_value && unit * projectedQty < Number(product.min_order_value)) {
+      return {
+        success: false,
+        error: {
+          message: `Minimum order value for this product is ₹${Number(product.min_order_value).toLocaleString('en-IN')}`,
+          code: 'BELOW_MIN_ORDER_VALUE',
+        },
+      };
+    }
+
+    const { error: rpcError } = await (adminClient as any).rpc('increment_cart_item_quantity', {
+      p_cart_id: cart.id,
+      p_product_id: productId,
+      p_delta: quantity,
+      p_moq: moq,
+    });
 
     if (rpcError) {
+      if (rpcError.message?.includes('Below MOQ')) {
+        return {
+          success: false,
+          error: { message: `Minimum order quantity is ${moq}`, code: 'BELOW_MOQ' },
+        };
+      }
       return { success: false, error: { message: rpcError.message, code: 'DATABASE_ERROR' } };
-    }
-
-    const nextQty = Number(newQty);
-    if (nextQty < (product.moq || 1)) {
-      return { success: false, error: { message: `Minimum order quantity is ${product.moq}`, code: 'BELOW_MOQ' } };
-    }
-    const unit = Math.max(0, (product.selling_price || 0) - (product.discount || 0));
-    if (product.min_order_value && unit * nextQty < Number(product.min_order_value)) {
-      return { success: false, error: { message: `Minimum order value for this product is ₹${Number(product.min_order_value).toLocaleString('en-IN')}`, code: 'BELOW_MIN_ORDER_VALUE' } };
     }
 
     return { success: true, data: { added: true } };

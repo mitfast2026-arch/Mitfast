@@ -28,6 +28,8 @@ export default function ProductDeleteDialog({
   const imageUrl = getProductImageUrl(product);
   const nameMatches = confirmName.trim() === product.name;
   const isPublished = product.publication_status === 'published';
+  const isArchived = product.archive_status === 'archived';
+  const canHardDelete = !isPublished && isArchived;
 
   return (
     <div className="fixed inset-0 z-50 bg-portal-text/50 flex items-center justify-center p-4">
@@ -62,11 +64,17 @@ export default function ProductDeleteDialog({
             </div>
           )}
 
+          {!isPublished && !isArchived && (
+            <div className="text-xs text-portal-warning bg-portal-warning-soft rounded-lg p-2.5">
+              Archive this product before hard-deleting it.
+            </div>
+          )}
+
           {error && (
             <div className="text-xs text-portal-danger bg-portal-danger-soft rounded-lg p-2.5">{error}</div>
           )}
 
-          {!isPublished && (
+          {canHardDelete && (
             <div>
               <label className="saas-label">
                 Type <strong>{product.name}</strong> to confirm
@@ -90,7 +98,7 @@ export default function ProductDeleteDialog({
           <button
             type="button"
             onClick={onConfirm}
-            disabled={deleting || isPublished || !nameMatches}
+            disabled={deleting || !canHardDelete || !nameMatches}
             className="text-xs py-2 px-4 rounded-lg bg-portal-danger text-white hover:opacity-90 disabled:opacity-50 flex items-center gap-1.5"
           >
             {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}

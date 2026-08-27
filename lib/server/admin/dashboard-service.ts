@@ -577,6 +577,8 @@ export async function getApprovalCenterItems(params?: {
           id,
           status,
           request_type,
+          proposed_data,
+          rejection_reason,
           created_at,
           product:products(
             id,
@@ -597,6 +599,8 @@ export async function getApprovalCenterItems(params?: {
           id,
           status,
           request_type,
+          proposed_data,
+          rejection_reason,
           created_at,
           product:products(
             id,
