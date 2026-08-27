@@ -71,7 +71,7 @@ export default function TrackEnquiryPage() {
               className="text-xs underline"
               href={`/track/${data.order.trackingToken}`}
             >
-              Open production order tracking ({data.order.orderNumber})
+              Open order tracking ({data.order.orderNumber})
             </Link>
           )}
         </div>

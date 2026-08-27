@@ -4,6 +4,7 @@ import AsymmetricShowcase from '@/components/home/AsymmetricShowcase';
 import ServicesScroll from '@/components/home/ServicesScroll';
 import EditorialProducts from '@/components/home/EditorialProducts';
 import FloatingTestimonials from '@/components/home/FloatingTestimonials';
+import { getStorefrontProducts } from '@/lib/server/products/product-service';
 
 export const revalidate = 60;
 
@@ -13,13 +14,16 @@ export const metadata = {
     'Factory-direct B2B digital procurement for precision CNC turned components, titanium fasteners, and hydraulic assemblies. ISO 9001 & AS9100D certified.',
 };
 
-export default function HomePage() {
+export default async function HomePage() {
+  const featured = await getStorefrontProducts({ limit: 12, page: 1, sortBy: 'newest' });
+  const initialProducts = featured.success ? featured.data.products : [];
+
   return (
     <div id="home-page-shell" className="home-shell-transition w-full flex flex-col text-[#111315]">
       <CinematicHero />
       <AsymmetricShowcase />
       <ServicesScroll />
-      <EditorialProducts />
+      <EditorialProducts initialProducts={initialProducts} />
       <FloatingTestimonials />
     </div>
   );

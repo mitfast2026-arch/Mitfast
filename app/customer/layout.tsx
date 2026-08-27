@@ -5,21 +5,29 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
-  FileQuestion,
-  FileText,
-  PackageCheck,
+  Package,
+  Heart,
+  ShoppingCart,
   User,
-  Settings,
+  FileText,
+  MapPin,
+  Shield,
   LogOut,
-  ChevronRight,
   Menu,
   X,
-  ExternalLink,
 } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
-import PortalNavLink from '@/components/portal/PortalNavLink';
-
 import { signOutTo } from '@/lib/client/sign-out';
+import { clsx } from 'clsx';
+
+type NavItem = {
+  label: string;
+  href: string;
+  icon: React.ElementType;
+  badge?: number;
+  external?: boolean;
+  match?: (pathname: string) => boolean;
+};
 
 export default function CustomerLayout({
   children,
@@ -28,15 +36,26 @@ export default function CustomerLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [profile, setProfile] = useState<any>(null);
+  const [profile, setProfile] = useState<{
+    id: string;
+    full_name?: string | null;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [counts, setCounts] = useState({
+    orders: 0,
+    wishlist: 0,
+    cart: 0,
+    quotes: 0,
+  });
 
   useEffect(() => {
     async function checkAuth() {
       try {
         const supabase = createBrowserClient();
-        const { data: { user } } = await supabase.auth.getUser();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
 
         if (!user) {
           router.push('/auth?role=buyer&mode=signin');
@@ -45,11 +64,29 @@ export default function CustomerLayout({
 
         const { data: prof } = await supabase
           .from('profiles')
-          .select('*')
+          .select('id, full_name')
           .eq('user_id', user.id)
           .single();
 
-        if (prof) setProfile(prof);
+        if (prof) {
+          setProfile(prof);
+          // One lightweight count endpoint instead of 5 full list payloads
+          fetch('/api/customer/badge-counts')
+            .then((r) => r.json())
+            .then((json) => {
+              if (json?.success && json.data) {
+                setCounts({
+                  orders: json.data.orders || 0,
+                  wishlist: json.data.wishlist || 0,
+                  cart: json.data.cart || 0,
+                  quotes: json.data.quotes || 0,
+                });
+              }
+            })
+            .catch(() => {
+              /* badges are non-critical */
+            });
+        }
       } catch (err) {
         console.error('Customer auth check error:', err);
       } finally {
@@ -60,116 +97,213 @@ export default function CustomerLayout({
     checkAuth();
   }, [router]);
 
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
   function handleSignOut() {
     signOutTo('/auth?role=buyer&mode=signin');
   }
 
-  const navItems = [
+  const shopNav: NavItem[] = [
     { label: 'Dashboard', href: '/customer/dashboard', icon: LayoutDashboard },
-    { label: 'My Enquiries', href: '/customer/enquiries', icon: FileQuestion },
-    { label: 'My RFQs', href: '/customer/rfqs', icon: FileText },
-    { label: 'Production Orders', href: '/customer/orders', icon: PackageCheck },
-    { label: 'Profile', href: '/customer/profile', icon: User },
-    { label: 'Settings', href: '/customer/settings', icon: Settings },
+    {
+      label: 'Orders',
+      href: '/customer/orders',
+      icon: Package,
+      badge: counts.orders > 0 ? counts.orders : undefined,
+    },
+    {
+      label: 'Quotes / RFQs',
+      href: '/customer/quotes',
+      icon: FileText,
+      badge: counts.quotes > 0 ? counts.quotes : undefined,
+      match: (p) =>
+        p.startsWith('/customer/quotes') ||
+        p.startsWith('/customer/enquiries') ||
+        p.startsWith('/customer/rfqs'),
+    },
+    {
+      label: 'Wishlist',
+      href: '/customer/wishlist',
+      icon: Heart,
+      badge: counts.wishlist > 0 ? counts.wishlist : undefined,
+    },
+    {
+      label: 'Cart',
+      href: '/cart',
+      icon: ShoppingCart,
+      badge: counts.cart > 0 ? counts.cart : undefined,
+      external: true,
+    },
   ];
 
-  const currentDate = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const accountNav: NavItem[] = [
+    { label: 'Profile', href: '/customer/profile', icon: User },
+    { label: 'Addresses', href: '/customer/addresses', icon: MapPin },
+    { label: 'Security', href: '/customer/settings', icon: Shield },
+  ];
+
+  function isActive(item: NavItem) {
+    if (item.external) return pathname === item.href;
+    if (item.match) return item.match(pathname);
+    if (item.href === '/customer/dashboard') return pathname === item.href;
+    return pathname === item.href || pathname.startsWith(item.href + '/');
+  }
+
+  function NavList({
+    items,
+    onNavigate,
+  }: {
+    items: NavItem[];
+    onNavigate?: () => void;
+  }) {
+    return (
+      <nav className="space-y-1">
+        {items.map((item) => {
+          const Icon = item.icon;
+          const active = isActive(item);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={onNavigate}
+              aria-current={active ? 'page' : undefined}
+              className={clsx(
+                'buyer-nav-row',
+                active ? 'buyer-nav-active' : 'buyer-nav-idle'
+              )}
+            >
+              <Icon className="w-[22px] h-[22px] shrink-0" strokeWidth={1.75} />
+              <span className="flex-1 truncate">{item.label}</span>
+              {item.badge !== undefined ? (
+                <span
+                  className={clsx(
+                    'min-w-[1.4rem] h-[1.4rem] px-1 rounded-full text-[11px] font-mono font-bold flex items-center justify-center',
+                    active ? 'bg-white/20 text-white' : 'bg-[#111111]/8 text-[#111111]'
+                  )}
+                >
+                  {item.badge > 99 ? '99+' : item.badge}
+                </span>
+              ) : null}
+            </Link>
+          );
+        })}
+      </nav>
+    );
+  }
+
+  function SidenavBody({ onNavigate }: { onNavigate?: () => void }) {
+    return (
+      <>
+        <div className="px-3.5 pt-1 pb-5">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#9ca3af]">
+            Account
+          </p>
+          <p className="text-[18px] font-extrabold tracking-[-0.03em] text-[#111111] truncate mt-2 leading-snug">
+            {profile?.full_name || 'Buyer'}
+          </p>
+        </div>
+
+        <div className="space-y-7 flex-1">
+          <div>
+            <p className="px-3.5 mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-[#9ca3af]">
+              Shop
+            </p>
+            <NavList items={shopNav} onNavigate={onNavigate} />
+          </div>
+          <div>
+            <p className="px-3.5 mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-[#9ca3af]">
+              Account
+            </p>
+            <NavList items={accountNav} onNavigate={onNavigate} />
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleSignOut}
+          className="mt-8 flex items-center gap-3 w-full px-3.5 py-3 rounded-[14px] text-[16px] font-semibold text-[#B91C1C] hover:bg-[#FEF2F2]/80 transition-colors"
+        >
+          <LogOut className="w-5 h-5 shrink-0" strokeWidth={1.75} />
+          Sign out
+        </button>
+      </>
+    );
+  }
 
   if (loading) {
     return (
-      <div className="flex h-screen saas-canvas-bg items-center justify-center">
-        <div className="text-xs font-mono text-[#6B7280] animate-pulse">Authenticating Buyer Portal...</div>
+      <div className="min-h-[50vh] flex flex-col items-center justify-center gap-3 buyer-shell">
+        <div className="w-8 h-8 border-2 border-[#111111] border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm text-[#6b7280]">Loading your account…</p>
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen saas-canvas-bg text-[#111315] overflow-hidden">
-      <aside className="hidden lg:flex flex-col w-64 m-3 mr-0 rounded-3xl saas-sidebar-gradient p-5 space-y-6 shrink-0 justify-between h-[calc(100vh-1.5rem)] overflow-y-auto">
-        <div className="space-y-6">
-          <Link href="/customer/profile" className="flex items-center gap-3 pb-4 border-b border-[#E2E4E8]">
-            <div className="h-10 w-10 rounded-full bg-[#111315] text-white flex items-center justify-center font-bold text-sm">
-              M
-            </div>
-            <div className="space-y-0.5 truncate">
-              <div className="text-xs font-semibold text-[#111315] truncate">
-                {profile?.full_name || 'Buyer Portal'}
-              </div>
-              <div className="text-[11px] text-[#6B7280] truncate font-mono">
-                {profile?.email || 'Procurement account'}
-              </div>
-            </div>
-          </Link>
+    <div className="buyer-shell min-h-[calc(100vh-4rem)] flex flex-col">
+      <div className="buyer-frame flex-1">
+        <aside className="buyer-sidenav hidden lg:flex flex-col">
+          <SidenavBody />
+        </aside>
 
-          <nav className="space-y-1">
-            {navItems.map((item) => {
-              const active = pathname === item.href || (item.href !== '/customer/dashboard' && pathname.startsWith(item.href + '/'));
-              return (
-                <PortalNavLink
-                  key={item.href}
-                  href={item.href}
-                  label={item.label}
-                  icon={item.icon}
-                  active={active}
-                />
-              );
-            })}
-          </nav>
-        </div>
-
-        <div className="space-y-2 pt-4 border-t border-[#E2E4E8] text-xs text-[#6B7280]">
-          <div className="flex items-center justify-between px-1">
-            <span className="font-mono text-[11px]">{currentDate}</span>
-            <Link href="/products" className="hover:text-[#111315] flex items-center gap-1">
-              <span>Catalog</span>
-              <ExternalLink className="w-3 h-3" />
-            </Link>
-          </div>
+        <div className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md px-4 py-2 flex items-center justify-between gap-2">
           <button
-            onClick={handleSignOut}
-            className="w-full text-left py-2 px-3 rounded-full text-xs text-[#B91C1C] hover:bg-[#FEF2F2] flex items-center gap-1.5"
+            type="button"
+            onClick={() => setMobileOpen(true)}
+            className="inline-flex items-center gap-2.5 h-11 px-4 rounded-[12px] bg-[#f0f2f5] text-[15px] font-semibold text-[#111111]"
           >
-            <LogOut className="w-3.5 h-3.5" />
-            Sign Out
+            <Menu className="w-5 h-5" strokeWidth={1.75} />
+            Menu
           </button>
-        </div>
-      </aside>
-
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto">
-        <header className="sticky top-0 z-20 mx-3 mt-3 rounded-full saas-glass-bar px-4 sm:px-6 py-2.5 shrink-0 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button onClick={() => setSidebarOpen(!sidebarOpen)} className="lg:hidden saas-btn-ghost">
-              {sidebarOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
-            </button>
-            <div className="flex items-center gap-2 text-xs font-mono text-[#6B7280]">
-              <span className="font-bold text-[#111315]">Buyer Portal</span>
-              <ChevronRight className="w-3.5 h-3.5 text-[#9CA3AF]" />
-              <span className="capitalize text-[#111315]">
-                {pathname.split('/')[2]?.replace(/-/g, ' ') || 'Dashboard'}
-              </span>
-            </div>
-          </div>
-        </header>
-
-        {sidebarOpen && (
-          <div className="lg:hidden mx-3 mt-3 p-4 saas-panel space-y-1">
-            {navItems.map((item) => {
-              const active = pathname === item.href || (item.href !== '/customer/dashboard' && pathname.startsWith(item.href + '/'));
+          <div className="flex items-center gap-1">
+            {shopNav.slice(0, 4).map((item) => {
+              const Icon = item.icon;
+              const active = isActive(item);
               return (
-                <PortalNavLink
+                <Link
                   key={item.href}
                   href={item.href}
-                  label={item.label}
-                  icon={item.icon}
-                  active={active}
-                  onClick={() => setSidebarOpen(false)}
-                />
+                  aria-label={item.label}
+                  className={clsx(
+                    'relative h-11 w-11 rounded-[12px] flex items-center justify-center',
+                    active ? 'bg-[#111111] text-white shadow-[var(--buyer-shadow-sm)]' : 'text-[#6b7280]'
+                  )}
+                >
+                  <Icon className="w-5 h-5" strokeWidth={1.75} />
+                  {item.badge !== undefined ? (
+                    <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-[#B91C1C]" />
+                  ) : null}
+                </Link>
               );
             })}
           </div>
-        )}
+        </div>
 
-        <main className="p-6 sm:p-8 flex-1 w-full max-w-7xl mx-auto">{children}</main>
+        {mobileOpen ? (
+          <div className="lg:hidden fixed inset-0 z-50 flex">
+            <div className="absolute inset-0 bg-black/30" onClick={() => setMobileOpen(false)} />
+            <div className="relative w-[280px] max-w-[85%] h-full bg-white p-4 flex flex-col overflow-y-auto shadow-[var(--buyer-shadow-md)]">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[13px] font-semibold text-[#111111] truncate">
+                  {profile?.full_name || 'Buyer'}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setMobileOpen(false)}
+                  className="p-2 rounded-lg hover:bg-[#eceef0]"
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <SidenavBody onNavigate={() => setMobileOpen(false)} />
+            </div>
+          </div>
+        ) : null}
+
+        <main className="buyer-main flex-1 pb-20 lg:pb-0">{children}</main>
       </div>
     </div>
   );

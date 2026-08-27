@@ -76,15 +76,14 @@ export function KpiCard({
           </span>
         ) : null}
       </div>
-      <div className="mt-3 flex items-end gap-2 flex-wrap">
+      <div className="mt-2 flex items-end gap-2 flex-wrap">
         <p
           className={clsx(
             'font-bold tabular-nums tracking-tight',
             hero
-              ? 'text-[32px] sm:text-[40px] leading-none text-[#0A0A0A]'
+              ? 'text-2xl sm:text-3xl leading-none text-portal-text'
               : 'type-kpi text-portal-text'
           )}
-          style={hero ? { color: '#0A0A0A' } : undefined}
         >
           {value}
         </p>
@@ -112,7 +111,7 @@ export function KpiCard({
 
   if (href) {
     return (
-      <Link href={href} className={base} style={hero ? { color: '#0A0A0A' } : undefined}>
+      <Link href={href} className={base}>
         {content}
       </Link>
     );
@@ -120,22 +119,13 @@ export function KpiCard({
 
   if (onClick) {
     return (
-      <button
-        type="button"
-        onClick={onClick}
-        className={clsx(base, 'w-full text-left')}
-        style={hero ? { color: '#0A0A0A' } : undefined}
-      >
+      <button type="button" onClick={onClick} className={clsx(base, 'w-full text-left')}>
         {content}
       </button>
     );
   }
 
-  return (
-    <div className={base} style={hero ? { color: '#0A0A0A' } : undefined}>
-      {content}
-    </div>
-  );
+  return <div className={base}>{content}</div>;
 }
 
 export function HeroKpiCard(props: Omit<KpiCardProps, 'hero'>) {

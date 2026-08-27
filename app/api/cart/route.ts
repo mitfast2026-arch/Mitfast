@@ -16,18 +16,77 @@ import {
 import { ensureGuestSessionId } from '@/lib/server/guest/session';
 import { getServerSession } from '@/lib/server/auth/get-session';
 
-async function resolveCartActor() {
+type CartActor =
+  | { kind: 'customer'; customerId: string }
+  | { kind: 'guest'; guestSessionId: string }
+  | { kind: 'forbidden'; role: string };
+
+async function resolveCartActor(): Promise<CartActor> {
   const session = await getServerSession();
-  if (session?.profile.role === 'customer') {
-    return { kind: 'customer' as const, customerId: session.profile.id };
+  const role = session?.profile.role;
+  if (role === 'admin' || role === 'supplier') {
+    return { kind: 'forbidden', role };
+  }
+  if (role === 'customer' && session?.profile?.id) {
+    return { kind: 'customer', customerId: session.profile.id };
   }
   const guestSessionId = await ensureGuestSessionId();
-  return { kind: 'guest' as const, guestSessionId };
+  return { kind: 'guest', guestSessionId };
 }
 
-export async function GET() {
+function forbiddenCartResponse(role: string) {
+  return NextResponse.json(
+    {
+      success: false,
+      error: {
+        message: 'Cart is not available for this account type',
+        code: 'FORBIDDEN',
+        role,
+      },
+    },
+    { status: 403 }
+  );
+}
+
+export async function GET(request: NextRequest) {
   try {
+    const countOnly = new URL(request.url).searchParams.get('countOnly') === '1';
     const actor = await resolveCartActor();
+    if (actor.kind === 'forbidden') return forbiddenCartResponse(actor.role);
+
+    if (countOnly) {
+      if (actor.kind === 'customer') {
+        const admin = (await import('@/lib/supabase/admin')).createAdminClient();
+        const { data: cart } = await admin
+          .from('carts')
+          .select('id')
+          .eq('customer_id', actor.customerId)
+          .maybeSingle();
+        let itemCount = 0;
+        if (cart?.id) {
+          const { count } = await admin
+            .from('cart_items')
+            .select('id', { count: 'exact', head: true })
+            .eq('cart_id', cart.id);
+          itemCount = count || 0;
+        }
+        return NextResponse.json({
+          success: true,
+          data: { itemCount, items: [], isGuest: false },
+        });
+      }
+      const guest = await getGuestCart(actor.guestSessionId);
+      if (!guest.success) return NextResponse.json(guest, { status: 400 });
+      return NextResponse.json({
+        success: true,
+        data: {
+          itemCount: guest.data.itemCount,
+          items: [],
+          isGuest: true,
+        },
+      });
+    }
+
     const result =
       actor.kind === 'customer'
         ? await getCustomerCart(actor.customerId)
@@ -60,6 +119,7 @@ export async function POST(request: NextRequest) {
     }
 
     const actor = await resolveCartActor();
+    if (actor.kind === 'forbidden') return forbiddenCartResponse(actor.role);
     const result =
       actor.kind === 'customer'
         ? await addToCart(actor.customerId, productId, quantity || 1)
@@ -89,6 +149,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const actor = await resolveCartActor();
+    if (actor.kind === 'forbidden') return forbiddenCartResponse(actor.role);
     const result =
       actor.kind === 'customer'
         ? await updateCartItemQuantity(actor.customerId, cartItemId, quantity)
@@ -114,6 +175,7 @@ export async function DELETE(request: NextRequest) {
     const cartItemId = searchParams.get('cartItemId');
     const clearAll = searchParams.get('clear');
     const actor = await resolveCartActor();
+    if (actor.kind === 'forbidden') return forbiddenCartResponse(actor.role);
 
     if (cartItemId) {
       const result =

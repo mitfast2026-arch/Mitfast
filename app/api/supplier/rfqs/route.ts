@@ -10,6 +10,7 @@ export async function GET(request: NextRequest) {
     const supplierId = auth.session.supplier!.id;
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search')?.toLowerCase();
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50', 10)));
     const adminClient = createAdminClient();
 
     const { data: supplierProducts } = await adminClient
@@ -27,7 +28,8 @@ export async function GET(request: NextRequest) {
       .from('rfq_items')
       .select('id, rfq_id, product_id, product_name_snapshot, original_quantity, final_quantity, created_at, product:products(sku), rfq:rfqs(id, rfq_number, status, rejection_reason, created_at, updated_at)')
       .in('product_id', productIds)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(limit);
 
     if (itemsError) throw itemsError;
 

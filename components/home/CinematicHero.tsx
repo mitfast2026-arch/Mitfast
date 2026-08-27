@@ -23,18 +23,18 @@ export default function CinematicHero() {
           {/* Eyebrow Tagline — Inter */}
           <div className="text-[11px] sm:text-xs font-medium tracking-[0.25em] text-[#2A3036] uppercase flex items-center gap-2">
             <span className="w-2 h-[2px] bg-[#111315]" />
-            <span>YOUR SUPPLY CHAIN. OUR COMMITMENT.</span>
+            <span>B2B SOURCING. FACTORY-DIRECT PRICING.</span>
           </div>
 
           {/* Headline — Instrument Sans bold */}
           <h1 className="font-heading text-4xl sm:text-6xl lg:text-[68px] font-bold tracking-tight text-[#111315] leading-[1.05]">
-            Global <span className="bg-gradient-to-r from-[#111315] via-[#374151] to-[#1F2429] bg-clip-text text-transparent">Logistics.</span><br />
-            Delivered Precisely.
+            B2B <span className="bg-gradient-to-r from-[#111315] via-[#374151] to-[#1F2429] bg-clip-text text-transparent">Procurement.</span><br />
+            Made Simple.
           </h1>
 
           {/* Subtitle — Inter regular */}
           <p className="text-sm sm:text-base text-[#1F2429] leading-relaxed max-w-md font-normal">
-            End-to-end logistics and supply chain solutions designed to move your business forward—safely, efficiently, and on time.
+            Buy precision components, request quotes, and place orders from verified suppliers — all in one B2B marketplace.
           </p>
 
           {/* CTA Buttons Row */}
@@ -59,7 +59,7 @@ export default function CinematicHero() {
         </div>
       </div>
 
-      {/* 3. Bottom Stats — Chivo Mono medium for numeric values only */}
+      {/* 3. Bottom Stats */}
       <div className="w-full max-w-[1700px] mx-auto px-6 sm:px-12 lg:px-20 relative z-20 pb-8 sm:pb-12 pt-2">
         <div className="flex flex-wrap items-center gap-6 sm:gap-10">
           
@@ -77,7 +77,7 @@ export default function CinematicHero() {
               500K+
             </div>
             <div className="text-xs sm:text-sm text-[#374151] font-normal">
-              Shipments Delivered
+              Orders Delivered
             </div>
           </div>
 
@@ -95,7 +95,7 @@ export default function CinematicHero() {
               99.6%
             </div>
             <div className="text-xs sm:text-sm text-[#374151] font-normal">
-              On-time dispatch
+              On-time delivery
             </div>
           </div>
 

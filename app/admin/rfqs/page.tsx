@@ -38,6 +38,7 @@ export default function AdminRfqsPage() {
   const [rfqs, setRfqs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedRfq, setSelectedRfq] = useState<any>(null);
   const [negotiatedPrices, setNegotiatedPrices] = useState<Record<string, number>>({});
@@ -50,7 +51,7 @@ export default function AdminRfqsPage() {
 
   const loadRfqs = useCallback(async (showLoading = true) => {
     const statusParam = statusFilter === 'all' ? '' : `&status=${statusFilter}`;
-    const url = `/api/rfqs?search=${encodeURIComponent(searchTerm)}&page=${page}&limit=${PORTAL_PAGE_LIMIT}${statusParam}`;
+    const url = `/api/rfqs?search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=${PORTAL_PAGE_LIMIT}${statusParam}`;
     const existing = peekPortalCache<{ rfqs: any[]; total: number }>(url);
     if (existing) {
       const list = existing.data.rfqs || [];
@@ -101,7 +102,16 @@ export default function AdminRfqsPage() {
     } finally {
       setLoading(false);
     }
-  }, [searchTerm, page, statusFilter]);
+  }, [debouncedSearch, page, statusFilter]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, statusFilter]);
 
   useEffect(() => {
     loadRfqs();
@@ -214,7 +224,7 @@ export default function AdminRfqsPage() {
   const contact = selectedRfq ? rfqContact(selectedRfq) : null;
 
   return (
-    <div className="space-y-6 w-full">
+    <div className="space-y-4 w-full min-w-0">
       <AdminPageHeader
         title="RFQs"
         description="Quotation requests — review products, negotiate pricing, accept, then convert to order."
@@ -287,7 +297,7 @@ export default function AdminRfqsPage() {
         }
         detail={
           selectedRfq ? (
-            <div className="saas-panel p-5 space-y-4">
+            <div className="saas-panel p-4 sm:p-5 space-y-4 min-w-0">
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b border-portal-border pb-3">
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">

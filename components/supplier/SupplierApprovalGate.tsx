@@ -109,7 +109,7 @@ export default function SupplierApprovalGate({
                 MITFAST SUPPLIER PORTAL
               </div>
               <div className="text-[11px] font-mono text-portal-muted">
-                Manufacturing Partner Verification
+                Supplier Verification
               </div>
             </div>
           </div>
@@ -181,7 +181,7 @@ export default function SupplierApprovalGate({
                   Application Requires Additional Information
                 </h1>
                 <p className="text-xs sm:text-sm text-portal-muted">
-                  The administrator has reviewed your submission and requested adjustments before activating your supplier portal.
+                  The administrator has reviewed your submission and requested adjustments before activating your supplier account.
                 </p>
               </div>
             </div>
@@ -261,7 +261,7 @@ export default function SupplierApprovalGate({
                 </div>
 
                 <div className="sm:col-span-2 space-y-1">
-                  <label className="text-xs font-mono text-portal-muted">Manufacturing Plant / Office Address *</label>
+                  <label className="text-xs font-mono text-portal-muted">Factory / Office Address *</label>
                   <input
                     type="text"
                     required
@@ -319,7 +319,7 @@ export default function SupplierApprovalGate({
             </div>
 
             <p className="text-xs text-portal-muted pt-2 border-t border-portal-border">
-              To restore portal access and reactivate published components, please contact your MITFAST vendor coordinator.
+              To restore account access and reactivate published products, please contact your MITFAST vendor coordinator.
             </p>
           </div>
         )}

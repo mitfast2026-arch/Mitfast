@@ -6,7 +6,13 @@ export async function GET() {
   try {
     const result = await getBusinessSettings();
     if (!result.success) return NextResponse.json(result, { status: 400 });
-    return NextResponse.json(result);
+    return NextResponse.json(result, {
+      headers: {
+        // Settings change only via admin panel — safe to cache publicly.
+        // stale-while-revalidate means users never wait for stale data.
+        'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
+      },
+    });
   } catch (error) {
     return NextResponse.json(
       { success: false, error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } },

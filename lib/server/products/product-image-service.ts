@@ -103,7 +103,7 @@ export async function addProductImage(
 
     const { count: existingCount, error: countError } = await adminClient
       .from('product_images')
-      .select('*', { count: 'exact', head: true })
+      .select('id', { count: 'exact', head: true })
       .eq('product_id', productId);
 
     if (countError) {

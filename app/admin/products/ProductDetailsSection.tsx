@@ -77,7 +77,7 @@ export default function ProductDetailsSection({
           value={description}
           onChange={(e) => onDescriptionChange(e.target.value)}
           className="saas-input text-xs resize-y"
-          placeholder="Describe the component…"
+          placeholder="Describe the product…"
         />
       </div>
 

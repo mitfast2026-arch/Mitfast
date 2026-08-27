@@ -1,10 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import {
-  getStorefrontProductDetail,
-  getProductForAdminDetail,
-  adminDirectUpdateProduct,
-  deleteProduct,
-} from '@/lib/server/products/product-service';
+import { getStorefrontProductDetail } from '@/lib/server/products/storefront-detail';
 import { requireAdmin } from '@/lib/server/auth/get-session';
 import { deferRevalidateProduct } from '@/lib/server/products/revalidate-product-paths';
 
@@ -19,6 +14,7 @@ export async function GET(
     if (mode === 'admin') {
       const auth = await requireAdmin();
       if (!auth.ok) return auth.response;
+      const { getProductForAdminDetail } = await import('@/lib/server/products/product-service');
       const result = await getProductForAdminDetail(productId);
       if (!result.success) {
         return NextResponse.json(result, { status: result.error.code === 'NOT_FOUND' ? 404 : 400 });
@@ -32,7 +28,11 @@ export async function GET(
       return NextResponse.json(result, { status: 404 });
     }
 
-    return NextResponse.json(result);
+    return NextResponse.json(result, {
+      headers: {
+        'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
+      },
+    });
   } catch (error) {
     return NextResponse.json(
       { success: false, error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } },
@@ -50,6 +50,7 @@ export async function PUT(
     if (!auth.ok) return auth.response;
 
     const body = await request.json();
+    const { adminDirectUpdateProduct } = await import('@/lib/server/products/product-service');
     const result = await adminDirectUpdateProduct({
       productId: params.id,
       ...body,
@@ -77,6 +78,7 @@ export async function DELETE(
     const auth = await requireAdmin();
     if (!auth.ok) return auth.response;
 
+    const { deleteProduct } = await import('@/lib/server/products/product-service');
     const result = await deleteProduct(params.id);
     if (!result.success) {
       const status =

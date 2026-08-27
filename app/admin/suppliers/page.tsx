@@ -897,7 +897,7 @@ function AdminSuppliersPageContent() {
             </div>
 
             <p className="text-xs text-portal-muted leading-relaxed">
-              Reactivates portal access. Choose whether to restore all archived products or select specific items.
+              Reactivates account access. Choose whether to restore all archived products or select specific items.
             </p>
 
             <div className="space-y-2 p-3 rounded-xl bg-portal-inset border border-portal-border">

@@ -52,7 +52,7 @@ export default function ShipBand() {
     <section
       ref={containerRef}
       className="relative w-full min-h-[70vh] md:min-h-[80vh] flex items-center justify-center overflow-hidden bg-slate-950 py-24 md:py-32"
-      aria-label="Maritime Logistics and Global Scale"
+      aria-label="B2B product sourcing and supplier network"
     >
       {/* Background Aerial Cargo Ship Photo with Parallax */}
       <div ref={imageRef} className="absolute inset-0 scale-110 will-change-transform">
@@ -76,15 +76,15 @@ export default function ShipBand() {
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/50 border border-white/20 backdrop-blur-md text-emerald-400 text-xs font-semibold tracking-widest uppercase">
           <span>CHAPTER 02</span>
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-          <span>MARITIME LOGISTICS ENGINE</span>
+          <span>B2B PRODUCT SOURCING</span>
         </div>
 
         <div className="space-y-4">
           <h2 className="font-display text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-white leading-[1.1] drop-shadow-lg">
-            Built for the supply chain.
+            Built for B2B buyers.
           </h2>
           <p className="text-base sm:text-xl text-slate-200 leading-relaxed max-w-2xl mx-auto font-light drop-shadow">
-            Connecting certified precision engineering capacity with mission-critical assembly lines worldwide.
+            Connect with verified suppliers for precision parts, RFQs, and bulk orders.
           </p>
         </div>
 

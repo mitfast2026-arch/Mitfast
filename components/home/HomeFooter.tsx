@@ -45,8 +45,8 @@ export default function HomeFooter() {
               <Globe className="w-5 h-5 text-[#0d9488]" />
             </div>
             <div>
-              <div className="text-xs font-bold text-[#090e17]">Global Sourcing</div>
-              <div className="text-[11px] text-[#718096]">Direct Factory Network</div>
+              <div className="text-xs font-bold text-[#090e17]">Verified Suppliers</div>
+              <div className="text-[11px] text-[#718096]">Factory-Direct Sourcing</div>
             </div>
           </div>
         </div>
@@ -65,7 +65,7 @@ export default function HomeFooter() {
             </div>
 
             <p className="text-sm text-[#3f4f68] leading-relaxed max-w-sm">
-              Enterprise digital procurement platform for precision engineering components, aerospace fasteners, CNC turned parts, and hydraulic hardware.
+              B2B marketplace for precision products, fasteners, CNC parts, and hydraulic hardware.
             </p>
 
             <div className="text-xs font-sans text-[#3f4f68] space-y-2 pt-2">
@@ -85,7 +85,7 @@ export default function HomeFooter() {
           {/* Sourcing & Products Column */}
           <div className="space-y-3">
             <h4 className="text-xs font-bold uppercase tracking-wider text-[#090e17] font-sans">
-              Catalog & Procurement
+              Catalog &amp; Orders
             </h4>
             <ul className="space-y-2.5 text-sm text-[#3f4f68]">
               <li>
@@ -95,7 +95,7 @@ export default function HomeFooter() {
               </li>
               <li>
                 <Link href="/categories" className="hover:text-[#090e17] transition-colors">
-                  Component Categories
+                  Product Categories
                 </Link>
               </li>
               <li>
@@ -105,7 +105,7 @@ export default function HomeFooter() {
               </li>
               <li>
                 <Link href="/cart" className="hover:text-[#090e17] transition-colors">
-                  RFQ Workspace
+                  RFQ Cart
                 </Link>
               </li>
             </ul>
@@ -124,7 +124,7 @@ export default function HomeFooter() {
               </li>
               <li>
                 <Link href="/auth?role=supplier&mode=signin" className="hover:text-[#090e17] transition-colors">
-                  Supplier Portal
+                  Supplier Sign In
                 </Link>
               </li>
               <li>
@@ -135,10 +135,10 @@ export default function HomeFooter() {
             </ul>
           </div>
 
-          {/* Enterprise Workspaces */}
+          {/* Account access */}
           <div className="space-y-3">
             <h4 className="text-xs font-bold uppercase tracking-wider text-[#090e17] font-sans">
-              Portals
+              Account
             </h4>
             <ul className="space-y-2.5 text-sm text-[#3f4f68]">
               <li>
@@ -148,12 +148,12 @@ export default function HomeFooter() {
               </li>
               <li>
                 <Link href="/customer/dashboard" className="hover:text-[#090e17] transition-colors">
-                  Buyer Workspace
+                  My Account
                 </Link>
               </li>
               <li>
                 <Link href="/admin/dashboard" className="hover:text-[#090e17] transition-colors">
-                  Admin Command Center
+                  Admin Dashboard
                 </Link>
               </li>
             </ul>
@@ -163,7 +163,7 @@ export default function HomeFooter() {
         {/* Bottom Bar */}
         <div className="pt-8 border-t border-slate-300 flex flex-col sm:flex-row items-center justify-between text-xs text-[#718096] gap-4">
           <div>
-            &copy; {new Date().getFullYear()} MITFAST Precision B2B Network. All rights reserved.
+            &copy; {new Date().getFullYear()} MITFAST B2B Marketplace. All rights reserved.
           </div>
           <div className="flex gap-6 font-medium text-[#3f4f68]">
             <span className="hover:text-[#090e17] cursor-pointer">Terms of Procurement</span>

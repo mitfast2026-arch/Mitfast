@@ -34,7 +34,8 @@ export async function apiRequest<T>(
   try {
     const res = await fetch(url, {
       ...init,
-      cache: 'no-store',
+      // No forced cache override — allow browser HTTP cache for GETs.
+      // Mutations (POST/PUT/DELETE) are naturally non-cacheable by the browser.
     });
     let json: ApiSuccess<T> | ApiFailure | null = null;
 

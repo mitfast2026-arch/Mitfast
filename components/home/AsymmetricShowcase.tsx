@@ -97,24 +97,23 @@ export default function AsymmetricShowcase() {
         <div className="text-center max-w-3xl mx-auto space-y-5 sm:space-y-6 lg:space-y-7">
           <div className="inline-flex items-center gap-2 text-xs font-bold tracking-[0.2em] text-[#111315] uppercase bg-[#FFFFFF] px-4 py-1.5 rounded-full border border-[#E2E4E8] shadow-2xs">
             <span className="w-1.5 h-1.5 rounded-full bg-[#111315]" />
-            <span>GLOBAL INTERMODAL FREIGHT & SUPPLY ARCHITECTURE</span>
+            <span>GLOBAL B2B SOURCING &amp; PROCUREMENT</span>
           </div>
 
           <h2 className="text-3xl sm:text-4xl lg:text-[54px] font-bold tracking-tight text-[#111315] leading-[1.1]">
-            Delivering Your Cargo
+            Source Products
             <br />
             <span className="inline-flex items-center justify-center gap-3 pt-1">
               <span className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-[#ECEEF0] border border-[#D7D9DC] inline-flex items-center justify-center text-[#111315] shadow-xs">
                 <Globe className="w-4 h-4 sm:w-5 sm:h-5 animate-[spin_24s_linear_infinite]" />
               </span>
-              <span className="text-[#111315]">Worldwide</span>
+              <span className="text-[#111315]">Nationwide</span>
             </span>
           </h2>
 
           <p className="text-sm sm:text-base text-[#4B5563] max-w-xl mx-auto leading-relaxed pt-1">
-            Certified intermodal distribution for precision CNC turned components,
-            custom aerospace fasteners, and high-pressure fluid assemblies delivered
-            directly to production lines globally.
+            Buy precision CNC parts, aerospace fasteners, and hydraulic products
+            from verified suppliers with transparent pricing and MOQ.
           </p>
         </div>
 
@@ -122,7 +121,7 @@ export default function AsymmetricShowcase() {
           <div className="relative z-20 w-full max-w-[620px] sm:max-w-[740px] lg:max-w-[840px] drop-shadow-[0_30px_50px_rgba(0,0,0,0.22)] transition-transform duration-500 hover:scale-[1.01]">
             <Image
               src="/images/container.png"
-              alt="Intermodal Containerized Freight Distribution"
+              alt="B2B product sourcing and procurement"
               width={780}
               height={460}
               className="w-full h-auto object-contain"

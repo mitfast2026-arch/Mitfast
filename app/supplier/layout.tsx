@@ -48,7 +48,7 @@ function SupplierLayoutInner({ children }: { children: React.ReactNode }) {
     return (
       <div className="flex h-screen saas-canvas-bg items-center justify-center">
         <PortalToaster />
-        <div className="text-sm font-mono text-portal-muted animate-pulse">Loading Supplier Portal…</div>
+        <div className="text-sm font-mono text-portal-muted animate-pulse">Loading supplier account…</div>
       </div>
     );
   }
@@ -79,8 +79,8 @@ function SupplierLayoutInner({ children }: { children: React.ReactNode }) {
   return (
     <PortalShell
       navItems={navItems}
-      brandTitle={supplier?.company_name || 'Supplier Portal'}
-      brandSubtitle={supplier?.contact_person || 'Manufacturing Partner'}
+      brandTitle={supplier?.company_name || 'Supplier Account'}
+      brandSubtitle={supplier?.contact_person || 'Supplier'}
       brandHref="/supplier/profile"
       avatarLabel={supplier?.company_name || 'S'}
       settingsHref="/supplier/settings"

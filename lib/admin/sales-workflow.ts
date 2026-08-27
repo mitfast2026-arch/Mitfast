@@ -6,7 +6,7 @@ export const ENQUIRY_TYPE_LABELS: Record<string, string> = {
   custom: 'Send enquiry',
   sourcing: 'Sourcing',
   procurement: 'Procurement',
-  dispatch: 'Dispatch',
+  dispatch: 'Delivery',
   cart: 'Cart RFQ',
   general: 'General',
 };

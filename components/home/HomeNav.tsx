@@ -232,7 +232,7 @@ export default function HomeNav() {
             {/* Auth options */}
             <div className="pt-3 border-t border-slate-200 dark:border-white/10 space-y-2.5">
               <span className="text-[11px] uppercase tracking-widest text-slate-500 dark:text-slate-400 px-2 font-semibold">
-                Account Portals
+                Sign In
               </span>
               <div className="grid grid-cols-2 gap-2.5">
                 <button
@@ -294,22 +294,22 @@ export default function HomeNav() {
                   {authModalRole === 'buyer' ? (
                     <>
                       <User className="w-3 h-3 text-teal-600 dark:text-teal-400" />
-                      <span>Buyer Portal Access</span>
+                      <span>Buyer Sign In</span>
                     </>
                   ) : (
                     <>
                       <Building2 className="w-3 h-3 text-blue-600 dark:text-blue-400" />
-                      <span>Supplier Portal</span>
+                      <span>Supplier Sign In</span>
                     </>
                   )}
                 </div>
                 <h3 className="text-xl font-display font-bold tracking-tight text-slate-900 dark:text-white">
-                  {authModalRole === 'buyer' ? 'Welcome, Industrial Buyer' : 'Welcome, Manufacturing Partner'}
+                  {authModalRole === 'buyer' ? 'Welcome, Buyer' : 'Welcome, Supplier'}
                 </h3>
                 <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
                   {authModalRole === 'buyer'
-                    ? 'Access procurement workspaces, locked RFQ quotes, and certified order tracking.'
-                    : 'Manage supplier bids, machine capacity schedules, and purchase orders.'}
+                    ? 'Manage enquiries, RFQs, orders, and your product cart.'
+                    : 'Manage products, enquiries, RFQs, and orders from your supplier account.'}
                 </p>
               </div>
 

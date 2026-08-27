@@ -37,7 +37,8 @@ const ServicePanel = forwardRef<HTMLDivElement, ServicePanelProps>(
               priority={service.number === '01'}
             />
           </div>
-          <div className="absolute inset-0 bg-gradient-to-t from-[#111315]/80 via-transparent to-[#111315]/30 pointer-events-none" />
+          <div className="absolute inset-0 bg-[#07090b]/45 pointer-events-none" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#07090b]/90 via-[#07090b]/25 to-[#07090b]/50 pointer-events-none" />
         </div>
 
         <div className="service-panel__content">

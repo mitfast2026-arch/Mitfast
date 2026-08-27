@@ -4,18 +4,14 @@ import React, { useState, useEffect } from "react";
 import {
   User,
   MapPin,
-  Mail,
-  Phone,
   Save,
   CheckCircle2,
   AlertCircle,
   ShieldCheck,
-  Building,
-  ArrowLeft,
 } from "lucide-react";
-import Link from "next/link";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { CustomerPageShell, CustomerPageSkeleton } from "@/components/customer/CustomerPageShell";
 
 export default function CustomerProfilePage() {
   const router = useRouter();
@@ -128,228 +124,168 @@ export default function CustomerProfilePage() {
   }
 
   if (loading) {
-    return (
-      <div className="container-custom py-12 space-y-6 max-w-4xl">
-        <div className="h-6 w-48 bg-[#E5E5E5] rounded animate-pulse" />
-        <div className="h-64 border border-[#E2E4E8] rounded p-6 space-y-4">
-          <div className="h-4 bg-[#ECEEF0] rounded w-1/3" />
-          <div className="h-10 bg-[#ECEEF0] rounded" />
-          <div className="h-10 bg-[#ECEEF0] rounded" />
-        </div>
-      </div>
-    );
+    return <CustomerPageSkeleton blocks={2} />;
   }
 
   return (
-    <div className="container-custom py-10 space-y-8 max-w-4xl">
-      {/* Header */}
-      <div className="space-y-1 ">
-        <div className="flex items-center gap-2 text-xs font-mono text-[#6B7280]">
-          <Link
-            href="/customer/dashboard"
-            className="hover:text-[#111315] flex items-center gap-1"
-          >
-            <ArrowLeft className="w-3 h-3" />
-            <span>Dashboard</span>
-          </Link>
-          <span>/</span>
-          <span className="text-[#111315] font-semibold">Procurement account profile</span>
-        </div>
-        <h1 className="type-page">Buyer Profile & Delivery Location</h1>
-        <p className="text-xs text-[#6B7280]">
-          Manage your organizational contact details and primary delivery
-          address for RFQs and shipments.
-        </p>
-      </div>
+    <CustomerPageShell
+      title="Profile"
+      subtitle="Manage your buyer credentials, contact details, and primary delivery address."
+    >
 
       {successMsg && (
-        <div className="p-3 rounded bg-[#F0FDF4] border border-[#BBF7D0] text-xs text-[#15803D] flex items-center gap-2">
+        <div className="p-4 rounded-xl bg-[#E8F5EC] border border-[#D9DCE1] text-sm font-medium text-[#15803D] flex items-center gap-2.5">
           <CheckCircle2 className="w-4 h-4 shrink-0" />
           <span>{successMsg}</span>
         </div>
       )}
 
       {errorMsg && (
-        <div className="p-3 rounded bg-[#FEF2F2] border border-[#FECACA] text-xs text-[#B91C1C] flex items-center gap-2">
+        <div className="p-4 rounded-xl bg-[#FDECEC] border border-[#D9DCE1] text-sm font-medium text-[#B91C1C] flex items-center gap-2.5">
           <AlertCircle className="w-4 h-4 shrink-0" />
           <span>{errorMsg}</span>
         </div>
       )}
 
-      <form onSubmit={handleSave} className="space-y-8">
-        {/* Section 1: Contact Information */}
-        <div className="saas-panel p-6 space-y-5">
-          <div className="flex items-center gap-2 border-b border-[#E2E4E8] pb-3">
-            <User className="w-4 h-4 text-[#111315]" />
-            <h2 className="text-sm font-bold text-[#111315] uppercase tracking-wider font-mono">
-              1. Contact Information
-            </h2>
+      <form onSubmit={handleSave} className="space-y-4">
+        <div className="buyer-surface-grad buyer-surface-grad--sky p-5 sm:p-6 space-y-5">
+          <div className="flex items-center gap-2 pb-3">
+            <User className="w-4 h-4 text-[#6B7280]" />
+            <h2 className="text-sm font-semibold text-[#111315]">Contact information</h2>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="sm:col-span-2 space-y-1">
-              <label className="saas-label">
-                Full Name *
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="e.g. Commander John Shepard"
-                  className="saas-input"
-                />
-              </div>
+            <div className="sm:col-span-2 space-y-1.5">
+              <label className="block text-xs font-medium text-[#6B7280] mb-1">Full name *</label>
+              <input
+                type="text"
+                required
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder="e.g. John Doe"
+                className="w-full px-4 py-2.5 text-sm rounded-xl border border-[#D9DCE1] bg-[#F7F7F8] text-[#111315] focus:outline-none focus:border-[#111315] !rounded-xl"
+              />
             </div>
 
-            <div className="space-y-1">
-              <label className="saas-label">
-                Email Address *
-              </label>
-              <div className="relative">
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@company.com"
-                  className="saas-input"
-                />
-              </div>
+            <div className="space-y-1.5">
+              <label className="block text-xs font-medium text-[#6B7280] mb-1">Email address *</label>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@company.com"
+                className="w-full px-4 py-2.5 text-sm rounded-xl border border-[#D9DCE1] bg-[#F7F7F8] text-[#111315] focus:outline-none focus:border-[#111315] !rounded-xl"
+              />
             </div>
 
-            <div className="space-y-1">
-              <label className="saas-label">
-                Phone / Mobile Number *
-              </label>
-              <div className="relative">
-                <input
-                  type="tel"
-                  required
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+91 98765 43210"
-                  className="saas-input"
-                />
-              </div>
+            <div className="space-y-1.5">
+              <label className="block text-xs font-medium text-[#6B7280] mb-1">Phone / mobile *</label>
+              <input
+                type="tel"
+                required
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+91 98765 43210"
+                className="w-full px-4 py-2.5 text-sm rounded-xl border border-[#D9DCE1] bg-[#F7F7F8] text-[#111315] focus:outline-none focus:border-[#111315] !rounded-xl"
+              />
             </div>
           </div>
         </div>
 
-        {/* Section 2: Delivery Address */}
-        <div className="saas-panel p-6 space-y-5">
-          <div className="flex items-center gap-2 border-b border-[#E2E4E8] pb-3">
-            <MapPin className="w-4 h-4 text-[#111315]" />
-            <h2 className="text-sm font-bold text-[#111315] uppercase tracking-wider font-mono">
-              2. Primary Delivery Address
-            </h2>
+        <div className="buyer-flush px-0.5 space-y-5">
+          <div className="flex items-center gap-2">
+            <MapPin className="w-4 h-4 text-[#6B7280]" />
+            <h2 className="text-sm font-semibold text-[#111315]">Primary delivery address</h2>
           </div>
 
           <div className="space-y-4">
-            <div className="space-y-1">
-              <label className="saas-label">
-                Address Line 1 (Street / Industrial Area) *
-              </label>
+            <div className="space-y-1.5">
+              <label className="block text-xs font-medium text-[#6B7280] mb-1">Address line 1 *</label>
               <input
                 type="text"
                 required
                 value={addressLine1}
                 onChange={(e) => setAddressLine1(e.target.value)}
-                placeholder="e.g. Plot 42, Devanahalli Aerospace SEZ"
-                className="saas-input"
+                placeholder="e.g. Plot 42, Industrial Zone"
+                className="w-full px-4 py-2.5 text-sm rounded-xl border border-[#D9DCE1] bg-[#F7F7F8] text-[#111315] focus:outline-none focus:border-[#111315] !rounded-xl"
               />
             </div>
 
-            <div className="space-y-1">
-              <label className="saas-label">
-                Address Line 2 (Building / Bay / Suite)
-              </label>
+            <div className="space-y-1.5">
+              <label className="block text-xs font-medium text-[#6B7280] mb-1">Address line 2</label>
               <input
                 type="text"
                 value={addressLine2}
                 onChange={(e) => setAddressLine2(e.target.value)}
-                placeholder="e.g. Hangar 4, Material Inward Gate"
-                className="saas-input"
+                placeholder="e.g. Building / Gate No."
+                className="w-full px-4 py-2.5 text-sm rounded-xl border border-[#D9DCE1] bg-[#F7F7F8] text-[#111315] focus:outline-none focus:border-[#111315] !rounded-xl"
               />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="space-y-1">
-                <label className="saas-label">
-                  City *
-                </label>
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium text-[#6B7280] mb-1">City *</label>
                 <input
                   type="text"
                   required
                   value={city}
                   onChange={(e) => setCity(e.target.value)}
                   placeholder="e.g. Bengaluru"
-                  className="saas-input"
+                  className="w-full px-4 py-2.5 text-sm rounded-xl border border-[#D9DCE1] bg-[#F7F7F8] text-[#111315] focus:outline-none focus:border-[#111315] !rounded-xl"
                 />
               </div>
 
-              <div className="space-y-1">
-                <label className="saas-label">
-                  State *
-                </label>
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium text-[#6B7280] mb-1">State *</label>
                 <input
                   type="text"
                   required
                   value={stateName}
                   onChange={(e) => setStateName(e.target.value)}
                   placeholder="e.g. Karnataka"
-                  className="saas-input"
+                  className="w-full px-4 py-2.5 text-sm rounded-xl border border-[#D9DCE1] bg-[#F7F7F8] text-[#111315] focus:outline-none focus:border-[#111315] !rounded-xl"
                 />
               </div>
 
-              <div className="space-y-1">
-                <label className="saas-label">
-                  Postal Code (PIN) *
-                </label>
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium text-[#6B7280] mb-1">PIN code *</label>
                 <input
                   type="text"
                   required
                   value={postalCode}
                   onChange={(e) => setPostalCode(e.target.value)}
                   placeholder="e.g. 562110"
-                  className="saas-input"
+                  className="w-full px-4 py-2.5 text-sm rounded-xl border border-[#D9DCE1] bg-[#F7F7F8] text-[#111315] focus:outline-none focus:border-[#111315] !rounded-xl"
                 />
               </div>
             </div>
 
-            <div className="space-y-1">
-              <label className="saas-label">
-                Country
-              </label>
+            <div className="space-y-1.5">
+              <label className="block text-xs font-medium text-[#6B7280] mb-1">Country</label>
               <input
                 type="text"
                 value={country}
                 onChange={(e) => setCountry(e.target.value)}
                 placeholder="India"
-                className="saas-input"
+                className="w-full px-4 py-2.5 text-sm rounded-xl border border-[#D9DCE1] bg-[#F7F7F8] text-[#111315] focus:outline-none focus:border-[#111315] !rounded-xl"
               />
             </div>
           </div>
         </div>
 
-        {/* Action Button */}
-        <div className="flex items-center justify-between pt-2">
-          <div className="flex items-center gap-1.5 text-xs text-[#6B7280] font-mono">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1">
+          <div className="flex items-center gap-1.5 text-xs text-[#6B7280]">
             <ShieldCheck className="w-4 h-4 text-[#15803D]" />
-            <span>Delivery details are attached to future RFQ submissions</span>
+            <span>Delivery details are used automatically on future orders.</span>
           </div>
 
-          <button
-            type="submit"
-            disabled={saving}
-            className="saas-btn-primary gap-2 disabled:opacity-50"
-          >
-            <Save className="w-3.5 h-3.5" />
-            <span>{saving ? "Saving Changes..." : "Save Profile Details"}</span>
+          <button type="submit" disabled={saving} className="buyer-cta">
+            <Save className="w-4 h-4" />
+            <span>{saving ? 'Saving…' : 'Save profile'}</span>
           </button>
         </div>
       </form>
-    </div>
+    </CustomerPageShell>
   );
 }

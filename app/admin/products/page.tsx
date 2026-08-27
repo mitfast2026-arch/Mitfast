@@ -27,6 +27,7 @@ function AdminProductsPageContent() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [categories, setCategories] = useState<any[]>([]);
@@ -56,7 +57,7 @@ function AdminProductsPageContent() {
   }
 
   const loadProducts = useCallback(async (showLoading = true) => {
-    const url = `/api/products?mode=admin&search=${encodeURIComponent(searchTerm)}&page=${page}&limit=${PORTAL_PAGE_LIMIT}&sort=newest`;
+    const url = `/api/products?mode=admin&search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=${PORTAL_PAGE_LIMIT}&sort=newest`;
     const existing = peekPortalCache<{ products: AdminProduct[]; total: number }>(url);
     if (existing) {
       setProducts(existing.data.products || []);
@@ -83,7 +84,7 @@ function AdminProductsPageContent() {
     } finally {
       setLoading(false);
     }
-  }, [searchTerm, page]);
+  }, [debouncedSearch, page]);
 
   useEffect(() => {
     const q = searchParams.get('search');
@@ -92,6 +93,15 @@ function AdminProductsPageContent() {
       setPage(1);
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch]);
 
   useEffect(() => {
     loadLookups();
@@ -179,7 +189,13 @@ function AdminProductsPageContent() {
       key: mutationKey(productId, endpoint),
       optimistic: () => patchProduct(productId, { archive_status: nextStatus }),
       rollback: () => patchProduct(productId, { archive_status: currentStatus }),
-      onError: (msg) => setRowError(msg),
+      onSuccess: () => {
+        toast.success(nextStatus === 'active' ? 'Product restored' : 'Product archived');
+      },
+      onError: (msg) => {
+        setRowError(msg);
+        toast.error(msg);
+      },
     });
   }
 
@@ -197,15 +213,19 @@ function AdminProductsPageContent() {
       const res = await fetch(`/api/products/${deleteTarget.id}`, { method: 'DELETE' });
       const json = await res.json();
       if (!res.ok || !json.success) {
-        setDeleteError(json.error?.message || 'Failed to delete product');
+        const msg = json.error?.message || 'Failed to delete product';
+        setDeleteError(msg);
+        toast.error(msg);
         return;
       }
       setProducts((prev) => prev.filter((p) => p.id !== deleteTarget.id));
       setTotal((t) => Math.max(0, t - 1));
+      toast.success('Product deleted successfully');
       setDeleteTarget(null);
       if (panelProduct?.id === deleteTarget.id) closePanel();
     } catch {
       setDeleteError('Failed to delete product');
+      toast.error('Failed to delete product');
     } finally {
       setDeleting(false);
     }
@@ -219,8 +239,8 @@ function AdminProductsPageContent() {
   return (
     <div className="space-y-6 w-full">
       <AdminPageHeader
-        title="Component Catalog"
-        description="Manage precision engineering components, factory base pricing, and public catalog publication states."
+        title="Product Catalog"
+        description="Manage products, pricing, and catalog publication status."
         actions={
           <>
             <button type="button" onClick={openCreatePanel} className="saas-btn-primary gap-2">
@@ -251,7 +271,7 @@ function AdminProductsPageContent() {
           <Search className="saas-search-icon" />
           <input
             type="text"
-            placeholder="Search components by name or category..."
+            placeholder="Search products by name or category..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="saas-input w-full"
@@ -282,7 +302,7 @@ function AdminProductsPageContent() {
         </div>
       ) : products.length === 0 ? (
         <div className="saas-panel py-16 text-center text-portal-muted text-xs">
-          No components found matching your search query.
+          No products found matching your search query.
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">

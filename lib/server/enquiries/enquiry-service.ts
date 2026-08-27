@@ -1,5 +1,11 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createEnquirySchema, updateEnquiryStatusSchema, respondToEnquirySchema, updateEnquiryDetailsSchema } from '@/lib/validation/enquiry.schema';
+import {
+  allowedFrom,
+  ENQUIRY_TRANSITIONS,
+  transitionStatus,
+} from '@/lib/server/db/conditional-update';
+import { invalidateAdminCaches } from '@/lib/server/db/invalidate-caches';
 import type { ServerResult } from '@/lib/server/auth/get-session';
 import type { EnquiryStatus } from '@/types/database';
 import { generateTrackingToken } from '@/lib/server/tracking';
@@ -36,9 +42,9 @@ export async function createEnquiry(
       };
     }
 
-    const guestName = validated.data.name || validated.data.guestName || '';
-    const guestEmail = validated.data.email || validated.data.guestEmail || '';
-    const guestPhone = validated.data.phone || validated.data.guestPhone || '';
+    const guestName = validated.data.name.trim();
+    const guestEmail = validated.data.email.trim().toLowerCase();
+    const guestPhone = validated.data.phone.trim();
     const country = validated.data.country?.trim() || null;
     const companyName = validated.data.companyName?.trim() || null;
     const enquiryType =
@@ -162,18 +168,28 @@ export async function updateEnquiryStatus(formData: unknown): Promise<ServerResu
     const { enquiryId, status } = validated.data;
     const adminClient = createAdminClient();
 
-    const { error } = await adminClient
-      .from('enquiries')
-      .update({
-        status,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', enquiryId);
-
-    if (error) {
-      return { success: false, error: { message: error.message, code: 'DATABASE_ERROR' } };
+    const allowed = allowedFrom(ENQUIRY_TRANSITIONS, status);
+    if (allowed.length === 0) {
+      return { success: false, error: { message: 'Invalid enquiry status transition', code: 'INVALID_STATUS' } };
     }
 
+    const result = await transitionStatus(
+      adminClient,
+      'enquiries',
+      enquiryId,
+      'status',
+      status,
+      allowed
+    );
+
+    if (!result.ok) {
+      return {
+        success: false,
+        error: { message: 'Enquiry status cannot be changed from its current state', code: 'INVALID_STATUS' },
+      };
+    }
+
+    invalidateAdminCaches();
     return { success: true, data: { updated: true } };
   } catch (error) {
     console.error('[updateEnquiryStatus] Error:', error);
@@ -203,10 +219,16 @@ export async function deleteEnquiry(enquiryId: string): Promise<ServerResult<{ d
 /**
  * Customer retrieves their own list of enquiries.
  */
-export async function getCustomerEnquiries(customerId: string): Promise<ServerResult<{ enquiries: any[] }>> {
+export async function getCustomerEnquiries(
+  customerId: string,
+  options?: { limit?: number; offset?: number }
+): Promise<ServerResult<{ enquiries: any[]; total?: number }>> {
   try {
     const adminClient = createAdminClient();
-    const { data: enquiries, error } = await adminClient
+    const limit = Math.min(100, Math.max(1, options?.limit ?? 50));
+    const offset = Math.max(0, options?.offset ?? 0);
+
+    const { data: enquiries, count, error } = await adminClient
       .from('enquiries')
       .select(`
         id,
@@ -221,9 +243,10 @@ export async function getCustomerEnquiries(customerId: string): Promise<ServerRe
         attachment_url,
         attachment_path,
         product:products(id, name, selling_price)
-      `)
+      `, { count: 'exact' })
       .eq('customer_id', customerId)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
 
     if (error) {
       return { success: false, error: { message: error.message, code: 'DATABASE_ERROR' } };
@@ -231,7 +254,7 @@ export async function getCustomerEnquiries(customerId: string): Promise<ServerRe
 
     return {
       success: true,
-      data: { enquiries: await withSignedAttachments(enquiries || []) },
+      data: { enquiries: await withSignedAttachments(enquiries || []), total: count ?? undefined },
     };
   } catch (error) {
     console.error('[getCustomerEnquiries] Error:', error);

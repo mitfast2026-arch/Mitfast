@@ -104,9 +104,9 @@ export default function SupplierProductsPage() {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="saas-badge-gold">Factory Catalog</span>
-            <span className="type-meta text-portal-muted">Component Listings</span>
+            <span className="type-meta text-portal-muted">Product Listings</span>
           </div>
-          <h1 className="type-page">Component Catalog & Proposals</h1>
+          <h1 className="type-page">My Products</h1>
           <p className="text-xs sm:text-sm text-portal-muted mt-0.5">
             Manage listings, base pricing, and submit updates for admin approval.
           </p>
@@ -118,7 +118,7 @@ export default function SupplierProductsPage() {
             className="saas-btn-primary text-xs sm:text-sm py-2.5 px-5 flex items-center gap-2"
           >
             <Plus className="w-4 h-4" />
-            <span>Add Component</span>
+            <span>Add Product</span>
           </button>
           <button
             onClick={() => loadData()}
@@ -167,7 +167,7 @@ export default function SupplierProductsPage() {
             ) : products.length === 0 ? (
               <tr>
                 <td colSpan={7} className="py-16 text-center text-portal-muted text-sm">
-                  No components listed yet. Click &quot;Add Component&quot; to submit a new product for review.
+                  No products listed yet. Click &quot;Add Product&quot; to submit a new product for review.
                 </td>
               </tr>
             ) : (
@@ -247,7 +247,7 @@ export default function SupplierProductsPage() {
         onSuccess={() => {
           setSuccessMsg(
             panelMode === 'create-supplier'
-              ? 'Product submitted for QMS review.'
+              ? 'Product submitted for admin review.'
               : 'Product update request submitted for review.'
           );
           setErrorMsg('');

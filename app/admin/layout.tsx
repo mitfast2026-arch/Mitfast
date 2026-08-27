@@ -44,12 +44,12 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
     <PortalShell
       navItems={navItems}
       brandTitle="MITFAST Admin"
-      brandSubtitle="Operations Control"
+      brandSubtitle="Admin Panel"
       avatarLabel="M"
       settingsHref="/admin/settings"
       signOutHref="/auth?role=admin&mode=signin"
       onSignOut={handleSignOut}
-      searchPlaceholder="Search operations…"
+      searchPlaceholder="Search admin…"
     >
       {children}
     </PortalShell>

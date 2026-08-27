@@ -178,7 +178,7 @@ export default function AdminSupplierDetailPage() {
               </span>
             </div>
             <p className="type-subtitle mt-0.5">
-              Manufacturing Partner Profile • Registered on {new Date(supplier.created_at).toLocaleDateString()}
+              Supplier Profile • Registered on {new Date(supplier.created_at).toLocaleDateString()}
             </p>
           </div>
         </div>
@@ -356,7 +356,7 @@ export default function AdminSupplierDetailPage() {
             <table className="saas-table text-xs">
               <thead>
                 <tr>
-                  <th>Component</th>
+                  <th>Product</th>
                   <th>Category</th>
                   <th className="text-right">Factory base (₹)</th>
                   <th className="text-right">MOQ</th>
@@ -367,7 +367,7 @@ export default function AdminSupplierDetailPage() {
                 {products.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="py-12 text-center text-portal-muted text-xs">
-                      No components listed for this manufacturing partner.
+                      No products listed for this supplier.
                     </td>
                   </tr>
                 ) : (

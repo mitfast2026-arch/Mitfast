@@ -5,12 +5,15 @@ export const loginSchema = z.object({
   password: z.string().min(6, 'Password must be at least 6 characters'),
 });
 
-/** Buyer/customer identity after Google or email OTP (no password). */
-export const completeProfileSchema = z.object({
-  fullName: z.string().min(2, 'Full name is required'),
-  phone: z.string().min(7, 'Valid phone number is required'),
-  email: z.string().email('Invalid email address').optional(),
+/** Shared buyer contact fields — required for enquiries and RFQs. */
+export const requiredContactSchema = z.object({
+  fullName: z.string().trim().min(2, 'Name is required'),
+  email: z.string().trim().email('Valid email is required'),
+  phone: z.string().trim().min(7, 'Phone number is required'),
 });
+
+/** Buyer/customer identity after Google or email OTP (no password). */
+export const completeProfileSchema = requiredContactSchema;
 
 /** @deprecated Password signup removed for public buyers; kept for type compatibility. */
 export const customerRegisterSchema = z.object({

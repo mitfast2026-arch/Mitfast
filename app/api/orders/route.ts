@@ -21,7 +21,10 @@ export async function GET(request: NextRequest) {
           { status: 403 }
         );
       }
-      const result = await getCustomerOrders(customerId);
+      const page = parseInt(searchParams.get('page') || '1', 10);
+      const limit = parseInt(searchParams.get('limit') || '50', 10);
+      const offset = (Math.max(1, page) - 1) * limit;
+      const result = await getCustomerOrders(customerId, { limit, offset });
       if (!result.success) return NextResponse.json(result, { status: 400 });
       return NextResponse.json(result);
     }

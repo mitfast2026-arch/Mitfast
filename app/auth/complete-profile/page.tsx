@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AlertCircle, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
+import { mergeGuestStateOnce } from '@/lib/client/guest-merge';
 
 export default function CompleteProfilePage() {
   const [email, setEmail] = useState('');
@@ -69,7 +70,7 @@ export default function CompleteProfilePage() {
           }
 
           try {
-            await fetch('/api/guest/merge', { method: 'POST' });
+            await mergeGuestStateOnce();
           } catch {
             /* best-effort */
           }
@@ -124,7 +125,7 @@ export default function CompleteProfilePage() {
       }
 
       try {
-        await fetch('/api/guest/merge', { method: 'POST' });
+        await mergeGuestStateOnce();
       } catch {
         /* best-effort */
       }

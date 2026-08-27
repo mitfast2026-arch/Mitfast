@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { calculatePricing } from '@/lib/server/pricing/calculate-price';
+import { getBusinessSettings } from '@/lib/server/settings/settings-service';
 import {
   convertEnquiryToOrderSchema,
   convertRfqToOrderSchema,
@@ -12,12 +13,40 @@ import type { ServerResult } from '@/lib/server/auth/get-session';
 import type { OrderStatus, PaymentStatus } from '@/types/database';
 import { generateTrackingToken } from '@/lib/server/tracking';
 import { ensureCustomerFromGuest } from '@/lib/server/auth/ensure-customer-from-guest';
+import { mapRpcError } from '@/lib/server/db/rpc-errors';
+import {
+  allowedFrom,
+  ORDER_STATUS_TRANSITIONS,
+  PAYMENT_TRANSITIONS,
+  transitionStatus,
+} from '@/lib/server/db/conditional-update';
+import { withIdempotency } from '@/lib/server/db/idempotency';
+import { invalidateAdminCaches } from '@/lib/server/db/invalidate-caches';
+
+export async function getNextOrderNumber(adminClient: any): Promise<string> {
+  try {
+    const { data, error } = await adminClient.rpc('generate_order_number');
+    if (!error && data && typeof data === 'string') {
+      return data;
+    }
+  } catch {
+    // fallback to timestamp-based unique identifier
+  }
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+  const timeSuffix = Date.now().toString().slice(-4);
+  return `ORD-${dateStr}-${timeSuffix}${randomSuffix}`;
+}
 
 /**
  * Admin converts an accepted RFQ into a confirmed Order.
  * Snapshots all negotiated item details, delivery address, supplier references, and currency.
  */
-export async function convertRfqToOrder(formData: unknown): Promise<ServerResult<{ orderId: string; orderNumber: string; trackingToken: string }>> {
+export async function convertRfqToOrder(
+  formData: unknown,
+  idempotencyKey?: string | null
+): Promise<ServerResult<{ orderId: string; orderNumber: string; trackingToken: string }>> {
+  return withIdempotency('convert_rfq_to_order', idempotencyKey, async () => {
   try {
     const validated = convertRfqToOrderSchema.safeParse(formData);
     if (!validated.success) {
@@ -58,21 +87,16 @@ export async function convertRfqToOrder(formData: unknown): Promise<ServerResult
     if (rfq.status !== 'accepted') {
       return {
         success: false,
-        error: { message: 'RFQ must be accepted before converting to a production order', code: 'INVALID_STATUS' },
+        error: { message: 'RFQ must be accepted before converting to an order', code: 'INVALID_STATUS' },
       };
     }
 
-    // 2. Fetch business currency
-    const { data: settings } = await adminClient
-      .from('business_settings')
-      .select('currency')
-      .single();
-    const currencyCode = settings?.currency || 'INR';
+    // 2. Fetch business currency (cached)
+    const settingsRes = await getBusinessSettings();
+    const currencyCode = settingsRes.success && settingsRes.data ? settingsRes.data.currency : 'INR';
 
     // 3. Generate Order Number
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-    const orderNumber = `ORD-${dateStr}-${randomSuffix}`;
+    const orderNumber = await getNextOrderNumber(adminClient);
 
     // 4. Calculate items and totals
     let orderSubtotal = 0;
@@ -121,67 +145,41 @@ export async function convertRfqToOrder(formData: unknown): Promise<ServerResult
     orderSubtotal = Math.round(orderSubtotal * 100) / 100;
     orderTotal = Math.round(orderTotal * 100) / 100;
 
-    // 5. Create Order Header
     const trackingToken = generateTrackingToken();
-    const { data: order, error: orderError } = await adminClient
-      .from('orders')
-      .insert({
-        order_number: orderNumber,
-        customer_id: rfq.customer_id,
-        rfq_id: rfq.id,
-        status: 'accepted',
-        payment_status: 'payment_required',
-        delivery_address_snapshot: rfq.delivery_address_snapshot,
-        subtotal: orderSubtotal,
-        total: orderTotal,
-        tracking_token: trackingToken,
-      })
-      .select()
-      .single();
 
-    if (orderError || !order) {
+    const { data: rpcRows, error: rpcError } = await (adminClient as any).rpc(
+      'convert_rfq_to_order_atomic',
+      {
+        p_rfq_id: rfqId,
+        p_order_number: orderNumber,
+        p_tracking_token: trackingToken,
+        p_subtotal: orderSubtotal,
+        p_total: orderTotal,
+        p_order_items: orderItemRows,
+      }
+    );
+
+    if (rpcError) {
+      const mapped = mapRpcError(rpcError);
+      return { success: false, error: mapped };
+    }
+
+    const row = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+    if (!row?.order_id) {
       return {
         success: false,
-        error: { message: orderError?.message || 'Failed to create order', code: 'DATABASE_ERROR' },
+        error: { message: 'Failed to create order', code: 'DATABASE_ERROR' },
       };
     }
 
-    // 6. Insert Order Items
-    const rowsWithOrderId = orderItemRows.map(r => ({ ...r, order_id: order.id }));
-    const { error: itemsInsertError } = await adminClient.from('order_items').insert(rowsWithOrderId);
-
-    if (itemsInsertError) {
-      return {
-        success: false,
-        error: { message: 'Failed to record order items', code: 'DATABASE_ERROR' },
-      };
-    }
-
-    // 7. Update RFQ Status to 'converted_to_order'
-    await adminClient
-      .from('rfqs')
-      .update({
-        status: 'converted_to_order',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', rfqId);
-
-    if (rfq.enquiry_id) {
-      await adminClient
-        .from('enquiries')
-        .update({
-          status: 'converted_to_order',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', rfq.enquiry_id);
-    }
+    invalidateAdminCaches();
 
     return {
       success: true,
       data: {
-        orderId: order.id,
-        orderNumber,
-        trackingToken: order.tracking_token || trackingToken,
+        orderId: row.order_id,
+        orderNumber: row.order_number || orderNumber,
+        trackingToken: row.tracking_token || trackingToken,
       },
     };
   } catch (error) {
@@ -191,12 +189,17 @@ export async function convertRfqToOrder(formData: unknown): Promise<ServerResult
       error: { message: 'Unexpected error converting RFQ to order', code: 'INTERNAL_ERROR' },
     };
   }
+  });
 }
 
 /**
  * Admin converts an enquiry directly into an Order.
  */
-export async function convertEnquiryToOrder(formData: unknown): Promise<ServerResult<{ orderId: string; orderNumber: string; trackingToken: string }>> {
+export async function convertEnquiryToOrder(
+  formData: unknown,
+  idempotencyKey?: string | null
+): Promise<ServerResult<{ orderId: string; orderNumber: string; trackingToken: string }>> {
+  return withIdempotency('convert_enquiry_to_order', idempotencyKey, async () => {
   try {
     const validated = convertEnquiryToOrderSchema.safeParse(formData);
     if (!validated.success) {
@@ -246,11 +249,14 @@ export async function convertEnquiryToOrder(formData: unknown): Promise<ServerRe
       };
     }
 
-    const { data: product, error: prodError } = await adminClient
-      .from('products')
-      .select('*, supplier:suppliers(id, company_name)')
-      .eq('id', resolvedProductId)
-      .single();
+    const [{ data: product, error: prodError }, settingsRes] = await Promise.all([
+      adminClient
+        .from('products')
+        .select('*, supplier:suppliers(id, company_name)')
+        .eq('id', resolvedProductId)
+        .single(),
+      getBusinessSettings(),
+    ]);
 
     if (prodError || !product) {
       return { success: false, error: { message: 'Product not found', code: 'NOT_FOUND' } };
@@ -263,11 +269,7 @@ export async function convertEnquiryToOrder(formData: unknown): Promise<ServerRe
       };
     }
 
-    const { data: settings } = await adminClient
-      .from('business_settings')
-      .select('currency')
-      .single();
-    const currencyCode = settings?.currency || 'INR';
+    const currencyCode = settingsRes.success && settingsRes.data ? settingsRes.data.currency : 'INR';
 
     // Re-read price/GST from DB — never trust client price fields
     const linePricing = calculatePricing({
@@ -285,62 +287,53 @@ export async function convertEnquiryToOrder(formData: unknown): Promise<ServerRe
     const gstIncluded = product.gst_included ?? false;
     const discount = product.discount || 0;
 
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-    const orderNumber = `ORD-${dateStr}-${randomSuffix}`;
-
+    const orderNumber = await getNextOrderNumber(adminClient);
     const trackingToken = generateTrackingToken();
-    const { data: order, error: orderError } = await adminClient
-      .from('orders')
-      .insert({
-        order_number: orderNumber,
-        customer_id: customerId,
-        enquiry_id: enquiryId,
-        status: 'accepted',
-        payment_status: 'payment_required',
-        delivery_address_snapshot: deliveryAddress,
-        subtotal: linePricing.subtotal,
-        total: linePricing.total,
-        tracking_token: trackingToken,
-      })
-      .select()
-      .single();
 
-    if (orderError || !order) {
+    const { data: rpcRows, error: rpcError } = await (adminClient as any).rpc(
+      'convert_enquiry_to_order_atomic',
+      {
+        p_enquiry_id: enquiryId,
+        p_customer_id: customerId,
+        p_order_number: orderNumber,
+        p_tracking_token: trackingToken,
+        p_delivery_address: deliveryAddress,
+        p_subtotal: linePricing.subtotal,
+        p_total: linePricing.total,
+        p_product_id: product.id,
+        p_supplier_id: product.supplier_id,
+        p_product_name_snapshot: product.name,
+        p_supplier_name_snapshot: (product.supplier as any)?.company_name || 'Supplier',
+        p_quantity: quantity,
+        p_unit_price: unitPrice,
+        p_currency_code: currencyCode,
+        p_gst_rate: gstRate,
+        p_gst_included: gstIncluded,
+        p_discount: discount,
+        p_line_subtotal: linePricing.subtotal,
+        p_gst_amount: linePricing.total_gst_amount,
+        p_line_total: linePricing.total,
+      }
+    );
+
+    if (rpcError) {
+      const mapped = mapRpcError(rpcError);
+      return { success: false, error: mapped };
+    }
+
+    const row = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+    if (!row?.order_id) {
       return { success: false, error: { message: 'Failed to create order', code: 'DATABASE_ERROR' } };
     }
 
-    await adminClient.from('order_items').insert({
-      order_id: order.id,
-      product_id: product.id,
-      supplier_id: product.supplier_id,
-      product_name_snapshot: product.name,
-      supplier_name_snapshot: (product.supplier as any)?.company_name || 'Supplier',
-      quantity,
-      unit_price: unitPrice,
-      currency_code: currencyCode,
-      gst_rate: gstRate,
-      gst_included: gstIncluded,
-      discount,
-      subtotal: linePricing.subtotal,
-      gst_amount: linePricing.total_gst_amount,
-      total: linePricing.total,
-    });
-
-    await adminClient
-      .from('enquiries')
-      .update({
-        status: 'converted_to_order',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', enquiryId);
+    invalidateAdminCaches();
 
     return {
       success: true,
       data: {
-        orderId: order.id,
-        orderNumber,
-        trackingToken: order.tracking_token || trackingToken,
+        orderId: row.order_id,
+        orderNumber: row.order_number || orderNumber,
+        trackingToken: row.tracking_token || trackingToken,
       },
     };
   } catch (error) {
@@ -350,6 +343,7 @@ export async function convertEnquiryToOrder(formData: unknown): Promise<ServerRe
       error: { message: 'Unexpected error converting enquiry to order', code: 'INTERNAL_ERROR' },
     };
   }
+  });
 }
 
 /**
@@ -379,22 +373,28 @@ export async function createManualOrder(formData: unknown): Promise<ServerResult
       return { success: false, error: { message: 'Customer profile not found', code: 'NOT_FOUND' } };
     }
 
-    const { data: settings } = await adminClient
-      .from('business_settings')
-      .select('currency')
-      .single();
-    const currencyCode = settings?.currency || 'INR';
+    const settingsRes = await getBusinessSettings();
+    const currencyCode = settingsRes.success && settingsRes.data ? settingsRes.data.currency : 'INR';
 
     let orderSubtotal = 0;
     let orderTotal = 0;
     const itemRows: any[] = [];
 
+    // Batch fetch all required products in a single round trip
+    const productIds = Array.from(new Set(items.map(i => i.productId)));
+    const { data: products, error: productsError } = await adminClient
+      .from('products')
+      .select('id, name, supplier_id, moq, selling_price, discount, gst_rate, gst_included, supplier:suppliers(company_name)')
+      .in('id', productIds);
+
+    if (productsError || !products) {
+      return { success: false, error: { message: 'Failed to retrieve products for order', code: 'DATABASE_ERROR' } };
+    }
+
+    const productMap = new Map(products.map(p => [p.id, p]));
+
     for (const item of items) {
-      const { data: product } = await adminClient
-        .from('products')
-        .select('id, name, supplier_id, moq, selling_price, discount, gst_rate, gst_included, supplier:suppliers(company_name)')
-        .eq('id', item.productId)
-        .single();
+      const product = productMap.get(item.productId);
 
       if (!product) {
         return { success: false, error: { message: `Product ID ${item.productId} not found`, code: 'NOT_FOUND' } };
@@ -449,9 +449,7 @@ export async function createManualOrder(formData: unknown): Promise<ServerResult
     orderSubtotal = Math.round(orderSubtotal * 100) / 100;
     orderTotal = Math.round(orderTotal * 100) / 100;
 
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-    const orderNumber = `ORD-${dateStr}-${randomSuffix}`;
+    const orderNumber = await getNextOrderNumber(adminClient);
 
     const trackingToken = generateTrackingToken();
     const { data: order, error: orderError } = await adminClient
@@ -475,6 +473,8 @@ export async function createManualOrder(formData: unknown): Promise<ServerResult
 
     const rowsWithOrderId = itemRows.map(r => ({ ...r, order_id: order.id }));
     await adminClient.from('order_items').insert(rowsWithOrderId);
+
+    invalidateAdminCaches();
 
     return {
       success: true,
@@ -506,18 +506,28 @@ export async function updateOrderStatus(formData: unknown): Promise<ServerResult
     const { orderId, status } = validated.data;
     const adminClient = createAdminClient();
 
-    const { error } = await adminClient
-      .from('orders')
-      .update({
-        status,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', orderId);
-
-    if (error) {
-      return { success: false, error: { message: error.message, code: 'DATABASE_ERROR' } };
+    const allowed = allowedFrom(ORDER_STATUS_TRANSITIONS, status);
+    if (allowed.length === 0) {
+      return { success: false, error: { message: 'Invalid order status transition', code: 'INVALID_STATUS' } };
     }
 
+    const result = await transitionStatus(
+      adminClient,
+      'orders',
+      orderId,
+      'status',
+      status,
+      allowed
+    );
+
+    if (!result.ok) {
+      return {
+        success: false,
+        error: { message: 'Order status cannot be changed from its current state', code: 'INVALID_STATUS' },
+      };
+    }
+
+    invalidateAdminCaches();
     return { success: true, data: { updated: true } };
   } catch (error) {
     console.error('[updateOrderStatus] Error:', error);
@@ -541,18 +551,28 @@ export async function updatePaymentStatus(formData: unknown): Promise<ServerResu
     const { orderId, paymentStatus } = validated.data;
     const adminClient = createAdminClient();
 
-    const { error } = await adminClient
-      .from('orders')
-      .update({
-        payment_status: paymentStatus,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', orderId);
-
-    if (error) {
-      return { success: false, error: { message: error.message, code: 'DATABASE_ERROR' } };
+    const allowed = allowedFrom(PAYMENT_TRANSITIONS, paymentStatus);
+    if (allowed.length === 0) {
+      return { success: false, error: { message: 'Invalid payment status transition', code: 'INVALID_STATUS' } };
     }
 
+    const result = await transitionStatus(
+      adminClient,
+      'orders',
+      orderId,
+      'payment_status',
+      paymentStatus,
+      allowed
+    );
+
+    if (!result.ok) {
+      return {
+        success: false,
+        error: { message: 'Payment status cannot be changed from its current state', code: 'INVALID_STATUS' },
+      };
+    }
+
+    invalidateAdminCaches();
     return { success: true, data: { updated: true } };
   } catch (error) {
     console.error('[updatePaymentStatus] Error:', error);
@@ -592,14 +612,18 @@ export async function editOrder(formData: unknown): Promise<ServerResult<{ updat
     let orderSubtotal = 0;
     let orderTotal = 0;
 
-    for (const item of items) {
-      const { data: line } = await adminClient
-        .from('order_items')
-        .select('*')
-        .eq('id', item.orderItemId)
-        .eq('order_id', orderId)
-        .maybeSingle();
+    const itemIds = items.map(i => i.orderItemId);
+    const { data: lines } = await adminClient
+      .from('order_items')
+      .select('*')
+      .in('id', itemIds)
+      .eq('order_id', orderId);
 
+    const lineMap = new Map((lines || []).map(l => [l.id, l]));
+    const updatePromises: PromiseLike<any>[] = [];
+
+    for (const item of items) {
+      const line = lineMap.get(item.orderItemId);
       if (!line) continue;
 
       const priced = calculatePricing({
@@ -615,19 +639,25 @@ export async function editOrder(formData: unknown): Promise<ServerResult<{ updat
       orderSubtotal += priced.subtotal;
       orderTotal += priced.total;
 
-      await adminClient
-        .from('order_items')
-        .update({
-          quantity: item.quantity,
-          unit_price: item.unitPrice,
-          gst_rate: item.gstRate,
-          gst_included: item.gstIncluded,
-          discount: item.discount,
-          subtotal: priced.subtotal,
-          gst_amount: priced.total_gst_amount,
-          total: priced.total,
-        })
-        .eq('id', line.id);
+      updatePromises.push(
+        adminClient
+          .from('order_items')
+          .update({
+            quantity: item.quantity,
+            unit_price: item.unitPrice,
+            gst_rate: item.gstRate,
+            gst_included: item.gstIncluded,
+            discount: item.discount,
+            subtotal: priced.subtotal,
+            gst_amount: priced.total_gst_amount,
+            total: priced.total,
+          })
+          .eq('id', line.id)
+      );
+    }
+
+    if (updatePromises.length > 0) {
+      await Promise.all(updatePromises);
     }
 
     const header: Record<string, any> = {
@@ -650,11 +680,16 @@ export async function editOrder(formData: unknown): Promise<ServerResult<{ updat
  * Customer retrieves their orders.
  * Zero supplier references or supplier prices exposed (Defense-in-depth).
  */
-export async function getCustomerOrders(customerId: string): Promise<ServerResult<{ orders: any[] }>> {
+export async function getCustomerOrders(
+  customerId: string,
+  options?: { limit?: number; offset?: number }
+): Promise<ServerResult<{ orders: any[]; total?: number }>> {
   try {
     const adminClient = createAdminClient();
+    const limit = Math.min(100, Math.max(1, options?.limit ?? 50));
+    const offset = Math.max(0, options?.offset ?? 0);
 
-    const { data: orders, error } = await adminClient
+    const { data: orders, count, error } = await adminClient
       .from('orders')
       .select(`
         id,
@@ -679,9 +714,10 @@ export async function getCustomerOrders(customerId: string): Promise<ServerResul
           gst_amount,
           total
         )
-      `)
+      `, { count: 'exact' })
       .eq('customer_id', customerId)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
 
     if (error) {
       return { success: false, error: { message: error.message, code: 'DATABASE_ERROR' } };
@@ -689,7 +725,7 @@ export async function getCustomerOrders(customerId: string): Promise<ServerResul
 
     return {
       success: true,
-      data: { orders: orders || [] },
+      data: { orders: orders || [], total: count ?? undefined },
     };
   } catch (error) {
     console.error('[getCustomerOrders] Error:', error);

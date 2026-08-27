@@ -11,10 +11,14 @@ export async function POST(
     if (!auth.ok) return auth.response;
 
     const body = await request.json();
-    const result = await createRfqFromEnquiry({
-      enquiryId: params.id,
-      ...body,
-    });
+    const idempotencyKey = request.headers.get('Idempotency-Key');
+    const result = await createRfqFromEnquiry(
+      {
+        enquiryId: params.id,
+        ...body,
+      },
+      idempotencyKey
+    );
 
     if (!result.success) return NextResponse.json(result, { status: 400 });
     return NextResponse.json(result, { status: 201 });

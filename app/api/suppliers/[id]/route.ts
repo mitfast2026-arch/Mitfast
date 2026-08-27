@@ -1,7 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireAdmin } from '@/lib/server/auth/get-session';
-
+import {
+  allowedFrom,
+  SUPPLIER_TRANSITIONS,
+  transitionStatus,
+} from '@/lib/server/db/conditional-update';
+import { invalidateAdminCaches } from '@/lib/server/db/invalidate-caches';
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -13,12 +18,15 @@ export async function GET(
     const supabase = createAdminClient();
     const { id } = params;
 
-    const { data: supplier, error: supError } = await supabase
-      .from('suppliers')
-      .select('*')
-      .eq('id', id)
-      .single();
+    const [supplierResult, productsResult] = await Promise.all([
+      supabase.from('suppliers').select('*').eq('id', id).single(),
+      supabase
+        .from('products')
+        .select('*, category:categories(id, name)')
+        .eq('supplier_id', id),
+    ]);
 
+    const { data: supplier, error: supError } = supplierResult;
     if (supError || !supplier) {
       return NextResponse.json(
         { success: false, error: { message: 'Supplier not found' } },
@@ -26,10 +34,7 @@ export async function GET(
       );
     }
 
-    const { data: products } = await supabase
-      .from('products')
-      .select('*, category:categories(id, name)')
-      .eq('supplier_id', id);
+    const products = productsResult.data;
 
     return NextResponse.json({
       success: true,
@@ -67,7 +72,35 @@ export async function PUT(
     if (body.address !== undefined) updatePayload.address = body.address;
     if (body.country !== undefined) updatePayload.country = body.country;
     if (body.website !== undefined) updatePayload.website = body.website;
-    if (body.status !== undefined) updatePayload.status = body.status;
+    if (body.website !== undefined) updatePayload.website = body.website;
+
+    if (body.status !== undefined) {
+      const newStatus = body.status as string;
+      const allowed = allowedFrom(SUPPLIER_TRANSITIONS, newStatus);
+      if (allowed.length === 0) {
+        return NextResponse.json(
+          { success: false, error: { message: 'Invalid supplier status transition', code: 'INVALID_STATUS' } },
+          { status: 400 }
+        );
+      }
+      const tr = await transitionStatus(
+        supabase,
+        'suppliers',
+        id,
+        'status',
+        newStatus,
+        allowed,
+        newStatus === 'archived' ? { archived_at: new Date().toISOString() } : newStatus === 'active' ? { archived_at: null } : {}
+      );
+      if (!tr.ok) {
+        return NextResponse.json(
+          { success: false, error: { message: 'Supplier status cannot be changed from its current state', code: 'INVALID_STATUS' } },
+          { status: 409 }
+        );
+      }
+      invalidateAdminCaches();
+      return NextResponse.json({ success: true, data: { supplier: tr.row } });
+    }
 
     const { data: updated, error } = await supabase
       .from('suppliers')

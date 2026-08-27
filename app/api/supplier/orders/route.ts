@@ -10,13 +10,15 @@ export async function GET(request: NextRequest) {
     const supplierId = auth.session.supplier!.id;
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search')?.toLowerCase();
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50', 10)));
     const adminClient = createAdminClient();
 
     const { data: orderItems, error: itemsError } = await adminClient
       .from('order_items')
       .select('id, product_id, product_name_snapshot, quantity, created_at, order:orders(id, order_number, status, created_at, updated_at)')
       .eq('supplier_id', supplierId)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(limit);
 
     if (itemsError) throw itemsError;
 

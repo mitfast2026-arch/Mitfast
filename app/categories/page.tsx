@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import CategoryCard, { type CategoryCardData } from "@/components/categories/CategoryCard";
 import styles from "@/components/categories/categories.module.css";
 
@@ -35,8 +36,14 @@ export default function CategoriesPage() {
   return (
     <div className={styles.pageShell}>
       <div className={styles.decorative} aria-hidden="true">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/IMAGE/sourcing_development.jpg" alt="" />
+        <Image
+          src="/IMAGE/sourcing_development.jpg"
+          alt=""
+          fill
+          sizes="100vw"
+          className="object-cover"
+          priority={false}
+        />
       </div>
 
       <div className={styles.page}>
@@ -50,10 +57,10 @@ export default function CategoriesPage() {
           </nav>
 
           <h1 id="categories-heading" className={styles.title}>
-            Manufacturing Categories
+            Product Categories
           </h1>
           <p className={styles.description}>
-            Browse industrial component classifications and standards.
+            Browse product categories and industrial standards.
           </p>
         </section>
 

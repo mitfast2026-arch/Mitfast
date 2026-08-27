@@ -19,10 +19,10 @@ export interface ServiceShowcaseItem {
 export const SERVICE_SHOWCASE_HEADLINE = {
   eyebrow: 'OUR SERVICES',
   title: 'Industrial Precision.',
-  titleAccent: 'Global Velocity.',
-  titleLine2: 'Engineered For Scale.',
+  titleAccent: 'Factory Direct.',
+  titleLine2: 'Built For Buyers.',
   subtitle:
-    'Direct access to AS9100D and ISO 9001 certified manufacturing floors. From custom 5-axis CNC machining and titanium fasteners to end-to-end container dispatch, we eliminate procurement friction.',
+    'Direct access to AS9100D and ISO 9001 certified suppliers. From custom CNC machining and titanium fasteners to bulk orders, we simplify B2B procurement.',
 };
 
 export const serviceShowcaseItems: ServiceShowcaseItem[] = [
@@ -48,10 +48,10 @@ export const serviceShowcaseItems: ServiceShowcaseItem[] = [
     tag: 'OFF-CATALOG PROCUREMENT',
     title: 'Procurement Service',
     subtitle: 'Automated RFQ & Cert Tracking',
-    category: 'B2B Enterprise',
+    category: 'B2B Marketplace',
     badge: 'AS9100D Traceable',
     description:
-      'Looking for a specialized component or raw material specification not listed in our catalog? We source accredited suppliers and negotiate factory-direct terms.',
+      'Looking for a specialized product or material not listed in our catalog? We source verified suppliers and negotiate factory-direct terms.',
     ctaText: 'Learn More',
     ctaHref: '/enquiry?type=procurement',
     image: '/IMAGE/procurement_service.jpg',
@@ -77,13 +77,13 @@ export const serviceShowcaseItems: ServiceShowcaseItem[] = [
   {
     id: 'quote-dispatch',
     number: '04',
-    tag: 'FREIGHT & LOGISTICS',
-    title: 'Quote for Dispatch',
-    subtitle: 'Container & Air Cargo Priority',
-    category: 'Global Freight',
+    tag: 'DELIVERY & SHIPPING',
+    title: 'Delivery Quote',
+    subtitle: 'Bulk & Export Orders',
+    category: 'Order Delivery',
     badge: '99.8% On-Time',
     description:
-      'Get transparent freight schedules, customs clearance guarantees, and door-to-port logistics quotes for scheduled batch deliveries and international container cargo.',
+      'Get delivery schedules and shipping quotes for confirmed bulk orders, export deliveries, and scheduled batches.',
     ctaText: 'Learn More',
     ctaHref: '/enquiry?type=dispatch',
     image: '/IMAGE/quote_dispatch.jpg',

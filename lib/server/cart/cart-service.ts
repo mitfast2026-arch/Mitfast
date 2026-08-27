@@ -54,9 +54,18 @@ export async function getCustomerCart(customerId: string): Promise<ServerResult<
         .single();
 
       if (createError || !newCart) {
-        return { success: false, error: { message: 'Failed to initialize RFQ workspace', code: 'DATABASE_ERROR' } };
+        const { data: retryCart } = await adminClient
+          .from('carts')
+          .select('id')
+          .eq('customer_id', customerId)
+          .maybeSingle();
+        if (!retryCart) {
+          return { success: false, error: { message: 'Failed to load cart', code: 'DATABASE_ERROR' } };
+        }
+        cart = retryCart;
+      } else {
+        cart = newCart;
       }
-      cart = newCart;
     }
 
     // 2. Fetch cart items with product and images
@@ -85,6 +94,9 @@ export async function getCustomerCart(customerId: string): Promise<ServerResult<
         )
       `)
       .eq('cart_id', cart.id)
+      .order('is_primary', { ascending: false, foreignTable: 'product_images' })
+      .order('sort_order', { ascending: true, foreignTable: 'product_images' })
+      .limit(1, { foreignTable: 'product_images' })
       .order('added_at', { ascending: false });
 
     if (itemsError) {
@@ -158,7 +170,7 @@ export async function getCustomerCart(customerId: string): Promise<ServerResult<
     };
   } catch (error) {
     console.error('[getCustomerCart] Error:', error);
-    return { success: false, error: { message: 'Failed to retrieve RFQ workspace', code: 'INTERNAL_ERROR' } };
+    return { success: false, error: { message: 'Failed to load cart', code: 'INTERNAL_ERROR' } };
   }
 }
 
@@ -205,46 +217,32 @@ export async function addToCart(
 
     const cartId = cartRes.data.cartId;
 
-    // Check existing item
-    const { data: existingItem } = await adminClient
-      .from('cart_items')
-      .select('id, quantity')
-      .eq('cart_id', cartId)
-      .eq('product_id', productId)
-      .maybeSingle();
+    const { data: newQty, error: rpcError } = await (adminClient as any).rpc(
+      'increment_cart_item_quantity',
+      {
+        p_cart_id: cartId,
+        p_product_id: productId,
+        p_delta: quantity,
+      }
+    );
 
-    if (existingItem) {
-      const nextQty = existingItem.quantity + quantity;
-      if (nextQty < (product.moq || 1)) {
-        return { success: false, error: { message: `Minimum order quantity is ${product.moq}`, code: 'BELOW_MOQ' } };
-      }
-      const unit = Math.max(0, (product.selling_price || 0) - (product.discount || 0));
-      if (product.min_order_value && unit * nextQty < Number(product.min_order_value)) {
-        return { success: false, error: { message: `Minimum order value for this product is ₹${Number(product.min_order_value).toLocaleString('en-IN')}`, code: 'BELOW_MIN_ORDER_VALUE' } };
-      }
-      await adminClient
-        .from('cart_items')
-        .update({ quantity: nextQty })
-        .eq('id', existingItem.id);
-    } else {
-      if (quantity < (product.moq || 1)) {
-        return { success: false, error: { message: `Minimum order quantity is ${product.moq}`, code: 'BELOW_MOQ' } };
-      }
-      const unit = Math.max(0, (product.selling_price || 0) - (product.discount || 0));
-      if (product.min_order_value && unit * quantity < Number(product.min_order_value)) {
-        return { success: false, error: { message: `Minimum order value for this product is ₹${Number(product.min_order_value).toLocaleString('en-IN')}`, code: 'BELOW_MIN_ORDER_VALUE' } };
-      }
-      await adminClient.from('cart_items').insert({
-        cart_id: cartId,
-        product_id: productId,
-        quantity,
-      });
+    if (rpcError) {
+      return { success: false, error: { message: rpcError.message, code: 'DATABASE_ERROR' } };
+    }
+
+    const nextQty = Number(newQty);
+    if (nextQty < (product.moq || 1)) {
+      return { success: false, error: { message: `Minimum order quantity is ${product.moq}`, code: 'BELOW_MOQ' } };
+    }
+    const unit = Math.max(0, (product.selling_price || 0) - (product.discount || 0));
+    if (product.min_order_value && unit * nextQty < Number(product.min_order_value)) {
+      return { success: false, error: { message: `Minimum order value for this product is ₹${Number(product.min_order_value).toLocaleString('en-IN')}`, code: 'BELOW_MIN_ORDER_VALUE' } };
     }
 
     return { success: true, data: { added: true } };
   } catch (error) {
     console.error('[addToCart] Error:', error);
-    return { success: false, error: { message: 'Failed to add line item to RFQ workspace', code: 'INTERNAL_ERROR' } };
+    return { success: false, error: { message: 'Failed to add product to cart', code: 'INTERNAL_ERROR' } };
   }
 }
 

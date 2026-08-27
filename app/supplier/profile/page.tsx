@@ -87,7 +87,7 @@ export default function SupplierProfilePage() {
         setErrorMsg(json.error?.message || 'Failed to update supplier profile.');
       } else {
         setSupplier(json.data.supplier);
-        setSuccessMsg(isResubmit ? 'Profile updated and resubmitted for QMS review.' : 'Profile updated successfully.');
+        setSuccessMsg(isResubmit ? 'Profile updated and resubmitted for admin review.' : 'Profile updated successfully.');
         setTimeout(() => setSuccessMsg(''), 4000);
       }
     } catch (err: any) {
@@ -166,7 +166,7 @@ export default function SupplierProfilePage() {
             </div>
             <div>
               <div className="text-xs font-medium text-portal-text">
-                QMS Account Status: <span className="uppercase text-portal-text">{supplier?.status}</span>
+                Account Status: <span className="uppercase text-portal-text">{supplier?.status}</span>
               </div>
               <div className="text-[11px] text-portal-muted">
                 Registered on {new Date(supplier?.created_at).toLocaleDateString()} • Partner ID: <span className="type-id">{supplier?.id?.slice(0, 8)}</span>
@@ -263,7 +263,7 @@ export default function SupplierProfilePage() {
           </div>
 
           <div className="space-y-1">
-            <label className="saas-label">Manufacturing Facility Address</label>
+            <label className="saas-label">Factory / Office Address</label>
             <textarea 
               rows={3}
               placeholder="Plot/Factory No, Industrial Estate, City, State, PIN"

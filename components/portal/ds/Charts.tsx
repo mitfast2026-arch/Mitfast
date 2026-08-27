@@ -85,8 +85,8 @@ export function PortalDonutChart({
   );
 
   return (
-    <div className="flex flex-col sm:flex-row items-center justify-center gap-6 sm:gap-8">
-      <div className="relative shrink-0 w-[200px] h-[200px]">
+    <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-5 w-full min-w-0">
+      <div className="relative shrink-0 w-[168px] h-[168px]">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
@@ -95,8 +95,8 @@ export function PortalDonutChart({
               nameKey="name"
               cx="50%"
               cy="50%"
-              innerRadius={solid ? 0 : 62}
-              outerRadius={92}
+              innerRadius={solid ? 0 : 52}
+              outerRadius={78}
               paddingAngle={data.length > 1 ? 1.5 : 0}
               stroke={portalTokens.card}
               strokeWidth={2}

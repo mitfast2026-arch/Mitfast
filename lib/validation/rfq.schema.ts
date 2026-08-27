@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { requiredContactSchema } from './auth.schema';
 
 export const deliveryAddressInputSchema = z.object({
   address_line_1: z.string().min(2, 'Address Line 1 is required'),
@@ -11,7 +12,9 @@ export const deliveryAddressInputSchema = z.object({
 
 export const submitRfqSchema = z.object({
   customerMessage: z.string().optional(),
-  deliveryAddress: deliveryAddressInputSchema.optional(), // if omitted, uses customer's stored address
+  deliveryAddress: deliveryAddressInputSchema.optional(),
+  /** Optional — updates buyer profile before RFQ when provided */
+  contact: requiredContactSchema.optional(),
 });
 
 export const negotiateRfqItemSchema = z.object({

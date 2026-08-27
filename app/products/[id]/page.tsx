@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import {
   AlertCircle,
   ArrowRight,
@@ -22,6 +22,7 @@ import {
   Weight,
   Zap,
 } from "lucide-react";
+import { toast } from "sonner";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { RemoteImage } from "@/components/ui/RemoteImage";
 import { CountryFlag } from "@/components/ui/CountryFlag";
@@ -137,7 +138,6 @@ function specIcon(name: string) {
 
 export default function ProductDetailPage() {
   const params = useParams();
-  const router = useRouter();
   const productId = params.id as string;
 
   const [product, setProduct] = useState<Product | null>(null);
@@ -152,12 +152,23 @@ export default function ProductDetailPage() {
   const [relatedTab, setRelatedTab] = useState<"recommended" | "recent">("recommended");
   const [recommended, setRecommended] = useState<RelatedProduct[]>([]);
   const [recentlyViewed, setRecentlyViewed] = useState<RecentItem[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const thumbsRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    async function loadProduct() {
-      try {
-        const res = await fetch(`/api/products/${productId}`);
+  const loadProduct = useCallback(async () => {
+    setLoadError(null);
+    setLoading(true);
+
+    // Start product fetch + wishlist fetch IN PARALLEL — both are independent
+    const [productRes, wishlistRes] = await Promise.allSettled([
+      fetch(`/api/products/${productId}`),
+      fetch('/api/wishlist'),
+    ]);
+
+    try {
+      // ── Product ──────────────────────────────────────────────
+      if (productRes.status === 'fulfilled') {
+        const res = productRes.value;
         const json = await res.json();
         if (json.success && json.data.product) {
           const p = json.data.product as Product;
@@ -169,7 +180,7 @@ export default function ProductDetailPage() {
           const primary =
             sorted.find((img) => img.is_primary)?.image_url ||
             sorted[0]?.image_url ||
-            "";
+            '';
           setSelectedImage(primary);
 
           pushRecent({
@@ -180,77 +191,87 @@ export default function ProductDetailPage() {
             viewedAt: Date.now(),
           });
           setRecentlyViewed(readRecent().filter((r) => r.id !== p.id));
+
+          // Fire recommended AFTER we have the category (still fast — runs
+          // concurrently with wishlist parse below, not blocking UI)
+          void (async () => {
+            try {
+              const qs = new URLSearchParams({ limit: '8' });
+              if (p.category?.id) qs.set('categoryId', p.category.id);
+              const relRes = await fetch(`/api/products?${qs.toString()}`);
+              const relJson = await relRes.json();
+              if (relJson.success) {
+                const list = ((relJson.data?.products || []) as RelatedProduct[]).filter(
+                  (rp) => rp.id !== p.id,
+                );
+                setRecommended(list.slice(0, 8));
+              }
+            } catch {
+              setRecommended([]);
+            }
+          })();
+        } else if (res.status === 404 || json.error?.code === 'NOT_FOUND') {
+          setProduct(null);
+        } else {
+          setProduct(null);
+          setLoadError(json.error?.message || 'Unable to load this product right now.');
         }
-      } catch (err) {
-        console.error("Error fetching product:", err);
-      } finally {
-        setLoading(false);
+      } else {
+        setProduct(null);
+        setLoadError('Network error while loading this product. Please try again.');
       }
-    }
 
-    if (productId) loadProduct();
+      // ── Wishlist (resolved in parallel with product) ─────────
+      if (wishlistRes.status === 'fulfilled') {
+        try {
+          const json = await wishlistRes.value.json();
+          if (json.success) {
+            const ids = (json.data?.items || []).map(
+              (item: { productId: string }) => item.productId,
+            );
+            setWishlisted(ids.includes(productId));
+          }
+        } catch {
+          setWishlisted(false);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching product:', err);
+      setProduct(null);
+      setLoadError('Network error while loading this product. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   }, [productId]);
 
   useEffect(() => {
-    if (!product) return;
-    let cancelled = false;
-
-    async function loadRecommended() {
-      try {
-        const qs = new URLSearchParams({ limit: "8" });
-        if (product!.category?.id) qs.set("categoryId", product!.category.id);
-        const res = await fetch(`/api/products?${qs.toString()}`);
-        const json = await res.json();
-        if (cancelled || !json.success) return;
-        const list = ((json.data?.products || []) as RelatedProduct[]).filter(
-          (p) => p.id !== product!.id,
-        );
-        setRecommended(list.slice(0, 8));
-      } catch {
-        if (!cancelled) setRecommended([]);
-      }
-    }
-
-    loadRecommended();
-    return () => {
-      cancelled = true;
-    };
-  }, [product]);
-
-  useEffect(() => {
-    if (!productId) return;
-    let cancelled = false;
-
-    async function loadWishlistState() {
-      try {
-        const res = await fetch("/api/wishlist");
-        const json = await res.json();
-        if (cancelled || !json.success) return;
-        const ids = (json.data?.items || []).map(
-          (item: { productId: string }) => item.productId,
-        );
-        setWishlisted(ids.includes(productId));
-      } catch {
-        if (!cancelled) setWishlisted(false);
-      }
-    }
-
-    loadWishlistState();
-    return () => {
-      cancelled = true;
-    };
-  }, [productId]);
+    if (productId) void loadProduct();
+  }, [productId, loadProduct]);
 
   async function handleToggleWishlist() {
     if (!product) return;
+    const prevWishlisted = wishlisted;
+    // 1. Instant optimistic UI flip
+    setWishlisted(!prevWishlisted);
     setWishlistBusy(true);
+
+    if (!prevWishlisted) {
+      toast.success("Saved to your wishlist", { duration: 2000 });
+    } else {
+      toast.info("Removed from wishlist", { duration: 2000 });
+    }
+
     try {
-      if (wishlisted) {
+      if (prevWishlisted) {
         const res = await fetch(`/api/wishlist?productId=${product.id}`, {
           method: "DELETE",
         });
         const json = await res.json();
-        if (res.ok && json.success) setWishlisted(false);
+        if (!res.ok || !json.success) {
+          // Rollback
+          setWishlisted(true);
+          toast.error(json.error?.message || "Failed to update wishlist");
+        }
       } else {
         const res = await fetch("/api/wishlist", {
           method: "POST",
@@ -258,39 +279,66 @@ export default function ProductDetailPage() {
           body: JSON.stringify({ productId: product.id }),
         });
         const json = await res.json();
-        if (res.ok && json.success) setWishlisted(true);
+        if (!res.ok || !json.success) {
+          // Rollback
+          setWishlisted(false);
+          toast.error(json.error?.message || "Failed to update wishlist");
+        }
       }
     } catch {
-      /* ignore */
+      setWishlisted(prevWishlisted);
+      toast.error("Network error updating wishlist");
     } finally {
       setWishlistBusy(false);
     }
   }
 
   async function handleAddToCart() {
+    if (!product) return;
     setCartError("");
     setAddingToCart(true);
+
+    // 1. Instant optimistic state on button & badge
+    setCartSuccess(true);
+    window.dispatchEvent(new CustomEvent("cart-updated", { detail: { delta: 1 } }));
+
+    // 2. Instant Toast feedback
+    toast.success(`Added ${quantity} pcs to RFQ Cart`, {
+      action: {
+        label: "View Cart",
+        onClick: () => {
+          window.location.href = "/cart";
+        },
+      },
+    });
+
+    setTimeout(() => setCartSuccess(false), 3000);
+
+    // 3. Background API request
     try {
       const res = await fetch("/api/cart", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          productId: product!.id,
+          productId: product.id,
           quantity,
         }),
       });
 
       const json = await res.json();
       if (!res.ok || !json.success) {
-        setCartError(json.error?.message || "Failed to add to cart");
-      } else {
-        setCartSuccess(true);
-        window.dispatchEvent(new Event("cart-updated"));
-        setTimeout(() => setCartSuccess(false), 4000);
+        setCartSuccess(false);
+        window.dispatchEvent(new CustomEvent("cart-updated", { detail: { delta: -1 } }));
+        const errorMsg = json.error?.message || "Failed to add to cart";
+        setCartError(errorMsg);
+        toast.error(errorMsg);
       }
     } catch (err: unknown) {
+      setCartSuccess(false);
+      window.dispatchEvent(new CustomEvent("cart-updated", { detail: { delta: -1 } }));
       const message = err instanceof Error ? err.message : "Error updating cart";
       setCartError(message);
+      toast.error(message);
     } finally {
       setAddingToCart(false);
     }
@@ -329,12 +377,23 @@ export default function ProductDetailPage() {
       <div className="pdp-page">
         <div className="pdp-container pdp-empty">
           <AlertCircle className="w-10 h-10 text-[#6B7280] mx-auto" />
-          <h1>Component Not Found</h1>
+          <h1>{loadError ? 'Unable to Load Product' : 'Product Not Found'}</h1>
           <p>
-            The component you are looking for does not exist or is currently
-            archived.
+            {loadError ||
+              'The component you are looking for does not exist or is currently archived.'}
           </p>
-          <Link href="/products">Return to Catalog</Link>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            {loadError ? (
+              <button
+                type="button"
+                className="pdp-empty__secondary"
+                onClick={() => void loadProduct()}
+              >
+                Try again
+              </button>
+            ) : null}
+            <Link href="/products">Return to Catalog</Link>
+          </div>
         </div>
       </div>
     );
@@ -625,10 +684,10 @@ export default function ProductDetailPage() {
               <div className="pdp-alert pdp-alert--ok" role="status">
                 <span className="inline-flex items-center gap-1.5">
                   <Check className="w-4 h-4 shrink-0" />
-                  Added {quantity} to RFQ workspace
+                  Added {quantity} to RFQ cart
                 </span>
                 <Link href="/cart">
-                  View RFQ workspace <ArrowRight className="w-3 h-3" />
+                  View RFQ cart <ArrowRight className="w-3 h-3" />
                 </Link>
               </div>
             )}
@@ -637,14 +696,14 @@ export default function ProductDetailPage() {
               <li>
                 <Truck aria-hidden />
                 <span>
-                  <strong>Estimated dispatch</strong>
+                  <strong>Estimated delivery</strong>
                   3–5 working days
                 </span>
               </li>
               <li>
                 <Package aria-hidden />
                 <span>
-                  <strong>Freight & logistics</strong>
+                  <strong>Delivery &amp; shipping</strong>
                   Quoted at RFQ acceptance
                 </span>
               </li>
@@ -667,73 +726,6 @@ export default function ProductDetailPage() {
             </ul>
           </aside>
         </div>
-
-        {/* Recommended / Recently viewed */}
-        <section className="pdp-related" aria-label="More products">
-          <div className="pdp-related__tabs" role="tablist">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={relatedTab === "recommended"}
-              className={`pdp-related__tab ${
-                relatedTab === "recommended" ? "is-active" : ""
-              }`}
-              onClick={() => setRelatedTab("recommended")}
-            >
-              Related components
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={relatedTab === "recent"}
-              className={`pdp-related__tab ${
-                relatedTab === "recent" ? "is-active" : ""
-              }`}
-              onClick={() => setRelatedTab("recent")}
-            >
-              Recently viewed
-            </button>
-          </div>
-
-          {relatedItems.length === 0 ? (
-            <div className="pdp-related__empty">
-              {relatedTab === "recommended"
-                ? "No recommendations available yet. Browse the catalog for similar components."
-                : "No recently viewed products yet. Explore the catalog and come back here."}
-            </div>
-          ) : (
-            <div className="pdp-related__grid">
-              {relatedItems.map((item) => (
-                <Link
-                  key={item.id}
-                  href={`/products/${item.id}`}
-                  className="pdp-related-card"
-                >
-                  <div className="pdp-related-card__media">
-                    {item.image ? (
-                      <RemoteImage
-                        src={item.image}
-                        alt={item.name}
-                        sizes="(max-width: 700px) 50vw, 25vw"
-                        objectFit="contain"
-                      />
-                    ) : (
-                      <Package className="w-8 h-8 text-[#9ca3af] absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" />
-                    )}
-                  </div>
-                  <div className="pdp-related-card__body">
-                    <h3 className="pdp-related-card__name">{item.name}</h3>
-                    <div className="pdp-related-card__meta">
-                      <span className="pdp-related-card__price">
-                        ₹ {formatINR(item.price)}
-                      </span>
-                    </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </section>
 
         {/* Full specifications */}
         <section className="pdp-full" id="full-specs" aria-labelledby="full-specs-heading">
@@ -798,6 +790,80 @@ export default function ProductDetailPage() {
               ))}
             </tbody>
           </table>
+        </section>
+
+        {/* Recommendations — full width, below specs (Amazon / Flipkart flow) */}
+        <section className="pdp-related" aria-label="Product recommendations">
+          <div className="pdp-related__head">
+            <h2 className="pdp-related__title">
+              {relatedTab === "recommended"
+                ? "You may also like"
+                : "Recently viewed"}
+            </h2>
+            <div className="pdp-related__tabs" role="tablist" aria-label="Recommendation type">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={relatedTab === "recommended"}
+                className={`pdp-related__tab ${
+                  relatedTab === "recommended" ? "is-active" : ""
+                }`}
+                onClick={() => setRelatedTab("recommended")}
+              >
+                Similar products
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={relatedTab === "recent"}
+                className={`pdp-related__tab ${
+                  relatedTab === "recent" ? "is-active" : ""
+                }`}
+                onClick={() => setRelatedTab("recent")}
+              >
+                Recently viewed
+              </button>
+            </div>
+          </div>
+
+          {relatedItems.length === 0 ? (
+            <div className="pdp-related__empty">
+              {relatedTab === "recommended"
+                ? "No similar products yet. Browse the catalog to discover more components."
+                : "No recently viewed products. Explore the catalog and they will appear here."}
+            </div>
+          ) : (
+            <div className="pdp-related__track">
+              {relatedItems.map((item) => (
+                <Link
+                  key={item.id}
+                  href={`/products/${item.id}`}
+                  className="pdp-related-card"
+                >
+                  <div className="pdp-related-card__media">
+                    {item.image ? (
+                      <RemoteImage
+                        src={item.image}
+                        alt={item.name}
+                        sizes="200px"
+                        objectFit="contain"
+                      />
+                    ) : (
+                      <Package className="w-8 h-8 text-[#9ca3af] absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" />
+                    )}
+                  </div>
+                  <div className="pdp-related-card__body">
+                    <h3 className="pdp-related-card__name">{item.name}</h3>
+                    <div className="pdp-related-card__meta">
+                      <span className="pdp-related-card__price">
+                        ₹ {formatINR(item.price)}
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
         </section>
       </div>
     </div>

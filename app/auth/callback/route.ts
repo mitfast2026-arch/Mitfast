@@ -21,6 +21,13 @@ export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get('code');
   const next = searchParams.get('next');
+  const errorParam = searchParams.get('error_description') || searchParams.get('error');
+
+  if (errorParam) {
+    return NextResponse.redirect(
+      `${origin}/auth?mode=signin&error=${encodeURIComponent(errorParam)}`
+    );
+  }
 
   if (!code) {
     return NextResponse.redirect(`${origin}/auth?mode=signin&error=missing_code`);

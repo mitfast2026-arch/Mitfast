@@ -39,3 +39,22 @@ next-env.d.ts
 
 # Supabase CLI local state
 supabase/.temp/
+
+# Local QA / agent artifacts
+reference/
+references/
+IMAGE/
+scratch_*
+.tmp_*
+debug_*.js
+test_*.js
+audit_*.png
+verify_*.png
+cart_*_fixed.png
+*_fixed.png
+.gemini/
+.cursor/
+
+perf-baseline/
+perf-after/
+

@@ -8,7 +8,7 @@ export default function TermsPage() {
         <h1 className="type-page">Terms of use</h1>
         <p className="type-subtitle">
           These terms govern use of the MITFAST B2B procurement platform for industrial
-          fasteners and precision components.
+          fastener and precision product listings.
         </p>
       </div>
 
@@ -25,7 +25,7 @@ export default function TermsPage() {
           <h2 className="type-section text-[#111315]">2. Accounts</h2>
           <p>
             You are responsible for accurate registration details and for safeguarding login
-            credentials. Supplier accounts require admin approval before portal access.
+            credentials. Supplier accounts require admin approval before account access.
           </p>
         </section>
         <section className="space-y-2">

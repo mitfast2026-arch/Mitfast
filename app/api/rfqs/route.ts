@@ -21,7 +21,10 @@ export async function GET(request: NextRequest) {
           { status: 403 }
         );
       }
-      const result = await getCustomerRfqs(customerId);
+      const page = parseInt(searchParams.get('page') || '1', 10);
+      const limit = parseInt(searchParams.get('limit') || '50', 10);
+      const offset = (Math.max(1, page) - 1) * limit;
+      const result = await getCustomerRfqs(customerId, { limit, offset });
       if (!result.success) return NextResponse.json(result, { status: 400 });
       return NextResponse.json(result);
     }
@@ -53,7 +56,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { customerId: _ignored, ...rfqData } = body;
 
-    const result = await submitRfqFromCart(auth.session.profile.id, rfqData);
+    const idempotencyKey = request.headers.get('Idempotency-Key');
+    const result = await submitRfqFromCart(auth.session.profile.id, rfqData, idempotencyKey);
     if (!result.success) return NextResponse.json(result, { status: 400 });
     return NextResponse.json(result, { status: 201 });
   } catch (error) {

@@ -43,6 +43,8 @@ type PortalShellProps = {
   /** Optional controlled search — only wire where page already has search */
   searchValue?: string;
   onSearchChange?: (value: string) => void;
+  onSearchSubmit?: (value: string) => void;
+  notificationsHref?: string;
 };
 
 function isModifiedClick(e: React.MouseEvent) {
@@ -62,6 +64,8 @@ export default function PortalShell({
   searchPlaceholder = 'Search…',
   searchValue,
   onSearchChange,
+  onSearchSubmit,
+  notificationsHref,
 }: PortalShellProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -102,6 +106,7 @@ export default function PortalShell({
       pathname === item.href ||
       (item.href !== '/admin/dashboard' &&
         item.href !== '/supplier/dashboard' &&
+        item.href !== '/customer/dashboard' &&
         pathname.startsWith(item.href + '/'))
     );
   }
@@ -273,7 +278,13 @@ export default function PortalShell({
               {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
 
-            <div className="saas-search-field flex-1 max-w-md">
+            <form
+              className="saas-search-field flex-1 max-w-md"
+              onSubmit={(e) => {
+                e.preventDefault();
+                onSearchSubmit?.(search.trim());
+              }}
+            >
               <Search className="saas-search-icon" aria-hidden />
               <input
                 type="search"
@@ -283,7 +294,7 @@ export default function PortalShell({
                 onChange={(e) => setSearch(e.target.value)}
                 aria-label={searchPlaceholder}
               />
-            </div>
+            </form>
 
             <div className="ml-auto flex items-center gap-2 sm:gap-3">
               <span className="hidden sm:inline font-mono text-xs text-portal-muted whitespace-nowrap">
@@ -305,9 +316,22 @@ export default function PortalShell({
                   <Settings className="w-4 h-4" />
                 </button>
               )}
-              <button type="button" className="saas-btn-ghost" aria-label="Notifications">
-                <Bell className="w-4 h-4" />
-              </button>
+              {notificationsHref ? (
+                <Link
+                  href={notificationsHref}
+                  className="saas-btn-ghost"
+                  aria-label="Notifications"
+                  onClick={(e) => handleNavClick(e, notificationsHref)}
+                  onMouseEnter={() => handleNavIntent(notificationsHref)}
+                  onFocus={() => handleNavIntent(notificationsHref)}
+                >
+                  <Bell className="w-4 h-4" />
+                </Link>
+              ) : (
+                <button type="button" className="saas-btn-ghost" aria-label="Notifications">
+                  <Bell className="w-4 h-4" />
+                </button>
+              )}
               <div
                 className="h-9 w-9 rounded-full bg-portal-panel border border-portal-border flex items-center justify-center text-xs font-semibold text-portal-text"
                 aria-label="User avatar"
@@ -343,7 +367,7 @@ export default function PortalShell({
         <main className="relative flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden w-full">
           <div
             className={clsx(
-              'w-full px-4 sm:px-6 lg:px-8 py-4 sm:py-6',
+              'w-full max-w-full min-w-0 px-4 sm:px-6 lg:px-8 py-3 sm:py-4',
               showNavSkeleton && 'invisible pointer-events-none'
             )}
             aria-hidden={showNavSkeleton || undefined}
@@ -351,7 +375,7 @@ export default function PortalShell({
             {children}
           </div>
           {showNavSkeleton ? (
-            <div className="absolute inset-0 px-4 sm:px-6 lg:px-8 py-4 sm:py-6 overflow-y-auto bg-portal-canvas z-10">
+            <div className="absolute inset-0 px-4 sm:px-6 lg:px-8 py-3 sm:py-4 overflow-y-auto bg-portal-canvas z-10">
               <PortalRouteSkeleton />
             </div>
           ) : null}

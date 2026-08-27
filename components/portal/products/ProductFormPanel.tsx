@@ -57,7 +57,7 @@ function modeTitle(mode: ProductFormMode, product?: ProductFormProduct | null): 
     case 'create-admin':
       return 'Create Product';
     case 'create-supplier':
-      return 'Submit New Component';
+      return 'Add New Product';
     case 'edit-admin':
       return product?.name || 'Edit Product';
     case 'edit-supplier':

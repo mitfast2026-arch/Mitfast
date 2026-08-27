@@ -934,18 +934,19 @@
 /* ── Full specs section ─────────────────────────────────── */
 
 .pdp-full {
-  margin-top: 40px;
+  margin-top: 48px;
   background: var(--pdp-surface);
   border-radius: var(--pdp-radius);
   box-shadow: var(--pdp-shadow-md);
-  padding: 24px 28px;
+  padding: 28px 32px;
 }
 
 .pdp-full__title {
-  margin: 0 0 16px;
-  font-size: 16px;
+  margin: 0 0 20px;
+  font-size: 20px;
   font-weight: 700;
   color: var(--pdp-text);
+  letter-spacing: -0.02em;
 }
 
 .pdp-full__table {
@@ -974,84 +975,116 @@
   font-weight: 600;
 }
 
-/* ── Related / recent ───────────────────────────────────── */
+/* ── Related / recent (full-width, below specs) ─────────── */
 
 .pdp-related {
-  margin-top: 40px;
+  margin-top: 48px;
+  background: var(--pdp-surface);
+  border-radius: var(--pdp-radius);
+  box-shadow: var(--pdp-shadow-md);
+  padding: 28px 32px;
 }
 
-.pdp-related__tabs {
+.pdp-related__head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 18px;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.pdp-related__title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--pdp-text);
+  letter-spacing: -0.02em;
+}
+
+.pdp-related__tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--pdp-muted-bg);
 }
 
 .pdp-related__tab {
-  height: 36px;
-  padding: 0 14px;
+  height: 34px;
+  padding: 0 16px;
   border-radius: 999px;
   border: none;
   background: transparent;
   color: var(--pdp-muted);
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  white-space: nowrap;
 }
 
 .pdp-related__tab:hover {
   color: var(--pdp-text);
-  background: rgba(17, 19, 21, 0.04);
 }
 
 .pdp-related__tab.is-active {
-  background: #111315;
-  color: #fff;
+  background: var(--pdp-surface);
+  color: var(--pdp-text);
+  box-shadow: var(--pdp-shadow-sm);
 }
 
-.pdp-related__grid {
+.pdp-related__track {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: 16px;
 }
 
-@media (min-width: 700px) {
-  .pdp-related__grid {
+@media (min-width: 640px) {
+  .pdp-related__track {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
-@media (min-width: 1100px) {
-  .pdp-related__grid {
+@media (min-width: 900px) {
+  .pdp-related__track {
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 16px;
+    gap: 18px;
+  }
+}
+
+@media (min-width: 1200px) {
+  .pdp-related__track {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 }
 
 .pdp-related-card {
   display: flex;
   flex-direction: column;
-  background: var(--pdp-surface);
+  background: var(--pdp-page-bg);
   border-radius: var(--pdp-radius-sm);
-  box-shadow: var(--pdp-shadow-sm);
+  border: 1px solid rgba(17, 19, 21, 0.06);
   overflow: hidden;
   text-decoration: none;
   color: inherit;
-  transition: box-shadow 0.15s ease, transform 0.15s ease;
+  transition: box-shadow 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
   min-width: 0;
+  height: 100%;
 }
 
 .pdp-related-card:hover {
   box-shadow: var(--pdp-shadow-md);
   transform: translateY(-2px);
+  border-color: rgba(17, 19, 21, 0.1);
 }
 
 .pdp-related-card__media {
   position: relative;
-  aspect-ratio: 1.35 / 1;
-  background: var(--pdp-muted-bg);
+  aspect-ratio: 1 / 1;
+  background: var(--pdp-surface);
+  padding: 12px;
 }
 
 .pdp-related-card__body {
@@ -1103,13 +1136,13 @@
 }
 
 .pdp-related__empty {
-  padding: 28px 16px;
+  padding: 40px 20px;
   text-align: center;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--pdp-muted);
-  background: var(--pdp-surface);
+  background: var(--pdp-page-bg);
   border-radius: var(--pdp-radius-sm);
-  box-shadow: var(--pdp-shadow-sm);
+  border: 1px dashed rgba(17, 19, 21, 0.12);
 }
 
 /* ── Loading / empty ────────────────────────────────────── */
@@ -1178,7 +1211,8 @@
   font-size: 14px;
 }
 
-.pdp-empty a {
+.pdp-empty a,
+.pdp-empty button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1190,4 +1224,12 @@
   font-size: 13px;
   font-weight: 600;
   text-decoration: none;
+  border: none;
+  cursor: pointer;
+}
+
+.pdp-empty button.pdp-empty__secondary {
+  background: #fff;
+  color: #111315;
+  border: 1px solid #e2e4e8;
 }

@@ -20,11 +20,26 @@ export interface BusinessSettingsData {
   googleLoginEnabled: boolean;
 }
 
+// Module-level in-memory cache for singleton business settings
+let cachedSettings: BusinessSettingsData | null = null;
+let settingsFetchedAt = 0;
+const SETTINGS_TTL_MS = 5 * 60_000; // 5 minutes
+
+export function invalidateServerSettings(): void {
+  cachedSettings = null;
+  settingsFetchedAt = 0;
+}
+
 /**
- * Retrieves the singleton business settings.
+ * Retrieves the singleton business settings with request-level and short module-level caching.
  */
-export async function getBusinessSettings(): Promise<ServerResult<BusinessSettingsData>> {
+export async function getBusinessSettings(force = false): Promise<ServerResult<BusinessSettingsData>> {
   try {
+    const now = Date.now();
+    if (!force && cachedSettings && now - settingsFetchedAt < SETTINGS_TTL_MS) {
+      return { success: true, data: cachedSettings };
+    }
+
     const adminClient = createAdminClient();
     const { data: settings, error } = await adminClient
       .from('business_settings')
@@ -38,25 +53,30 @@ export async function getBusinessSettings(): Promise<ServerResult<BusinessSettin
       return { success: false, error: { message: 'Business settings not found', code: 'NOT_FOUND' } };
     }
 
+    const data: BusinessSettingsData = {
+      id: settings.id,
+      companyName: settings.company_name,
+      logoUrl: settings.logo_url,
+      productsBannerUrl: settings.products_banner_url ?? null,
+      businessEmail: settings.business_email,
+      businessPhone: settings.business_phone,
+      businessAddress: settings.business_address,
+      website: settings.website,
+      minimumRfqValue: settings.minimum_rfq_value,
+      defaultGstRate: settings.default_gst_rate,
+      currency: settings.currency,
+      maxProductImages: settings.max_product_images,
+      supplierApprovalRequired: settings.supplier_approval_required,
+      productApprovalRequired: settings.product_approval_required,
+      googleLoginEnabled: settings.google_login_enabled,
+    };
+
+    cachedSettings = data;
+    settingsFetchedAt = now;
+
     return {
       success: true,
-      data: {
-        id: settings.id,
-        companyName: settings.company_name,
-        logoUrl: settings.logo_url,
-        productsBannerUrl: settings.products_banner_url ?? null,
-        businessEmail: settings.business_email,
-        businessPhone: settings.business_phone,
-        businessAddress: settings.business_address,
-        website: settings.website,
-        minimumRfqValue: settings.minimum_rfq_value,
-        defaultGstRate: settings.default_gst_rate,
-        currency: settings.currency,
-        maxProductImages: settings.max_product_images,
-        supplierApprovalRequired: settings.supplier_approval_required,
-        productApprovalRequired: settings.product_approval_required,
-        googleLoginEnabled: settings.google_login_enabled,
-      },
+      data,
     };
   } catch (error) {
     console.error('[getBusinessSettings] Error:', error);
@@ -106,6 +126,8 @@ export async function updateBusinessSettings(formData: unknown): Promise<ServerR
     if (error) {
       return { success: false, error: { message: error.message, code: 'DATABASE_ERROR' } };
     }
+
+    invalidateServerSettings();
 
     return { success: true, data: { updated: true } };
   } catch (error) {

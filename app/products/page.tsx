@@ -18,10 +18,15 @@ import {
   X,
   ShoppingCart,
   Star,
+  Check,
+  Loader2,
 } from "lucide-react";
+import { toast } from "sonner";
 import { RemoteImage } from "@/components/ui/RemoteImage";
 import { CountryFlag } from "@/components/ui/CountryFlag";
 import { resolveSupplierCountry } from "@/lib/country-origin";
+import { getSettings } from "@/lib/client/settings-cache";
+import { prefetchStorefrontProduct } from "@/lib/client/storefront-nav-prefetch";
 import "./products-catalog.css";
 
 /* ── Types ──────────────────────────────────────────────── */
@@ -291,6 +296,7 @@ function ProductsCatalogContent() {
   });
   const [loading, setLoading] = useState(true);
   const [addingId, setAddingId] = useState<string | null>(null);
+  const [addedIds, setAddedIds] = useState<Record<string, boolean>>({});
   const [cartError, setCartError] = useState("");
 
   const currentCategory = searchParams.get("category") || "";
@@ -306,7 +312,8 @@ function ProductsCatalogContent() {
   const [maxPriceInput, setMaxPriceInput] = useState(currentMaxPrice);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
-  const [bannerUrl, setBannerUrl] = useState<string | null>(null);
+  const DEFAULT_CATALOG_BANNER = "/images/product-page.png";
+  const [bannerUrl, setBannerUrl] = useState<string>(DEFAULT_CATALOG_BANNER);
   const [categoriesExpanded, setCategoriesExpanded] = useState(false);
   const [draftMoq, setDraftMoq] = useState<string[]>([]);
   const [draftCategories, setDraftCategories] = useState<string[]>([]);
@@ -342,17 +349,13 @@ function ProductsCatalogContent() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/settings")
-      .then((res) => res.json())
-      .then((json) => {
-        if (cancelled || !json?.success) return;
-        const url = json.data?.productsBannerUrl;
-        if (typeof url === "string" && url.trim()) setBannerUrl(url.trim());
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
+    // Use shared settings-cache — deduped with Navbar and Footer fetches
+    getSettings().then((s) => {
+      if (cancelled) return;
+      const url = s?.productsBannerUrl;
+      if (typeof url === "string" && url.trim()) setBannerUrl(url.trim());
+    });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -469,7 +472,7 @@ function ProductsCatalogContent() {
   function pushParams(mutate: (params: URLSearchParams) => void) {
     const params = new URLSearchParams(searchParams.toString());
     mutate(params);
-    router.push(`/products?${params.toString()}`);
+    router.push(`/products?${params.toString()}`, { scroll: false });
   }
 
   function toggleInList(list: string[], id: string) {
@@ -509,7 +512,7 @@ function ProductsCatalogContent() {
     setDraftMoq([]);
     setDraftCategories([]);
     setMobileFilterOpen(false);
-    router.push("/products");
+    router.push("/products", { scroll: false });
   }
 
   function handleQuickCategory(catId: string) {
@@ -533,6 +536,29 @@ function ProductsCatalogContent() {
     const qty = product.moq && product.moq > 0 ? product.moq : 1;
     setAddingId(product.id);
     setCartError("");
+
+    // 1. Instant optimistic visual state
+    setAddedIds((prev) => ({ ...prev, [product.id]: true }));
+    setTimeout(() => {
+      setAddedIds((prev) => {
+        const next = { ...prev };
+        delete next[product.id];
+        return next;
+      });
+    }, 2000);
+
+    // 2. Synchronously bump Navbar cart badge
+    window.dispatchEvent(new CustomEvent("cart-updated", { detail: { delta: 1 } }));
+
+    // 3. Instant toast feedback with direct CTA
+    toast.success(`Added ${product.name} to RFQ cart`, {
+      action: {
+        label: "View Cart",
+        onClick: () => router.push("/cart"),
+      },
+    });
+
+    // 4. Background network synchronization
     try {
       const res = await fetch("/api/cart", {
         method: "POST",
@@ -541,13 +567,13 @@ function ProductsCatalogContent() {
       });
       const json = await res.json();
       if (!res.ok || !json.success) {
-        setCartError(json.error?.message || "Failed to add to cart");
-        return;
+        // Rollback optimistic badge
+        window.dispatchEvent(new CustomEvent("cart-updated", { detail: { delta: -1 } }));
+        toast.error(json.error?.message || "Failed to add to cart");
       }
-      window.dispatchEvent(new Event("cart-updated"));
-      router.push("/cart");
     } catch {
-      setCartError("Failed to add to cart");
+      window.dispatchEvent(new CustomEvent("cart-updated", { detail: { delta: -1 } }));
+      toast.error("Network error adding to cart");
     } finally {
       setAddingId(null);
     }
@@ -586,7 +612,12 @@ function ProductsCatalogContent() {
     const rfqHref = `/rfq?product=${product.id}&qty=${product.moq && product.moq > 0 ? product.moq : 1}`;
 
     return (
-      <article key={product.id} className="pc-card">
+      <article
+        key={product.id}
+        className="pc-card"
+        onMouseEnter={() => prefetchStorefrontProduct(product.id)}
+        onFocusCapture={() => prefetchStorefrontProduct(product.id)}
+      >
         <div className="pc-card__media">
           <Link
             href={`/products/${product.id}`}
@@ -673,13 +704,19 @@ function ProductsCatalogContent() {
           </Link>
           <button
             type="button"
-            className="pc-card__cart"
-            aria-label={`Add ${product.name} to RFQ workspace`}
-            title="Add to RFQ workspace"
+            className={`pc-card__cart ${addedIds[product.id] ? "is-added bg-emerald-50 text-emerald-600 border-emerald-300" : ""}`}
+            aria-label={`Add ${product.name} to RFQ cart`}
+            title={addedIds[product.id] ? "Added to RFQ cart" : "Add to RFQ cart"}
             disabled={addingId === product.id}
             onClick={() => handleAddToCart(product)}
           >
-            <ShoppingCart strokeWidth={1.75} />
+            {addedIds[product.id] ? (
+              <Check className="w-4 h-4 text-emerald-600 animate-in zoom-in duration-200" />
+            ) : addingId === product.id ? (
+              <Loader2 className="w-4 h-4 animate-spin text-neutral-400" />
+            ) : (
+              <ShoppingCart strokeWidth={1.75} />
+            )}
           </button>
         </div>
       </article>
@@ -747,12 +784,18 @@ function ProductsCatalogContent() {
           </Link>
           <button
             type="button"
-            className="pc-card__cart"
-            aria-label="Add to RFQ workspace"
+            className={`pc-card__cart ${addedIds[product.id] ? "is-added bg-emerald-50 text-emerald-600 border-emerald-300" : ""}`}
+            aria-label="Add to RFQ cart"
             disabled={addingId === product.id}
             onClick={() => handleAddToCart(product)}
           >
-            <ShoppingCart className="w-4 h-4" />
+            {addedIds[product.id] ? (
+              <Check className="w-4 h-4 text-emerald-600 animate-in zoom-in duration-200" />
+            ) : addingId === product.id ? (
+              <Loader2 className="w-4 h-4 animate-spin text-neutral-400" />
+            ) : (
+              <ShoppingCart className="w-4 h-4" />
+            )}
           </button>
         </div>
       </div>

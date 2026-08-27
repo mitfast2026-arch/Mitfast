@@ -37,6 +37,7 @@ export default function AdminEnquiriesPage() {
   const [enquiries, setEnquiries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedEnquiry, setSelectedEnquiry] = useState<any>(null);
   const [page, setPage] = useState(1);
@@ -65,7 +66,7 @@ export default function AdminEnquiriesPage() {
   const { isPending, run } = useMutation();
 
   const loadEnquiries = useCallback(async (showLoading = true) => {
-    const url = `/api/enquiries?status=${statusFilter}&search=${encodeURIComponent(searchTerm)}&page=${page}&limit=${PORTAL_PAGE_LIMIT}`;
+    const url = `/api/enquiries?status=${statusFilter}&search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=${PORTAL_PAGE_LIMIT}`;
     const existing = peekPortalCache<{ enquiries: any[]; total: number }>(url);
     if (existing) {
       const list = existing.data.enquiries || [];
@@ -118,7 +119,16 @@ export default function AdminEnquiriesPage() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, searchTerm, page]);
+  }, [statusFilter, debouncedSearch, page]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, statusFilter]);
 
   useEffect(() => {
     loadEnquiries();
@@ -126,12 +136,21 @@ export default function AdminEnquiriesPage() {
 
   useEffect(() => {
     const q = catalogSearch.trim();
-    fetch(`/api/products?mode=admin&limit=50&search=${encodeURIComponent(q)}`)
-      .then((r) => r.json())
-      .then((json) => {
-        if (json.success) setCatalogProducts(json.data.products || []);
+    const ac = new AbortController();
+    const timer = setTimeout(() => {
+      fetch(`/api/products?mode=admin&limit=50&search=${encodeURIComponent(q)}`, {
+        signal: ac.signal,
       })
-      .catch(() => {});
+        .then((r) => r.json())
+        .then((json) => {
+          if (json.success) setCatalogProducts(json.data.products || []);
+        })
+        .catch(() => {});
+    }, 300);
+    return () => {
+      clearTimeout(timer);
+      ac.abort();
+    };
   }, [catalogSearch]);
 
   function syncDetailForm(enq: any) {

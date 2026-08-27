@@ -88,7 +88,7 @@ export default function About() {
             </h2>
 
             <p className="text-slate-200 text-base sm:text-lg leading-relaxed font-light drop-shadow">
-              Built for engineering and procurement teams that cannot risk component failures. Every factory on our platform is physically audited, and every lot ships with verifiable lab certs.
+              Built for engineering and procurement teams that need reliable product quality. Every supplier on our platform is verified, and every order ships with inspection reports where applicable.
             </p>
 
             {/* 3 Quality Pillars */}
@@ -103,7 +103,7 @@ export default function About() {
               </div>
               <div className="flex items-center gap-3 p-3 rounded-xl bg-black/30 backdrop-blur-md border border-white/10">
                 <Clock className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>Guaranteed dispatch schedules with marine tracking</span>
+                <span>Confirmed delivery schedules with order tracking</span>
               </div>
             </div>
           </div>
@@ -132,7 +132,7 @@ export default function About() {
 
             <div className="space-y-4 text-[#3f4f68] text-base leading-relaxed">
               <p>
-                MITFAST is a specialized B2B procurement network for precision fasteners, custom CNC turned components, and hydraulic hardware. We bridge verified manufacturing plants with industrial buyers who require lab-certified parts at high volume.
+                MITFAST is a B2B marketplace for precision fasteners, CNC turned parts, and hydraulic products. We connect verified suppliers with buyers who need certified parts at bulk pricing.
               </p>
               <p>
                 Every listing carries factory MOQs, material mill test certificates (EN 10204 3.1), and a transparent pathway from digital RFQ to packed shipping crate, backed by 100% optical and CMM coordinate inspection.

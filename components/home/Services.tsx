@@ -48,14 +48,14 @@ export default function Services() {
         {/* Section Header */}
         <div className="max-w-3xl space-y-4">
           <div className="flex items-center gap-2">
-            <span className="home-badge-teal">01 / CAPABILITIES</span>
-            <span className="home-badge-mono">END-TO-END SOURCING PIPELINE</span>
+            <span className="home-badge-teal">01 / SERVICES</span>
+            <span className="home-badge-mono">B2B SOURCING &amp; PROCUREMENT</span>
           </div>
 
           <h2 className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-[#090e17] leading-[1.12]">
             Comprehensive procurement.
             <br />
-            <span className="text-[#3f4f68] font-semibold">From CAD drawing to container dispatch.</span>
+            <span className="text-[#3f4f68] font-semibold">From product enquiry to confirmed order.</span>
           </h2>
 
           <p className="text-base sm:text-lg text-[#3f4f68] leading-relaxed max-w-2xl">
@@ -163,7 +163,7 @@ export default function Services() {
             <div className="lg:col-span-5 relative h-72 rounded-2xl overflow-hidden shadow-md border border-slate-200 order-2 lg:order-1 bg-slate-900">
               <Image
                 src="/images/hero-banner-2.png"
-                alt="Off-catalog fastener and industrial component discovery network"
+                alt="Off-catalog product sourcing from verified suppliers"
                 fill
                 sizes="(max-width: 1024px) 100vw, 38vw"
                 className="object-cover object-center opacity-85"
@@ -334,14 +334,14 @@ export default function Services() {
           </div>
 
           {/* =========================================================================
-              SERVICE 04: Quote for Dispatch (Reversed)
+              SERVICE 04: Delivery Quote (Reversed)
              ========================================================================= */}
           <div className="service-row-card grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-14 items-center p-8 sm:p-12 rounded-3xl bg-white border border-slate-200/80 shadow-card">
             {/* Left: Dispatch Visual Card */}
             <div className="lg:col-span-5 relative h-72 rounded-2xl overflow-hidden shadow-md border border-slate-200 order-2 lg:order-1 bg-slate-900">
               <Image
                 src="/images/hero-banner-3.png"
-                alt="Global ocean freight and customs cleared shipping dispatch"
+                alt="Bulk order delivery and shipping"
                 fill
                 sizes="(max-width: 1024px) 100vw, 38vw"
                 className="object-cover object-center brightness-90"
@@ -350,13 +350,13 @@ export default function Services() {
               <div className="absolute bottom-5 left-5 right-5 text-white space-y-2">
                 <div className="flex items-center gap-2 text-[11px] text-emerald-400 font-bold uppercase">
                   <Truck className="w-3.5 h-3.5" />
-                  <span>PORT-TO-DOOR LOGISTICS</span>
+                  <span>DELIVERY & SHIPPING</span>
                 </div>
                 <div className="text-sm font-display font-semibold">
-                  Full Container Load (FCL) & Air Freight Cargo
+                  Bulk order delivery & export shipping
                 </div>
                 <div className="text-xs text-slate-300">
-                  Customs documentation, sealed crating, and marine transit insurance.
+                  Packing, documentation, and delivery tracking for confirmed orders.
                 </div>
               </div>
             </div>
@@ -365,7 +365,7 @@ export default function Services() {
             <div className="lg:col-span-7 space-y-6 order-1 lg:order-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold tracking-widest text-[#0d9488] uppercase">
-                  04 / FREIGHT & LOGISTICS
+                  04 / DELIVERY & SHIPPING
                 </span>
                 <span className="text-4xl font-mono font-medium text-slate-100">04</span>
               </div>
@@ -402,7 +402,7 @@ export default function Services() {
                   href="/enquiry?type=dispatch"
                   className="home-btn-primary text-xs py-2.5 px-5 inline-flex items-center gap-2"
                 >
-                  <span>Request Freight Quote</span>
+                  <span>Request Delivery Quote</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
               </div>

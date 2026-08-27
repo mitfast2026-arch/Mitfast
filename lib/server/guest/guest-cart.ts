@@ -97,6 +97,9 @@ export async function getGuestCart(guestSessionId: string): Promise<ServerResult
       .from('guest_cart_items')
       .select(`id, product_id, quantity, added_at, product:products(${PRODUCT_SELECT})`)
       .eq('guest_session_id', guestSessionId)
+      .order('is_primary', { ascending: false, foreignTable: 'product_images' })
+      .order('sort_order', { ascending: true, foreignTable: 'product_images' })
+      .limit(1, { foreignTable: 'product_images' })
       .order('added_at', { ascending: false });
 
     if (error) {
@@ -145,14 +148,7 @@ export async function addToGuestCart(
       };
     }
 
-    const { data: existing } = await admin
-      .from('guest_cart_items')
-      .select('id, quantity')
-      .eq('guest_session_id', guestSessionId)
-      .eq('product_id', productId)
-      .maybeSingle();
-
-    const nextQty = (existing?.quantity || 0) + quantity;
+    const nextQty = quantity;
     if (nextQty < (product.moq || 1)) {
       return {
         success: false,
@@ -160,14 +156,25 @@ export async function addToGuestCart(
       };
     }
 
-    if (existing) {
-      await admin.from('guest_cart_items').update({ quantity: nextQty }).eq('id', existing.id);
-    } else {
-      await admin.from('guest_cart_items').insert({
-        guest_session_id: guestSessionId,
-        product_id: productId,
-        quantity,
-      });
+    const { data: newQty, error: rpcError } = await (admin as any).rpc(
+      'increment_guest_cart_item_quantity',
+      {
+        p_guest_session_id: guestSessionId,
+        p_product_id: productId,
+        p_delta: quantity,
+      }
+    );
+
+    if (rpcError) {
+      return { success: false, error: { message: rpcError.message, code: 'DATABASE_ERROR' } };
+    }
+
+    const finalQty = Number(newQty);
+    if (finalQty < (product.moq || 1)) {
+      return {
+        success: false,
+        error: { message: `Minimum order quantity is ${product.moq}`, code: 'BELOW_MOQ' },
+      };
     }
 
     return { success: true, data: { added: true } };

@@ -49,12 +49,20 @@ export function ApprovalsCountProvider({ children }: { children: React.ReactNode
 
   useEffect(() => {
     refreshApprovalsCount();
-    const interval = setInterval(refreshApprovalsCount, 60_000);
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      void refreshApprovalsCount();
+    }, 180_000);
     const onChanged = () => refreshApprovalsCount();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void refreshApprovalsCount();
+    };
     window.addEventListener(APPROVALS_CHANGED_EVENT, onChanged);
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       clearInterval(interval);
       window.removeEventListener(APPROVALS_CHANGED_EVENT, onChanged);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [refreshApprovalsCount]);
 

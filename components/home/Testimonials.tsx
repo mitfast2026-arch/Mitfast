@@ -61,11 +61,11 @@ export default function Testimonials() {
           <h2 className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-[#090e17]">
             Trusted by procurement leaders.
             <br />
-            <span className="text-[#718096] font-normal">Across mission-critical sectors.</span>
+            <span className="text-[#718096] font-normal">Across manufacturing sectors.</span>
           </h2>
 
           <p className="text-base sm:text-lg text-[#3f4f68] max-w-2xl mx-auto leading-relaxed">
-            See how engineering and supply chain directors rely on Mitfast to eliminate broker markups and guarantee dimensional tolerances.
+            See how procurement teams rely on MITFAST for factory-direct pricing, RFQs, and quality-certified orders.
           </p>
         </div>
 

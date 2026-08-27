@@ -1,9 +1,15 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { calculatePricing } from '@/lib/server/pricing/calculate-price';
+import { getBusinessSettings } from '@/lib/server/settings/settings-service';
 import {
   deleteProductImageFromStorage,
   storagePathFromPublicUrl,
 } from '@/lib/server/storage/storage-service';
+import {
+  normalizeStorefrontSupplier,
+  incrementProductView,
+  getStorefrontProductDetail,
+} from '@/lib/server/products/storefront-detail';
 import {
   createProductSchema,
   createProductByAdminSchema,
@@ -20,30 +26,19 @@ import type {
   ProductArchiveStatus,
   ProfitType,
 } from '@/types/database';
+import {
+  allowedFrom,
+  PRODUCT_APPROVAL_TRANSITIONS,
+  PRODUCT_PUBLICATION_TRANSITIONS,
+  transitionStatus,
+} from '@/lib/server/db/conditional-update';
+import { invalidateAdminCaches } from '@/lib/server/db/invalidate-caches';
 
-function normalizeStorefrontSupplier<T extends { supplier?: unknown }>(product: T) {
-  const raw = product.supplier;
-  const supplier = Array.isArray(raw) ? raw[0] : raw;
-  const country =
-    supplier && typeof supplier === 'object' && 'country' in supplier
-      ? (supplier as { country?: string | null }).country ?? null
-      : null;
-
-  return {
-    ...product,
-    supplier: supplier ?? null,
-    supplier_country: country,
-  };
-}
+export { getStorefrontProductDetail, incrementProductView, normalizeStorefrontSupplier };
 
 async function getMaxProductImages(): Promise<number> {
-  const adminClient = createAdminClient();
-  const { data: settings } = await adminClient
-    .from('business_settings')
-    .select('max_product_images')
-    .limit(1)
-    .maybeSingle();
-  return settings?.max_product_images ?? 8;
+  const settingsRes = await getBusinessSettings();
+  return settingsRes.success && settingsRes.data ? settingsRes.data.maxProductImages : 8;
 }
 
 function buildImageRows(productId: string, imageUrls: string[], maxImages: number) {
@@ -65,19 +60,30 @@ async function replaceProductImages(
 
   const { data: existingImages } = await adminClient
     .from('product_images')
-    .select('storage_path')
+    .select('id, storage_path')
     .eq('product_id', productId);
 
-  for (const img of existingImages || []) {
-    if (img.storage_path) {
-      await deleteProductImageFromStorage(img.storage_path);
-    }
-  }
-
-  await adminClient.from('product_images').delete().eq('product_id', productId);
+  const oldRows = existingImages || [];
+  const oldPaths = oldRows
+    .map((img) => img.storage_path)
+    .filter((p): p is string => Boolean(p));
 
   if (imageUrls.length > 0) {
     await adminClient.from('product_images').insert(buildImageRows(productId, imageUrls, maxImages));
+  }
+
+  if (oldRows.length > 0) {
+    await adminClient
+      .from('product_images')
+      .delete()
+      .in(
+        'id',
+        oldRows.map((r) => r.id)
+      );
+  }
+
+  for (const storagePath of oldPaths) {
+    await deleteProductImageFromStorage(storagePath);
   }
 }
 
@@ -130,15 +136,12 @@ export async function createProductBySupplier(
       };
     }
 
-    const { data: settings } = await adminClient
-      .from('business_settings')
-      .select('default_gst_rate, max_product_images')
-      .limit(1)
-      .maybeSingle();
-    const gstRate = payloadGstRate ?? settings?.default_gst_rate ?? 18;
+    const settingsRes = await getBusinessSettings();
+    const settings = settingsRes.success ? settingsRes.data : null;
+    const gstRate = payloadGstRate ?? settings?.defaultGstRate ?? 18;
     const gstInc = gstIncluded ?? false;
     const discountAmt = discount ?? 0;
-    const maxImages = settings?.max_product_images ?? 8;
+    const maxImages = settings?.maxProductImages ?? 8;
     const resolvedSuggestedMoq = suggestedMoq ?? moq ?? 100;
     // Catalog MOQ starts as supplier suggestion until admin sets the final value.
     const catalogMoq = moq ?? resolvedSuggestedMoq;
@@ -369,14 +372,11 @@ export async function createProductByAdmin(
       }
     }
 
-    const { data: settings } = await adminClient
-      .from('business_settings')
-      .select('default_gst_rate, max_product_images')
-      .limit(1)
-      .maybeSingle();
-    const gstRate = payloadGstRate ?? settings?.default_gst_rate ?? 18;
+    const settingsRes = await getBusinessSettings();
+    const settings = settingsRes.success ? settingsRes.data : null;
+    const gstRate = payloadGstRate ?? settings?.defaultGstRate ?? 18;
     const gstInc = gstIncluded ?? false;
-    const maxImages = settings?.max_product_images ?? 8;
+    const maxImages = settings?.maxProductImages ?? 8;
     const catalogMoq = moq ?? suggestedMoq ?? 100;
 
     const insertResult = await insertProductRecord({
@@ -481,11 +481,8 @@ export async function saveProductDraft(
       };
     }
 
-    const { data: settings } = await adminClient
-      .from('business_settings')
-      .select('default_gst_rate, max_product_images')
-      .limit(1)
-      .maybeSingle();
+    const settingsRes = await getBusinessSettings();
+    const settings = settingsRes.success ? settingsRes.data : null;
 
     const insertResult = await insertProductRecord({
       supplierId,
@@ -500,7 +497,7 @@ export async function saveProductDraft(
       profitType: data.profitType as ProfitType | undefined,
       profitValue: data.profitValue,
       discount: data.discount,
-      gstRate: data.gstRate ?? settings?.default_gst_rate ?? 18,
+      gstRate: data.gstRate ?? settings?.defaultGstRate ?? 18,
       gstIncluded: data.gstIncluded ?? false,
       minOrderValue: data.minOrderValue,
       ribbonLabel: data.ribbonLabel,
@@ -511,7 +508,7 @@ export async function saveProductDraft(
     if (!insertResult.success) return insertResult;
 
     const productId = insertResult.data.productId;
-    const maxImages = settings?.max_product_images ?? 8;
+    const maxImages = settings?.maxProductImages ?? 8;
 
     if (data.specifications?.length) {
       await adminClient.from('product_specifications').insert(
@@ -561,7 +558,7 @@ export async function submitProductUpdateBySupplier(
     // Verify ownership
     const { data: existingProd, error: fetchError } = await adminClient
       .from('products')
-      .select('id, supplier_id, publication_status')
+      .select('id, supplier_id, publication_status, updated_at')
       .eq('id', productId)
       .eq('supplier_id', supplierId)
       .single();
@@ -572,6 +569,17 @@ export async function submitProductUpdateBySupplier(
         error: { message: 'Product not found or does not belong to this supplier', code: 'NOT_FOUND' },
       };
     }
+
+    // Supersede any open request for this product
+    await adminClient
+      .from('product_approval_requests')
+      .update({
+        status: 'rejected',
+        rejection_reason: 'Superseded by newer submission',
+        reviewed_at: new Date().toISOString(),
+      })
+      .eq('product_id', productId)
+      .in('status', ['pending', 'update_pending']);
 
     // Mark product as update_pending
     await adminClient
@@ -599,7 +607,8 @@ export async function submitProductUpdateBySupplier(
           image_urls: imageUrls,
         },
         status: 'update_pending',
-      })
+        base_product_updated_at: existingProd.updated_at,
+      } as any)
       .select()
       .single();
 
@@ -735,7 +744,17 @@ export async function adminDirectUpdateProduct(formData: unknown): Promise<Serve
       },
     }).then(() => undefined).catch(() => undefined);
 
-    await (adminClient as any).from('products').update(updatePayload).eq('id', productId);
+    const { error: updateError } = await adminClient
+      .from('products')
+      .update(updatePayload as any)
+      .eq('id', productId);
+
+    if (updateError) {
+      return {
+        success: false,
+        error: { message: updateError.message, code: 'DATABASE_ERROR' },
+      };
+    }
 
     // Update specs if provided
     if (specifications) {
@@ -808,6 +827,42 @@ export async function approveProduct(requestId: string, adminUserId?: string): P
       };
     }
 
+    const baseline = (request as any).base_product_updated_at as string | null | undefined;
+    if (
+      baseline &&
+      currentProduct.updated_at &&
+      new Date(currentProduct.updated_at).getTime() !== new Date(baseline).getTime()
+    ) {
+      return {
+        success: false,
+        error: {
+          message:
+            'This proposal is stale because an admin edited the live product. Ask the supplier to resubmit.',
+          code: 'STALE_PROPOSAL',
+        },
+      };
+    }
+
+    const reqTransition = await transitionStatus(
+      adminClient,
+      'product_approval_requests',
+      requestId,
+      'status',
+      'approved',
+      allowedFrom(PRODUCT_APPROVAL_TRANSITIONS, 'approved'),
+      {
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: adminUserId || null,
+      }
+    );
+
+    if (!reqTransition.ok) {
+      return {
+        success: false,
+        error: { message: 'Approval request is no longer open', code: 'INVALID_STATUS' },
+      };
+    }
+
     // 3. Recalculate selling price with proposed supplier price if updated
     // Keep admin-controlled margin/discount/MOQ — do not overwrite from supplier proposal.
     const supplierPrice = proposed.supplier_price ?? currentProduct.supplier_price;
@@ -860,15 +915,7 @@ export async function approveProduct(requestId: string, adminUserId?: string): P
       await replaceProductImages(productId, proposed.image_urls);
     }
 
-    // 7. Mark request as approved
-    await adminClient
-      .from('product_approval_requests')
-      .update({
-        status: 'approved',
-        reviewed_at: new Date().toISOString(),
-        reviewed_by: adminUserId || null,
-      })
-      .eq('id', requestId);
+    invalidateAdminCaches();
 
     return {
       success: true,
@@ -901,7 +948,7 @@ export async function rejectProduct(formData: unknown, adminUserId?: string): Pr
 
     const { data: request, error: reqError } = await adminClient
       .from('product_approval_requests')
-      .select('product_id, request_type')
+      .select('product_id, request_type, status')
       .eq('id', requestId)
       .single();
 
@@ -909,6 +956,27 @@ export async function rejectProduct(formData: unknown, adminUserId?: string): Pr
       return {
         success: false,
         error: { message: 'Approval request not found', code: 'NOT_FOUND' },
+      };
+    }
+
+    const reqTransition = await transitionStatus(
+      adminClient,
+      'product_approval_requests',
+      requestId,
+      'status',
+      'rejected',
+      allowedFrom(PRODUCT_APPROVAL_TRANSITIONS, 'rejected'),
+      {
+        rejection_reason: rejectionReason,
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: adminUserId || null,
+      }
+    );
+
+    if (!reqTransition.ok) {
+      return {
+        success: false,
+        error: { message: 'Approval request is no longer open', code: 'INVALID_STATUS' },
       };
     }
 
@@ -933,15 +1001,7 @@ export async function rejectProduct(formData: unknown, adminUserId?: string): Pr
         .eq('id', request.product_id);
     }
 
-    await adminClient
-      .from('product_approval_requests')
-      .update({
-        status: 'rejected',
-        rejection_reason: rejectionReason,
-        reviewed_at: new Date().toISOString(),
-        reviewed_by: adminUserId || null,
-      })
-      .eq('id', requestId);
+    invalidateAdminCaches();
 
     return {
       success: true,
@@ -996,7 +1056,8 @@ export async function requestProductChanges(
         reviewed_at: new Date().toISOString(),
         reviewed_by: adminUserId || null,
       })
-      .eq('id', requestId);
+      .eq('id', requestId)
+      .in('status', ['pending', 'update_pending']);
 
     if (request.request_type === 'update') {
       await adminClient
@@ -1066,8 +1127,26 @@ export async function publishProduct(productId: string): Promise<ServerResult<{ 
         publication_status: 'published',
         updated_at: new Date().toISOString(),
       })
-      .eq('id', productId);
+      .eq('id', productId)
+      .eq('approval_status', 'approved')
+      .eq('archive_status', 'active')
+      .eq('publication_status', 'unpublished');
 
+    const { data: published } = await adminClient
+      .from('products')
+      .select('id')
+      .eq('id', productId)
+      .eq('publication_status', 'published')
+      .maybeSingle();
+
+    if (!published) {
+      return {
+        success: false,
+        error: { message: 'Product cannot be published in its current state', code: 'INVALID_STATUS' },
+      };
+    }
+
+    invalidateAdminCaches();
     return { success: true, data: { published: true } };
   } catch (error) {
     console.error('[publishProduct] Error:', error);
@@ -1081,14 +1160,23 @@ export async function publishProduct(productId: string): Promise<ServerResult<{ 
 export async function unpublishProduct(productId: string): Promise<ServerResult<{ unpublished: boolean }>> {
   try {
     const adminClient = createAdminClient();
-    await adminClient
-      .from('products')
-      .update({
-        publication_status: 'unpublished',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', productId);
+    const result = await transitionStatus(
+      adminClient,
+      'products',
+      productId,
+      'publication_status',
+      'unpublished',
+      allowedFrom(PRODUCT_PUBLICATION_TRANSITIONS, 'unpublished')
+    );
 
+    if (!result.ok) {
+      return {
+        success: false,
+        error: { message: 'Product is not published', code: 'INVALID_STATUS' },
+      };
+    }
+
+    invalidateAdminCaches();
     return { success: true, data: { unpublished: true } };
   } catch (error) {
     console.error('[unpublishProduct] Error:', error);
@@ -1164,29 +1252,6 @@ export async function restoreProduct(productId: string): Promise<ServerResult<{ 
 }
 
 /**
- * Storefront: Increments the atomic view count of a published product.
- */
-export async function incrementProductView(productId: string): Promise<void> {
-  try {
-    const adminClient = createAdminClient();
-    const { data: prod } = await adminClient
-      .from('products')
-      .select('view_count')
-      .eq('id', productId)
-      .single();
-
-    if (prod) {
-      await adminClient
-        .from('products')
-        .update({ view_count: (prod.view_count || 0) + 1 })
-        .eq('id', productId);
-    }
-  } catch {
-    // Non-blocking background view counter
-  }
-}
-
-/**
  * Storefront Product Listing (published, active, approved).
  * Supplier company identity is not exposed — country/address only for origin flag.
  */
@@ -1225,13 +1290,16 @@ export async function getStorefrontProducts(params: {
         ribbon_label,
         created_at,
         category:categories(id, name),
-        images:product_images(id, image_url, sort_order, is_primary, storage_path),
-        specifications:product_specifications(id, spec_name, spec_value, sort_order),
+        images:product_images(id, image_url, sort_order, is_primary),
         supplier:suppliers(country, address)
       `, { count: 'exact' })
       .eq('publication_status', 'published')
       .eq('archive_status', 'active')
-      .eq('approval_status', 'approved');
+      .eq('approval_status', 'approved')
+      // Prefer a single primary (or first by sort) image — avoids transferring full galleries
+      .order('is_primary', { ascending: false, foreignTable: 'product_images' })
+      .order('sort_order', { ascending: true, foreignTable: 'product_images' })
+      .limit(1, { foreignTable: 'product_images' });
 
     if (params.categoryId) {
       query = query.eq('category_id', params.categoryId);
@@ -1240,7 +1308,7 @@ export async function getStorefrontProducts(params: {
     if (params.search) {
       const q = params.search.trim();
       if (q) {
-        query = query.or(`name.ilike.%${q}%,sku.ilike.%${q}%,description.ilike.%${q}%`);
+        query = query.or(`name.ilike.%${q}%,sku.ilike.%${q}%`);
       }
     }
 
@@ -1293,10 +1361,28 @@ export async function getStorefrontProducts(params: {
       };
     }
 
+    // Slim list payload: primary image only + truncated description for cards
+    const slimProducts = (products || []).map((raw: any) => {
+      const p = normalizeStorefrontSupplier(raw);
+      const images = Array.isArray(p.images) ? p.images : [];
+      const primary =
+        images.find((img: any) => img.is_primary) ||
+        [...images].sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0))[0] ||
+        null;
+      const fullDesc = typeof p.description === 'string' ? p.description : '';
+      return {
+        ...p,
+        description: fullDesc.length > 120 ? `${fullDesc.slice(0, 120).trim()}…` : fullDesc,
+        images: primary
+          ? [{ id: primary.id, image_url: primary.image_url, sort_order: primary.sort_order ?? 0, is_primary: true }]
+          : [],
+      };
+    });
+
     return {
       success: true,
       data: {
-        products: (products || []).map(normalizeStorefrontSupplier),
+        products: slimProducts,
         total: count || 0,
         page,
         limit,
@@ -1307,65 +1393,6 @@ export async function getStorefrontProducts(params: {
     return {
       success: false,
       error: { message: 'Failed to fetch catalog', code: 'INTERNAL_ERROR' },
-    };
-  }
-}
-
-/**
- * Storefront Product Detail.
- * Returns product, images, and specifications without supplier information.
- */
-export async function getStorefrontProductDetail(productId: string): Promise<ServerResult<any>> {
-  try {
-    const adminClient = createAdminClient();
-
-    const { data: product, error } = await adminClient
-      .from('products')
-      .select(`
-        id,
-        category_id,
-        name,
-        description,
-        sku,
-        stock_quantity,
-        moq,
-        selling_price,
-        discount,
-        gst_rate,
-        gst_included,
-        min_order_value,
-        ribbon_label,
-        created_at,
-        category:categories(id, name),
-        images:product_images(id, image_url, sort_order, is_primary),
-        specifications:product_specifications(id, spec_name, spec_value, sort_order),
-        supplier:suppliers(country, address)
-      `)
-      .eq('id', productId)
-      .eq('publication_status', 'published')
-      .eq('archive_status', 'active')
-      .eq('approval_status', 'approved')
-      .single();
-
-    if (error || !product) {
-      return {
-        success: false,
-        error: { message: 'Product not found or unavailable', code: 'NOT_FOUND' },
-      };
-    }
-
-    // Increment view count in background
-    incrementProductView(productId);
-
-    return {
-      success: true,
-      data: { product: normalizeStorefrontSupplier(product) },
-    };
-  } catch (error) {
-    console.error('[getStorefrontProductDetail] Error:', error);
-    return {
-      success: false,
-      error: { message: 'Failed to load product detail', code: 'INTERNAL_ERROR' },
     };
   }
 }
@@ -1417,8 +1444,7 @@ export async function getProductsForAdmin(params: {
         created_at,
         updated_at,
         category:categories(id, name),
-        supplier:suppliers(id, company_name, contact_person),
-        images:product_images(id, image_url, sort_order, is_primary)
+        supplier:suppliers(id, company_name, contact_person)
       `,
         { count: 'exact' }
       );
@@ -1466,39 +1492,45 @@ export async function getProductForAdminDetail(
   try {
     const adminClient = createAdminClient();
 
-    const { data: product, error } = await adminClient
-      .from('products')
-      .select(
+    const [productRes, pendingReqRes, priceHistRes] = await Promise.all([
+      adminClient
+        .from('products')
+        .select(
+          `
+          *,
+          category:categories(id, name),
+          supplier:suppliers(id, company_name, country, address, contact_person),
+          images:product_images(id, image_url, sort_order, is_primary),
+          specifications:product_specifications(id, spec_name, spec_value, sort_order)
         `
-        *,
-        category:categories(id, name),
-        supplier:suppliers(id, company_name, country, address, contact_person),
-        images:product_images(id, image_url, sort_order, is_primary),
-        specifications:product_specifications(id, spec_name, spec_value, sort_order)
-      `
-      )
-      .eq('id', productId)
-      .single();
+        )
+        .eq('id', productId)
+        .single(),
+      adminClient
+        .from('product_approval_requests')
+        .select('id, request_type, status, proposed_data, created_at, reviewed_at, reviewed_by, rejection_reason')
+        .eq('product_id', productId)
+        .in('status', ['pending', 'update_pending'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      (adminClient as any)
+        .from('product_versions')
+        .select('id, snapshot, created_at')
+        .eq('product_id', productId)
+        .order('created_at', { ascending: false })
+        .limit(5),
+    ]);
+
+    const product = productRes.data;
+    const error = productRes.error;
 
     if (error || !product) {
       return { success: false, error: { message: 'Product not found', code: 'NOT_FOUND' } };
     }
 
-    const { data: pendingRequest } = await adminClient
-      .from('product_approval_requests')
-      .select('id, request_type, status, proposed_data, created_at, reviewed_at, reviewed_by, rejection_reason')
-      .eq('product_id', productId)
-      .in('status', ['pending', 'update_pending'])
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const { data: priceHistory } = await (adminClient as any)
-      .from('product_versions')
-      .select('id, snapshot, created_at')
-      .eq('product_id', productId)
-      .order('created_at', { ascending: false })
-      .limit(5);
+    const pendingRequest = pendingReqRes.data;
+    const priceHistory = priceHistRes.data;
 
     return {
       success: true,

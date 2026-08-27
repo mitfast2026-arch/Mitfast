@@ -10,21 +10,51 @@ import {
   removeGuestWishlistItem,
 } from '@/lib/server/guest/wishlist-service';
 
-async function resolveWishlistActor() {
+type WishlistActor =
+  | { kind: 'customer'; customerId: string }
+  | { kind: 'guest'; guestSessionId: string }
+  | { kind: 'forbidden'; role: string };
+
+async function resolveWishlistActor(): Promise<WishlistActor> {
   const session = await getServerSession();
-  if (session?.profile.role === 'customer') {
-    return { kind: 'customer' as const, customerId: session.profile.id };
+  const role = session?.profile.role;
+  if (role === 'admin' || role === 'supplier') {
+    return { kind: 'forbidden', role };
+  }
+  if (role === 'customer' && session?.profile?.id) {
+    return { kind: 'customer', customerId: session.profile.id };
   }
   const guestSessionId = await ensureGuestSessionId();
-  return { kind: 'guest' as const, guestSessionId };
+  return { kind: 'guest', guestSessionId };
 }
 
-export async function GET() {
+function forbiddenWishlistResponse(role: string) {
+  return NextResponse.json(
+    {
+      success: false,
+      error: {
+        message: 'Wishlist is not available for this account type',
+        code: 'FORBIDDEN',
+        role,
+      },
+    },
+    { status: 403 }
+  );
+}
+
+export async function GET(request: NextRequest) {
   try {
     const actor = await resolveWishlistActor();
+    if (actor.kind === 'forbidden') return forbiddenWishlistResponse(actor.role);
+
+    const limit = Math.min(
+      100,
+      Math.max(1, parseInt(new URL(request.url).searchParams.get('limit') || '50', 10))
+    );
+
     const result =
       actor.kind === 'customer'
-        ? await getCustomerWishlist(actor.customerId)
+        ? await getCustomerWishlist(actor.customerId, { limit })
         : await getGuestWishlist(actor.guestSessionId);
 
     if (!result.success) return NextResponse.json(result, { status: 400 });
@@ -53,6 +83,7 @@ export async function POST(request: NextRequest) {
     }
 
     const actor = await resolveWishlistActor();
+    if (actor.kind === 'forbidden') return forbiddenWishlistResponse(actor.role);
     const result =
       actor.kind === 'customer'
         ? await addToCustomerWishlist(actor.customerId, productId)
@@ -80,6 +111,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     const actor = await resolveWishlistActor();
+    if (actor.kind === 'forbidden') return forbiddenWishlistResponse(actor.role);
     const result =
       actor.kind === 'customer'
         ? await removeCustomerWishlistItem(actor.customerId, productId)

@@ -201,6 +201,9 @@ export default function AdminDashboardPage() {
 
   useEffect(() => {
     const onFocus = () => {
+      // Skip network when portal cache is still fresh (<45s) — same data, fewer Function hits
+      const existing = peekPortalCache<DashboardPayload>('/api/admin/dashboard');
+      if (existing && !existing.stale) return;
       void loadDashboard(false);
     };
     window.addEventListener('focus', onFocus);
@@ -305,9 +308,9 @@ export default function AdminDashboardPage() {
 
   if (loading && !data) {
     return (
-      <div className="space-y-8 w-full">
+      <div className="portal-dashboard space-y-4 w-full max-w-full min-w-0">
         <div className="h-10 w-56 saas-skeleton" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
+        <div className="grid grid-cols-1 min-[480px]:grid-cols-2 xl:grid-cols-4 gap-3">
           <SkeletonCard />
           <SkeletonCard />
           <SkeletonCard />
@@ -319,11 +322,11 @@ export default function AdminDashboardPage() {
   }
 
   return (
-    <div className="flex w-full flex-col gap-5">
+    <div className="portal-dashboard flex w-full max-w-full min-w-0 flex-col gap-3 sm:gap-4">
       <div className="shrink-0">
         <AdminPageHeader
-          title="Operations"
-          description="Review queue, open RFQs, and live order flow across MITFAST procurement."
+          title="Dashboard"
+          description="Review pending items, RFQs, and orders across MITFAST."
           actions={
             <>
               {SHOW_DATA_SOURCE_BADGE ? (
@@ -374,7 +377,7 @@ export default function AdminDashboardPage() {
       ) : null}
 
       {/* Static KPI strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 min-[480px]:grid-cols-2 xl:grid-cols-4 gap-3">
         <HeroKpiCard
           label="Pending items"
           value={pendingItemsCount}
@@ -412,38 +415,34 @@ export default function AdminDashboardPage() {
       </div>
 
       {/* Mid row: chart + activity */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <div className="lg:col-span-7 min-h-[280px]">
-          <ChartCard
-            className="h-full"
-            title="Operations mix"
-            subtitle="Live queue by category"
-          >
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start min-w-0">
+        <div className="lg:col-span-7 min-w-0">
+          <ChartCard title="Overview" subtitle="Pending items by category">
             {mixWithValues.length === 0 ? (
-              <EmptyState label="No data yet — all queue counts are zero" />
+              <EmptyState label="No data yet — all queue counts are zero" className="py-6" />
             ) : chartType === 'bar' && mixWithValues.length > 5 ? (
-              <PortalBarChart data={mixWithValues} />
+              <PortalBarChart data={mixWithValues} height={180} />
             ) : (
               <PortalPieChart data={mixWithValues} />
             )}
           </ChartCard>
         </div>
-        <aside className="lg:col-span-5">
-          <div className="saas-panel p-5 h-full flex flex-col">
-            <div className="flex items-baseline justify-between gap-2 mb-3 shrink-0">
+        <aside className="lg:col-span-5 min-w-0">
+          <div className="saas-panel p-4 flex flex-col">
+            <div className="flex items-baseline justify-between gap-2 mb-2 shrink-0">
               <h2 className="type-section">Recent Activity</h2>
               <span className="text-xs text-portal-muted">Last 14 days</span>
             </div>
 
             <div>
               {activities.length === 0 ? (
-                <EmptyState label="No data yet — no events in the last 14 days" />
+                <EmptyState label="No data yet — no events in the last 14 days" className="py-6" />
               ) : (
-                <ol className="relative border-l border-portal-border ml-1.5">
+                <ol className="relative border-l border-portal-border ml-1.5 max-h-[220px] overflow-y-auto pr-1">
                   {activities.map((act) => {
                     const tone = activityTone(act.type);
                     return (
-                      <li key={act.id} className="relative pl-4 pb-3.5 last:pb-0">
+                      <li key={act.id} className="relative pl-4 pb-2.5 last:pb-0">
                         <span
                           className={`absolute -left-[5px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-portal-panel ${
                             tone === 'pending'
@@ -483,9 +482,9 @@ export default function AdminDashboardPage() {
         </aside>
       </div>
 
-      {/* Needs Attention — page scroll */}
-      <section id="needs-attention" className="flex flex-col saas-panel">
-        <div className="flex items-center justify-between gap-3 px-5 pt-4 pb-3 shrink-0 border-b border-portal-border">
+      {/* Needs Attention */}
+      <section id="needs-attention" className="flex flex-col saas-panel min-w-0">
+        <div className="flex items-center justify-between gap-3 px-4 pt-3.5 pb-2.5 shrink-0 border-b border-portal-border">
           <div>
             <h2 className="type-section">Needs Attention</h2>
             <p className="type-desc">
@@ -502,7 +501,7 @@ export default function AdminDashboardPage() {
 
         <div>
           {attention.length === 0 ? (
-            <div className="p-6">
+            <div className="p-4">
               <EmptyState
                 label="No data yet — nothing waiting for review"
                 icon={CheckCircle2}

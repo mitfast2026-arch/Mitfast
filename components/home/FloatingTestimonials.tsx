@@ -299,8 +299,8 @@ export default function FloatingTestimonials({
               What procurement teams are saying
             </h3>
             <p className="mt-4 text-[15px] leading-relaxed text-[#6B7280]">
-              Operational feedback from aerospace, defense, and precision manufacturing partners who
-              run procurement through MITFAST.
+              Buyer feedback from manufacturing and precision engineering teams who
+              buy and source through MITFAST.
             </p>
 
             <div className="mt-8 flex items-center gap-3">

@@ -3,7 +3,8 @@
 import React, { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { createBrowserClient } from "@/lib/supabase/client";
 import "./enquiry.css";
 
@@ -26,22 +27,22 @@ const ENQUIRY_TYPE_COPY: Record<
       "Procurement request: describe required SKUs, quantity, delivery timeline, and any quality or packing requirements.",
   },
   dispatch: {
-    heading: "Dispatch enquiry",
-    metaLabel: "Dispatch",
-    metaValue: "Freight, packing, and dispatch for a live or upcoming order.",
+    heading: "Delivery enquiry",
+    metaLabel: "Delivery",
+    metaValue: "Shipping and delivery for a live or upcoming order.",
     message:
-      "Dispatch request: include order or RFQ reference if you have one, destination, and required dispatch date.",
+      "Delivery request: include order or RFQ reference if you have one, destination, and required delivery date.",
   },
   custom: {
     heading: "Send an enquiry",
     metaLabel: "Scope",
-    metaValue: "Custom specification, CAD inquiry, and volume production quotes.",
+    metaValue: "Custom specification, engineering inquiries, and volume production quotes.",
     message: "",
   },
   cart: {
     heading: "Cart quote enquiry",
     metaLabel: "Cart RFQ",
-    metaValue: "Guest quote request from your RFQ workspace — our team will follow up with pricing.",
+    metaValue: "Guest quote request from your RFQ cart — our team will follow up with pricing.",
     message:
       "Cart quote request: please confirm quantities, delivery timeline, and any packaging or inspection requirements.",
   },
@@ -51,7 +52,7 @@ const SERVICE_OPTIONS = [
   { value: "custom", label: "Custom specification" },
   { value: "sourcing", label: "Sourcing development" },
   { value: "procurement", label: "Off-catalog procurement" },
-  { value: "dispatch", label: "Freight and dispatch" },
+  { value: "dispatch", label: "Delivery and shipping" },
 ] as const;
 
 type ServiceValue = (typeof SERVICE_OPTIONS)[number]["value"];
@@ -107,8 +108,6 @@ function EnquiryContent() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [country, setCountry] = useState("");
-  const [hasDrawing, setHasDrawing] = useState(false);
-  const [drawingFile, setDrawingFile] = useState<File | null>(null);
   const [message, setMessage] = useState(
     isCartEnquiry
       ? formatCartMessage([])
@@ -199,10 +198,13 @@ function EnquiryContent() {
 
     const fullName = `${firstName} ${lastName}`.trim();
 
-    if (!firstName.trim() || !email.trim() || !phone.trim() || !country.trim()) {
-      setErrorMsg(
-        "Name, email, phone, and country are required so we can book and track this enquiry.",
-      );
+    if (!firstName.trim() || !email.trim() || !phone.trim()) {
+      setErrorMsg("Name, email, and phone are required so we can follow up on your enquiry.");
+      return;
+    }
+
+    if (!country.trim()) {
+      setErrorMsg("Country is required so we can route your enquiry.");
       return;
     }
 
@@ -248,10 +250,8 @@ function EnquiryContent() {
           ),
         );
       }
-      if (hasDrawing && drawingFile) {
-        formData.set("attachment", drawingFile);
-      }
 
+      toast.loading("Sending enquiry...", { id: "enquiry-submit" });
       const res = await fetch("/api/enquiries", {
         method: "POST",
         body: formData,
@@ -259,14 +259,19 @@ function EnquiryContent() {
 
       const json = await res.json();
       if (!res.ok || !json.success) {
-        setErrorMsg(json.error?.message || "Failed to submit enquiry");
+        const msg = json.error?.message || "Failed to submit enquiry";
+        setErrorMsg(msg);
+        toast.error(msg, { id: "enquiry-submit" });
       } else {
+        toast.success("Enquiry sent successfully!", { id: "enquiry-submit" });
         setSubmitted(true);
         setTrackingToken(json.data?.trackingToken || "");
       }
     } catch (err: unknown) {
       const fallback = "Server error";
-      setErrorMsg(err instanceof Error ? err.message : fallback);
+      const msg = err instanceof Error ? err.message : fallback;
+      setErrorMsg(msg);
+      toast.error(msg, { id: "enquiry-submit" });
     } finally {
       setLoading(false);
     }
@@ -366,7 +371,7 @@ function EnquiryContent() {
               <div className="name-row" role="group" aria-labelledby="enquiry-name-legend">
                 <div className="field">
                   <label className="field__label" htmlFor="enquiry-first-name">
-                    First name
+                    First name *
                   </label>
                   <input
                     id="enquiry-first-name"
@@ -424,7 +429,7 @@ function EnquiryContent() {
 
             <div className="field">
               <label className="field__label" htmlFor="enquiry-email">
-                Work email
+                Work email *
               </label>
               <input
                 id="enquiry-email"
@@ -440,7 +445,7 @@ function EnquiryContent() {
 
             <div className="field">
               <label className="field__label" htmlFor="enquiry-phone">
-                Phone
+                Phone *
               </label>
               <input
                 id="enquiry-phone"
@@ -470,41 +475,6 @@ function EnquiryContent() {
               />
             </div>
 
-            <div className="checkbox-field">
-              <input
-                id="enquiry-has-drawing"
-                className="checkbox-field__input"
-                type="checkbox"
-                checked={hasDrawing}
-                onChange={(e) => {
-                  setHasDrawing(e.target.checked);
-                  if (!e.target.checked) setDrawingFile(null);
-                }}
-              />
-              <label
-                className="checkbox-field__label"
-                htmlFor="enquiry-has-drawing"
-              >
-                I have a CAD or drawing file
-              </label>
-            </div>
-
-            {hasDrawing && (
-              <div className="field">
-                <label className="field__label" htmlFor="enquiry-drawing">
-                  CAD / drawing file
-                </label>
-                <input
-                  id="enquiry-drawing"
-                  className="field__input"
-                  type="file"
-                  name="attachment"
-                  accept=".pdf,.dwg,.dxf,.step,.stp,.iges,.igs,.png,.jpg,.jpeg,.zip"
-                  onChange={(e) => setDrawingFile(e.target.files?.[0] || null)}
-                />
-              </div>
-            )}
-
             <div className="textarea-field">
               <label className="field__label" htmlFor="enquiry-message">
                 Specifications
@@ -530,10 +500,17 @@ function EnquiryContent() {
 
             <button
               type="submit"
-              className="contact-form__submit"
+              className="contact-form__submit flex items-center justify-center gap-2"
               disabled={loading}
             >
-              {loading ? "Sending" : "Send enquiry"}
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Sending enquiry...</span>
+                </>
+              ) : (
+                "Send enquiry"
+              )}
             </button>
           </form>
         )}

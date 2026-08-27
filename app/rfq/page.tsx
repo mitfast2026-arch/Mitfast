@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { getServerSession } from "@/lib/server/auth/get-session";
 
+export const dynamic = "force-dynamic";
+
 type SearchParams = Record<string, string | string[] | undefined>;
 
 function firstParam(value: string | string[] | undefined): string {

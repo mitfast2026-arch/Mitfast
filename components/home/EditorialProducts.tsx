@@ -6,11 +6,23 @@ import { ArrowRight, Compass } from 'lucide-react';
 import CurvedProductCarousel from './curved-products/CurvedProductCarousel';
 import { mapApiProductToCurved, type CurvedProduct } from './curved-products/productData';
 
-export default function EditorialProducts() {
-  const [products, setProducts] = useState<CurvedProduct[]>([]);
-  const [loading, setLoading] = useState(true);
+type ApiProduct = Parameters<typeof mapApiProductToCurved>[0];
+
+export default function EditorialProducts({
+  initialProducts,
+}: {
+  initialProducts?: ApiProduct[];
+}) {
+  const seeded = (initialProducts || []).map(mapApiProductToCurved);
+  const [products, setProducts] = useState<CurvedProduct[]>(seeded);
+  const [loading, setLoading] = useState(seeded.length === 0);
 
   useEffect(() => {
+    if (seeded.length > 0) {
+      setLoading(false);
+      return;
+    }
+
     let cancelled = false;
 
     async function loadProducts() {
@@ -18,7 +30,7 @@ export default function EditorialProducts() {
         const res = await fetch('/api/products?limit=12');
         const json = await res.json();
         if (cancelled || !json.success) return;
-        const list = (json.data?.products || []) as Parameters<typeof mapApiProductToCurved>[0][];
+        const list = (json.data?.products || []) as ApiProduct[];
         setProducts(list.map(mapApiProductToCurved));
       } catch {
         if (!cancelled) setProducts([]);
@@ -31,13 +43,15 @@ export default function EditorialProducts() {
     return () => {
       cancelled = true;
     };
+    // Only fetch when no SSR seed was provided
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
     <section
       id="products"
       className="relative z-10 w-full bg-[#F7F7F8] pt-24 sm:pt-32 pb-20 sm:pb-28 overflow-x-clip overflow-y-visible"
-      aria-label="3D Cylindrical Precision Components Showcase"
+      aria-label="Featured products showcase"
     >
       <div className="w-full max-w-[1100px] mx-auto px-6 sm:px-10 text-center space-y-5 mb-8 sm:mb-12">
         <div className="inline-flex items-center gap-2 text-xs font-bold tracking-[0.2em] text-[#111315] uppercase bg-white px-4 py-1.5 rounded-full border border-[#E2E4E8] shadow-2xs">
@@ -55,7 +69,7 @@ export default function EditorialProducts() {
 
         <p className="text-sm sm:text-base text-[#6B7280] leading-relaxed max-w-xl mx-auto">
           Interactive cylindrical projection of published catalog products — drag to rotate through
-          certified production components from our live inventory.
+          certified products from our live inventory.
         </p>
 
         <div className="pt-2 flex flex-wrap items-center justify-center gap-4">

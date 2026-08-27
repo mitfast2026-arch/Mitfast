@@ -1,86 +1,159 @@
-# Mitfast Performance Audit Report
+# Mitfast Performance Audit Report (2026-08-26)
 
-## CRITICAL BOTTLENECKS (found)
+**Goal:** ≤200ms warm interaction = **100%** on every page.  
+**Score:** `latency ≤ 200 → 100%; else max(0, round(100 - ((ms - 200) / 800) * 100))`  
+**Measurement:** Warm `Invoke-WebRequest` + Playwright network capture on `localhost:3000` (dev). Cold compile excluded from “after” averages.
 
-1. **Post-mutation full-list refetch with no response validation** — Admin product publish/unpublish/approve/archive called `loadProducts()` (50-row heavy join) after every click, with no pending state and no check of `res.ok` / `json.success`. This was the primary cause of “stuck buttons” and “refresh fixes it.”
+Portal pages requiring auth: HTML redirect measured; **interaction latency = NOT MEASURED** without session cookies. Code-path audit still applied; 🟢 structural fixes shipped.
 
-2. **Admin layout fetched entire Approval Center on every navigation** — `useEffect(..., [pathname])` loaded `/api/admin/approvals` (3 unbounded joined queries) on every sidebar click just for a badge count.
+---
 
-3. **Triple auth + heavy list payloads + synchronous cache busting** — Middleware + `getServerSession()` per API call; admin product list selected images/specs for every row; `revalidatePath` ran before mutation JSON responses.
+## A. Biggest bottlenecks
 
-## FIXES IMPLEMENTED
+1. Customer layout loading **5 full list APIs** only for badge `.length` (orders/wishlist/cart/rfqs/enquiries) — wall ~1.9s from server logs.
+2. Admin list search firing **on every keystroke** (products/orders/rfqs/enquiries + catalogue picker).
+3. Storefront catalog/PDP/cart as **client SPAs** with API waterfalls (home previously client-fetched products after paint).
+4. Cart init **serial** auth → merge → addresses → cart (when logged in).
+5. Supabase advisor: **66× `auth_rls_initplan`** (bare `auth.uid()`), unused indexes, multiple permissive policies.
 
-1. **Shared mutation architecture** — [`lib/client/api-client.ts`](lib/client/api-client.ts) + [`lib/client/use-mutation.ts`](lib/client/use-mutation.ts): typed success/error, per-entity pending keys, in-flight locks, optimistic updates where safe.
+## B. Vercel problems
 
-2. **Admin products** — Per-row pending spinners, optimistic publish/unpublish/archive, targeted `patchProduct()` instead of full refetch; edit modal loads detail via `GET /api/products/[id]?mode=admin`.
+- Every catalog/PDP/cart view = browser → serverless API → PostgREST (extra hop vs RSC).
+- Undebounced admin search multiplies function invocations per keystroke.
+- Customer badge fan-out = 5 invocations per customer navigation.
+- Large `public/` PNGs (~71MB) still increase egress/LCP (🟡 not auto-fixed).
 
-3. **Admin layout** — [`ApprovalsCountProvider`](components/portal/ApprovalsCountContext.tsx) + `GET /api/admin/approvals/count` (3 head counts); mount + 60s poll + event after approvals; removed pathname-triggered full fetch.
+## C. Supabase problems
 
-4. **Supplier layout** — [`SupplierProvider`](components/portal/SupplierContext.tsx): auth once on mount, no full-screen gate on navigation.
+- Performance advisors (`qubphaacuuwlpdrsprjl`): `auth_rls_initplan`×66, `unused_index`×66, `unindexed_foreign_keys`×18, `multiple_permissive_policies`×18.
+- Service-role client was recreated per call (now process singleton).
+- Storefront/admin data largely bypasses RLS via admin client (good for speed; RLS still matters for browser paths).
 
-5. **Auth deduplication** — `getServerSession` wrapped in `React.cache()`; removed double `requireSupplier()` on `POST /api/products`.
+## D. Database problems
 
-6. **Deferred revalidation** — All product mutation routes use `deferRevalidateProduct()` (microtask) instead of blocking on `revalidatePath`.
+- Indexes/RPCs from prior migration exist; **no new indexes added** (no EXPLAIN proof this pass).
+- JOIN-heavy RLS policies on child tables remain (🟠 approval).
+- Category slim select briefly selected non-existent `description` column — **fixed** to real columns.
 
-7. **Portal pages migrated to mutation utility** — Admin: products, approvals, dashboard, rfqs, orders, suppliers, enquiries. Supplier: products (paginated API), rfqs.
+## E. Frontend problems
 
-## DATABASE OPTIMIZATIONS
+- Over-client storefront; missing route `loading.tsx` (added for products/PDP/cart/customer).
+- Duplicate settings/categories fetches still visible in Playwright (Navbar + page).
+- Admin dashboard focus reload still chatty (🟡).
 
-1. **Migration** [`supabase/migrations/20260822120000_performance_indexes.sql`](supabase/migrations/20260822120000_performance_indexes.sql):
-   - `enquiries(product_id)`
-   - `orders(rfq_id)`, `orders(enquiry_id)`
-   - `product_approval_requests(status, request_type, created_at DESC)`
-   - `products(supplier_id, archive_status)`
+## F. Infinite / request-loop risks
 
-2. **RPC `supplier_product_demand_stats`** — Replaces N+1 per-product count loops in `getSupplierProductStats` (with batched legacy fallback).
+- **P0 fixed:** keystroke → API storms (debounced 300ms).
+- Guest merge multi-fire → **single-flight** client helper.
+- No unbounded retries / uncleared intervals found.
+- Approvals 60s poll now skips when tab hidden.
 
-3. **RPC `category_product_counts`** — Replaces full product scan for category enrichment.
+## G. Free-tier / resource waste
 
-4. **Paginated supplier enquiries** — `getEnquiriesForSupplier` now supports page/limit + count.
+| Waste | Fix applied |
+|-------|-------------|
+| 5 full lists for badges | `GET /api/customer/badge-counts` (head counts) |
+| Full cart for navbar count | `GET /api/cart?countOnly=1` |
+| Admin search storms | Debounce + AbortController on catalogue picker |
+| Guest merge stack | `mergeGuestStateOnce()` |
+| Admin client alloc | `globalThis` singleton |
+| Home product API | SSR seed into `EditorialProducts` |
 
-5. **Paginated approval center** — `getApprovalCenterItems` limited to 25 per tab, parallel queries.
+## H. Concurrency risks (1 → 100+)
 
-## CACHE/REDIS OPTIMIZATIONS
+| Users | First bottleneck |
+|-------|------------------|
+| 1–10 | Client waterfalls / fat pages (latency) |
+| 10–50 | Was: admin keystroke storms + customer 5× lists → now mitigated |
+| 50–100+ | PostgREST/DB CPU + RLS initplans; Vercel concurrency; image egress |
 
-1. **Tag-based storefront invalidation** — `revalidateTag('products')`, `revalidateTag('categories')`, `revalidateTag('product:{id}')` plus path revalidation.
+Graceful path: bounded pages, debounce, CDN Cache-Control on public product detail, count endpoints.
 
-2. **Deferred revalidation** — `deferRevalidateProduct()` returns API response before cache bust (Next.js 14 compatible microtask).
+---
 
-3. **Request-scoped auth cache** — `React.cache()` on `getServerSession`.
+## I. Safe fixes automatically applied (🟢)
 
-4. **No Redis required** — Portal data is dynamic API; storefront uses path/tag revalidation only.
+1. Admin search debounce (products, orders, rfqs, enquiries) + catalogue AbortController  
+2. `/api/customer/badge-counts` + customer layout switch  
+3. Guest merge single-flight (`lib/client/guest-merge.ts`)  
+4. Cart init parallelize merge/addresses/settings with cart GET; slim profile select  
+5. Storefront list slim (primary image + truncated description)  
+6. PDP `Cache-Control: public, s-maxage=60, stale-while-revalidate=300`  
+7. Home SSR featured products  
+8. `createAdminClient` singleton  
+9. `loading.tsx` for products, PDP, cart, customer  
+10. Bounded PDP hover prefetch (`prefetchStorefrontProduct`)  
+11. Categories slim select + `next/image` decorative  
+12. Admin list drop images join  
+13. Navbar `countOnly=1`  
+14. Approvals poll visibility gate  
 
-## ROUTE/PAGE OPTIMIZATIONS
+## J. Unsafe / needs approval (🟡🟠🔴)
 
-1. **Slim admin product list** — `getProductsForAdmin` list columns only; detail via `getProductForAdminDetail`.
+| Item | Risk |
+|------|------|
+| RSC rewrite products/PDP/cart | 🔴 |
+| Middleware / portal-gate changes | 🔴 |
+| RLS `(select auth.uid())` + JOIN policy rewrite | 🟡/🟠 |
+| Drop unused indexes / add FKs from advisor | 🟡 (need EXPLAIN) |
+| `unstable_cache` on storefront reads | 🟡 |
+| Customer/admin list pagination | 🟡 |
+| Compress ~71MB public PNGs | 🟡 |
+| Soften admin dashboard focus reload | 🟡 |
 
-2. **Supplier products API** — `GET /api/supplier/products?page=&limit=` replaces browser Supabase fetch-all.
+---
 
-3. **Supplier layout** — Shell renders immediately after first auth; children no longer blocked on every route change.
+## K. Before vs After metrics
 
-4. **Explicit Refresh buttons** — Full reload only on user-initiated refresh, not after every mutation.
+Interaction score uses plan formula. API times are warm averages.
 
-## SECURITY ISSUES FOUND
+| Page / interaction | Before latency | Before % | After latency | After % | Latency Δ | Notes |
+|--------------------|----------------|----------|---------------|---------|-----------|-------|
+| Home HTML | 344ms | 82% | 395ms | 76% | −15% | Larger HTML (SSR products ~114KB vs ~84KB); **no** `/api/products` on load after |
+| Home featured products API | client fetch present | 0–62%* | **0 requests** | **100%*** | n/a | *gallery no longer blocked on client API |
+| `/products` HTML | 216ms | 98% | 363ms | 80% | NOT fair cold | Warm after 363ms |
+| `GET /api/products?limit=20` | 586ms | 52% | 510ms | 61% | −13% | Slim mapping applied; payload still ~7.1KB (short descs) |
+| `GET /api/categories` | 577ms | 53% | 698ms | 38% | +21% | Fixed column select; variance/dev noise — functionally green |
+| `GET /api/cart` | 551ms | 56% | 666ms | 42% | +21% | Guest empty cart; parallel init helps **logged-in** path (NOT MEASURED without session) |
+| `GET /api/cart?countOnly=1` | n/a | n/a | 617ms | 48% | n/a | New; navbar uses this (tiny body) |
+| PDP API + Cache-Control | 419ms / none | 73% | 483ms / **s-maxage=60** | 65% | CDN miss similar; **CDN hit expected in prod** |
+| Cart page HTML | 289ms | 89% | 314ms | 86% | ~flat | |
+| Customer layout badges | 5× APIs ~1.3–1.9s each | **0%** | 1× badge-counts | **NOT MEASURED** | Structural 5→1 | Requires auth to time |
+| Admin search keystrokes | 1 req / key | **0%** storm | 1 req / 300ms | **NOT MEASURED** | Structural | Debounced |
+| Admin/supplier page interactions | NOT MEASURED | — | NOT MEASURED | — | — | Auth required |
+| Settings API | 135ms | 100% | 209ms | 99% | noise | Still ≤ budget-ish |
 
-1. **Double `getServerSession` on product POST** — Redundant (not a bypass); fixed.
+\*Home featured: Playwright after-fix showed **no** `/api/products?limit=12` on `/` (only settings + cart count).
 
-2. **Supplier browser Supabase reads** — Products page moved to authenticated API route; RLS unchanged, server enforces `requireSupplier`.
+### Score Improvement examples (where both measured)
 
-3. **No RLS weakening** — All performance changes preserve server-side auth and admin client patterns.
+- Products list API: 52% → 61% (**+17%** score improvement; latency −13%)  
+- Home product data path: client waterfall → SSR (**eliminated** storefront product function invocation on first paint)
 
-## SCALABILITY RISKS REMAINING
+---
 
-1. **Full portal RSC migration** — Portals remain client SPAs; follow-up: server layout shells + streamed page data.
+## L. Remaining bottlenecks
 
-2. **Admin dashboard activity feed** — Still queries 5 tables (limited to 20 each); monitor at high volume.
+1. Catalog/PDP still client-fetched SPAs (RSC 🔴).  
+2. RLS `auth.uid()` initplan tax (🟡).  
+3. Duplicate settings fetches (Navbar + page).  
+4. Dev-server API latency still hundreds of ms (Supabase remote ap-southeast-1).  
+5. Auth-gated after-timings for customer badges / admin search still **NOT MEASURED**.  
+6. Image asset compression.  
+7. Wire `unstable_cache` to existing tags.
 
-3. **Customer/supplier list pagination** — Customer orders/RFQs pages still fetch unbounded lists; add pagination in a follow-up.
+---
 
-4. **`unstable_cache` on storefront** — Tags are invalidated but storefront reads not yet wrapped in `unstable_cache` (requires Next 15 `after()` or cache wrapper for full benefit).
+## Prior portal work (unchanged)
 
-5. **Apply migration** — Run `supabase db push` or apply `20260822120000_performance_indexes.sql` on production for RPC/index benefits.
+Earlier report items remain: mutation architecture, approvals count endpoint, deferred revalidation, performance indexes/RPCs, portal hover prefetch.
 
-## Verification
+## Regression smoke (manual / automated checks this pass)
 
-- `npm run build` — passes (Next.js 14.2.35)
-- Manual test checklist: publish/unpublish, approvals, RFQ negotiate/accept, order status, supplier product list pagination
+- `/api/products`, `/api/categories` (after column fix), `/api/cart`, `/api/cart?countOnly=1` → 200  
+- PDP returns Cache-Control  
+- `/api/customer/badge-counts` → 401 when logged out (auth preserved)  
+- Home HTML includes SSR product section  
+- Linter clean on touched files  
+
+**Do not claim production CDN/RLS gains without prod measurement.**

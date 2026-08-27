@@ -52,16 +52,37 @@ export default function SupplierDashboardPage() {
   const products = stats?.products || [];
   const showSkeleton = (supplierLoading || loading) && !stats;
 
+  const quickLinks = [
+    { href: '/supplier/products', icon: Plus, label: 'Add product' },
+    { href: '/supplier/orders', icon: ShoppingCart, label: 'Orders' },
+    { href: '/supplier/rfqs', icon: FileText, label: 'RFQs' },
+  ];
+
   return (
-    <div className="space-y-8 w-full">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
+    <div className="portal-dashboard w-full max-w-full min-w-0 space-y-3 sm:space-y-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
           <h1 className="type-page">Supplier dashboard</h1>
-          <p className="type-subtitle">Product views, enquiries, RFQs, and orders for your catalog.</p>
+          <p className="type-subtitle mt-0.5">
+            Product views, enquiries, RFQs, and orders for your catalog.
+          </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Link href="/supplier/products" className="saas-btn-primary gap-1.5">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {quickLinks.map((link) => {
+            const Icon = link.icon;
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="saas-btn-secondary gap-1.5 text-xs px-3 py-1.5"
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {link.label}
+              </Link>
+            );
+          })}
+          <Link href="/supplier/products" className="saas-btn-primary gap-1.5 text-xs px-3 py-1.5">
             <Plus className="w-3.5 h-3.5" />
             Manage catalog
           </Link>
@@ -77,33 +98,15 @@ export default function SupplierDashboardPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-4">
-        {[
-          { href: '/supplier/products', icon: Plus, label: 'Add product' },
-          { href: '/supplier/orders', icon: ShoppingCart, label: 'Production orders' },
-          { href: '/supplier/rfqs', icon: FileText, label: 'RFQs' },
-        ].map((a) => {
-          const Icon = a.icon;
-          return (
-            <Link key={a.href} href={a.href} className="flex flex-col items-center gap-1.5 group">
-              <span className="saas-icon-well group-hover:bg-portal-hover transition-colors">
-                <Icon className="w-4 h-4" />
-              </span>
-              <span className="text-[10px] text-portal-muted">{a.label}</span>
-            </Link>
-          );
-        })}
-      </div>
-
       {showSkeleton ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div className="grid grid-cols-1 min-[480px]:grid-cols-2 xl:grid-cols-4 gap-3">
           <SkeletonCard />
           <SkeletonCard />
           <SkeletonCard />
           <SkeletonCard />
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div className="grid grid-cols-1 min-[480px]:grid-cols-2 xl:grid-cols-4 gap-3">
           <HeroKpiCard
             label="Product views"
             value={summary.totalViews || 0}
@@ -124,21 +127,21 @@ export default function SupplierDashboardPage() {
             icon={FileText}
           />
           <KpiCard
-            label="Production orders"
+            label="Orders"
             value={summary.totalOrders || 0}
-            subtext="Fulfilled shipments"
+            subtext="Completed orders"
             icon={ShoppingCart}
           />
         </div>
       )}
 
-      <div className="saas-panel p-6 sm:p-7 space-y-5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Package className="w-4 h-4 text-portal-text" />
-            <h3 className="type-section">Component performance</h3>
+      <div className="saas-panel p-4 space-y-3 min-w-0">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <Package className="w-4 h-4 text-portal-text shrink-0" />
+            <h3 className="type-section">Product performance</h3>
           </div>
-          <span className="type-meta bg-portal-inset px-2.5 py-1 rounded-full border border-portal-border">
+          <span className="type-meta bg-portal-inset px-2 py-0.5 rounded-full border border-portal-border shrink-0">
             {products.length} listed
           </span>
         </div>
@@ -147,25 +150,27 @@ export default function SupplierDashboardPage() {
           <table className="saas-table">
             <thead>
               <tr>
-                <th>Component name</th>
-                <th className="text-center">Views</th>
-                <th className="text-center">Enquiries</th>
-                <th className="text-center">RFQs</th>
-                <th className="text-center">Production orders</th>
+                <th>Product name</th>
+                <th className="text-center w-20">Views</th>
+                <th className="text-center w-24">Enquiries</th>
+                <th className="text-center w-16">RFQs</th>
+                <th className="text-center w-28">Orders</th>
               </tr>
             </thead>
             <tbody>
               {!products.length ? (
                 <tr>
                   <td colSpan={5}>
-                    <EmptyState label="No component statistics recorded yet." />
+                    <EmptyState label="No product statistics recorded yet." className="py-6" />
                   </td>
                 </tr>
               ) : (
                 products.map((item: any) => (
                   <tr key={item.productId}>
-                    <td className="font-medium" title={item.productName}>
-                      <span className="truncate block max-w-xs">{item.productName}</span>
+                    <td className="font-medium max-w-0">
+                      <span className="truncate block" title={item.productName}>
+                        {item.productName}
+                      </span>
                     </td>
                     <td className="text-center type-metric">{item.views}</td>
                     <td className="text-center type-metric">{item.enquiries}</td>

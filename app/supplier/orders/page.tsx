@@ -12,12 +12,18 @@ export default function SupplierOrdersPage() {
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   async function loadOrders() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/supplier/orders?search=${encodeURIComponent(searchTerm)}`);
+      const res = await fetch(`/api/supplier/orders?search=${encodeURIComponent(debouncedSearch)}`);
       const json = await res.json();
       if (json.success) {
         setOrders(json.data.orders || []);
@@ -34,7 +40,8 @@ export default function SupplierOrdersPage() {
 
   useEffect(() => {
     loadOrders();
-  }, [searchTerm]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch]);
 
   return (
     <div className="space-y-6 w-full">
@@ -42,10 +49,10 @@ export default function SupplierOrdersPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="type-page">
-            Production Orders
+            Orders
           </h1>
           <p className="type-subtitle">
-            Confirmed commercial orders requiring machining, quality inspection, packing, and dispatch.
+            Confirmed orders requiring machining, quality inspection, packing, and delivery.
           </p>
         </div>
 
@@ -81,7 +88,7 @@ export default function SupplierOrdersPage() {
               </div>
             ) : orders.length === 0 ? (
               <div className="saas-panel p-12 text-center text-xs text-portal-muted">
-                No production orders found for your facility.
+                No orders found for your account.
               </div>
             ) : (
               orders.map((o) => {
@@ -114,7 +121,7 @@ export default function SupplierOrdersPage() {
                     </div>
 
                     <div className="flex items-center justify-between text-xs pt-2 border-t border-portal-border">
-                      <span className="text-portal-muted">{o.items?.length || 0} component line(s)</span>
+                      <span className="text-portal-muted">{o.items?.length || 0} product line(s)</span>
                       <span className="text-portal-muted flex items-center gap-1">
                         <Calendar className="w-3 h-3 text-portal-muted" />
                         <span>{new Date(o.created_at).toLocaleDateString()}</span>
@@ -145,7 +152,7 @@ export default function SupplierOrdersPage() {
                 </div>
 
                 <div className="text-right">
-                  <div className="type-meta text-portal-muted">Fulfillment status</div>
+                  <div className="type-meta text-portal-muted">Order status</div>
                   <span className="saas-badge-gold mt-0.5">{selectedOrder.status.toUpperCase()}</span>
                 </div>
               </div>
@@ -153,14 +160,14 @@ export default function SupplierOrdersPage() {
               {/* Items Table */}
               <div className="space-y-2">
                 <div className="type-section text-portal-muted">
-                  Your Components to Fulfill
+                  Your products in this order
                 </div>
 
                 <div className="saas-table-container">
                   <table className="saas-table text-xs">
                     <thead>
                       <tr>
-                        <th>Component</th>
+                        <th>Product</th>
                         <th className="text-right">Quantity</th>
                       </tr>
                     </thead>
@@ -187,7 +194,7 @@ export default function SupplierOrdersPage() {
             </div>
           ) : (
             <div className="saas-panel p-16 text-center text-xs text-portal-muted">
-              Select an order from the list to view fulfillment details.
+              Select an order from the list to view order details.
             </div>
           )}
         </div>

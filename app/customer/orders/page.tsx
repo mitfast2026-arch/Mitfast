@@ -3,26 +3,27 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import {
-  ShoppingCart,
-  ArrowLeft,
   RefreshCw,
   ShieldCheck,
   Package,
-  Truck,
   CheckCircle2,
   Clock,
-  FileCheck,
   AlertTriangle,
   ChevronDown,
   ChevronUp,
   MapPin,
-  FileText,
+  Search,
+  ArrowRight,
 } from "lucide-react";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { cachedApiGet } from "@/lib/client/portal-data-cache";
+import { CustomerPageShell } from "@/components/customer/CustomerPageShell";
+import { BuyerEmptyState } from "@/components/customer/BuyerEmptyState";
 
 interface OrderItem {
   id: string;
+  product_id?: string;
   product_name_snapshot: string;
   quantity: number;
   unit_price: number;
@@ -50,6 +51,8 @@ export default function CustomerOrdersPage() {
   const router = useRouter();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
   const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>(
     {},
   );
@@ -73,13 +76,19 @@ export default function CustomerOrdersPage() {
         .eq("user_id", user.id)
         .single();
 
-      if (prof) {
-        const res = await fetch(`/api/orders?customerId=${prof.id}`);
-        const json = await res.json();
-        if (json.success) setOrders(json.data.orders || []);
+      if (!prof) {
+        router.push("/auth?role=buyer&mode=signin");
+        return;
+      }
+
+      const res = await cachedApiGet<{ orders: Order[] }>(
+        `/api/orders?customerId=${prof.id}`,
+      );
+      if (res.ok && res.data?.orders) {
+        setOrders(res.data.orders);
       }
     } catch (err) {
-      console.error("Failed to load customer orders:", err);
+      console.error("Error loading orders:", err);
     } finally {
       setLoading(false);
     }
@@ -93,156 +102,192 @@ export default function CustomerOrdersPage() {
     setExpandedOrders((prev) => ({ ...prev, [id]: !prev[id] }));
   }
 
-  function getStepIndex(status: string, paymentStatus: string) {
+  function getStepIndex(status: Order["status"], paymentStatus: string) {
     if (status === "completed") return 5;
     if (status === "dispatched") return 4;
     if (status === "packing") return 3;
     if (status === "accepted" || paymentStatus === "payment_done") return 2;
-    return 1; // pending_payment
+    return 1;
   }
 
   const stages = [
-    { label: "1. Commercial Agreement", desc: "Order Snapshot Finalized" },
-    { label: "2. Payment Confirmed", desc: "Material Production Active" },
-    { label: "3. QA & Crating", desc: "CMM Inspection & Packaging" },
-    { label: "4. In Transit", desc: "Dispatched via Freight" },
-    { label: "5. Delivered", desc: "Consignment Received" },
+    { label: "1. Order Confirmed", desc: "PO details verified" },
+    { label: "2. Payment Processed", desc: "Production underway" },
+    { label: "3. QA & Packaging", desc: "Batch & CMM check" },
+    { label: "4. Dispatched", desc: "Inward transit" },
+    { label: "5. Delivered", desc: "Consignment received" },
   ];
 
+  // Filtering
+  const filteredOrders = orders.filter((o) => {
+    const matchesSearch =
+      !searchQuery ||
+      o.order_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      o.items?.some((i) =>
+        i.product_name_snapshot?.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+
+    const matchesStatus =
+      statusFilter === "all" ||
+      (statusFilter === "active" && o.status !== "completed" && o.status !== "cancelled") ||
+      (statusFilter === "completed" && o.status === "completed") ||
+      (statusFilter === "cancelled" && o.status === "cancelled");
+
+    return matchesSearch && matchesStatus;
+  });
+
   return (
-    <div className="space-y-6 w-full">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 ">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-mono text-[#6B7280] mb-1">
-            <Link
-              href="/customer/dashboard"
-              className="hover:text-[#111315] flex items-center gap-1"
-            >
-              <ArrowLeft className="w-3 h-3" />
-              <span>Dashboard</span>
-            </Link>
-            <span>/</span>
-            <span className="text-[#111315] font-semibold">
-              Orders & Tracking
-            </span>
-          </div>
-          <h1 className="type-page">Production Orders & Batch Tracking</h1>
-          <p className="type-subtitle">
-            Real-time milestone visibility for aerospace and precision
-            components from contract to inward delivery.
-          </p>
+    <CustomerPageShell
+      title="Orders"
+      subtitle="Track manufacturing progress and deliveries."
+      actions={
+        <button type="button" onClick={loadOrders} className="buyer-cta-ghost">
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
+      }
+    >
+      <div className="buyer-flush flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div className="relative w-full flex-1 max-w-2xl">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#9CA3AF] pointer-events-none" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by order number or part…"
+            className="w-full pl-10 pr-4 py-2.5 text-sm rounded-xl border border-[#D9DCE1] bg-[#F7F7F8] text-[#111315] focus:outline-none focus:border-[#111315]"
+          />
         </div>
 
-        <button
-          onClick={loadOrders}
-          className="saas-btn-secondary text-xs py-1.5 px-3 flex items-center gap-1.5 self-start sm:self-auto"
-        >
-          <RefreshCw
-            className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`}
-          />
-          <span>Refresh Tracking</span>
-        </button>
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          {[
+            { key: 'all', label: 'All' },
+            { key: 'active', label: 'Active' },
+            { key: 'completed', label: 'Delivered' },
+            { key: 'cancelled', label: 'Cancelled' },
+          ].map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              onClick={() => setStatusFilter(f.key)}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
+                statusFilter === f.key
+                  ? 'bg-[#111315] text-white'
+                  : 'bg-white/70 text-[#6B7280] hover:text-[#111315] shadow-[var(--buyer-shadow-sm)]'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="space-y-6">
-        {orders.length === 0 ? (
-          <div className="saas-panel p-12 text-center border-[#E2E4E8] space-y-3">
-            <ShoppingCart className="w-10 h-10 text-[#6B7280] mx-auto stroke-1" />
-            <h3 className="text-base font-semibold text-[#111315]">
-              No Active Production Orders
-            </h3>
-            <p className="text-xs text-[#6B7280]">
-              Your negotiated RFQ quotations can be approved and converted into
-              active production batches.
-            </p>
-            <Link
-              href="/customer/rfqs"
-              className="saas-btn-primary text-xs mt-2 inline-block"
-            >
-              Review RFQ Quotations
-            </Link>
+      <div className="space-y-4">
+        {loading ? (
+          <div className="space-y-4 animate-pulse">
+            {[1, 2].map((i) => (
+              <div key={i} className="buyer-surface h-56" />
+            ))}
+          </div>
+        ) : filteredOrders.length === 0 ? (
+          <div className="buyer-surface-grad buyer-surface-grad--sky buyer-fill-panel min-h-[min(48vh,480px)]">
+            <BuyerEmptyState
+              variant={searchQuery || statusFilter !== 'all' ? 'search' : 'orders'}
+              title={
+                searchQuery || statusFilter !== 'all' ? 'No matching orders' : undefined
+              }
+              description={
+                searchQuery || statusFilter !== 'all'
+                  ? 'Try clearing search or filters.'
+                  : undefined
+              }
+              actionLabel={searchQuery || statusFilter !== 'all' ? undefined : 'Browse catalog'}
+              actionHref={searchQuery || statusFilter !== 'all' ? undefined : '/products'}
+            />
           </div>
         ) : (
-          orders.map((o) => {
+          filteredOrders.map((o, idx) => {
             const currentStep = getStepIndex(o.status, o.payment_status);
-            const isCancelled = o.status === "cancelled";
+            const isCancelled = o.status === 'cancelled';
             const isExpanded = !!expandedOrders[o.id];
 
             return (
               <div
                 key={o.id}
-                className="rounded-3xl border border-[#E2E4E8] shadow-xs overflow-hidden"
+                className={
+                  idx === 0
+                    ? 'buyer-surface-grad buyer-surface-grad--sky overflow-hidden'
+                    : 'buyer-surface overflow-hidden'
+                }
               >
-                {/* Header Card Bar */}
-                <div className="p-5 border-b border-[#E2E4E8] flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-[#FAFAFA]">
+                <div className="p-5 border-b border-[#D9DCE1] flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-[#E8EAED]/40">
                   <div className="space-y-1.5">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-mono font-bold text-base text-[#111315]">
                         {o.order_number}
                       </span>
                       <span
-                        className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded font-semibold ${
-                          o.status === "completed"
-                            ? "bg-[#DCFCE7] text-[#15803D]"
-                            : o.status === "dispatched"
-                              ? "bg-[#E0E7FF] text-[#4338CA]"
+                        className={`text-[11px] font-mono uppercase px-2.5 py-0.5 rounded-full font-semibold ${
+                          o.status === 'completed'
+                            ? 'inline-flex items-center px-2.5 py-0.5 text-xs rounded-full bg-[#E8F5EC] text-[#15803D]'
+                            : o.status === 'dispatched'
+                              ? 'inline-flex items-center px-2.5 py-0.5 text-xs rounded-full bg-[#EEF2FF] text-[#3730A3]'
                               : isCancelled
-                                ? "bg-[#FEF2F2] text-[#B91C1C]"
-                                : "bg-[#FEF3C7] text-[#B45309]"
+                                ? 'inline-flex items-center px-2.5 py-0.5 text-xs rounded-full bg-[#FDECEC] text-[#B91C1C]'
+                                : 'inline-flex items-center px-2.5 py-0.5 text-xs rounded-full bg-[#FEF6E7] text-[#B45309]'
                         }`}
                       >
-                        {o.status.replace("_", " ")}
+                        {o.status.replace('_', ' ')}
                       </span>
-
                       <span
-                        className={`text-[10px] font-mono px-2 py-0.5 rounded ${
-                          o.payment_status === "payment_done"
-                            ? "bg-[#F0FDF4] text-[#15803D] border border-[#BBF7D0]"
-                            : "bg-[#FFFBEB] text-[#B45309] border border-[#FDE68A]"
+                        className={`text-[11px] font-mono px-2.5 py-0.5 rounded-full ${
+                          o.payment_status === 'payment_done'
+                            ? 'inline-flex items-center px-2.5 py-0.5 text-xs rounded-full bg-[#E8F5EC] text-[#15803D]'
+                            : 'inline-flex items-center px-2.5 py-0.5 text-xs rounded-full bg-[#FEF6E7] text-[#B45309]'
                         }`}
                       >
-                        {o.payment_status === "payment_done"
-                          ? "✓ Commercial Payment Confirmed"
-                          : "⏱ Payment Pending Invoice"}
+                        {o.payment_status === 'payment_done' ? 'Payment confirmed' : 'Payment pending'}
                       </span>
                     </div>
-
-                    <div className="text-xs font-mono text-[#6B7280] flex flex-wrap gap-4">
+                    <div className="text-xs text-[#6B7280] flex flex-wrap gap-3">
                       <span>
-                        PO / order date:{" "}
-                        {new Date(o.created_at).toLocaleDateString("en-IN", {
-                          day: "2-digit",
-                          month: "short",
-                          year: "numeric",
-                        })}
+                        Placed:{' '}
+                        <strong className="text-[#111315]">
+                          {new Date(o.created_at).toLocaleDateString('en-IN', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                          })}
+                        </strong>
                       </span>
                       <span>•</span>
                       <span>
-                        Destination:{" "}
-                        {o.delivery_address_snapshot?.city || "India"},{" "}
-                        {o.delivery_address_snapshot?.state || ""}
+                        Ship to:{' '}
+                        <strong className="text-[#111315]">
+                          {o.delivery_address_snapshot?.city || 'India'}
+                          {o.delivery_address_snapshot?.state
+                            ? `, ${o.delivery_address_snapshot.state}`
+                            : ''}
+                        </strong>
                       </span>
                     </div>
                   </div>
 
                   <div className="flex items-center justify-between lg:justify-end gap-6">
                     <div className="text-right">
-                      <div className="text-[10px] font-mono uppercase text-[#6B7280]">
-                        Contract Value
+                      <div className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider">
+                        Total
                       </div>
                       <div className="text-xl font-bold font-mono text-[#111315]">
-                        ₹{o.total?.toLocaleString("en-IN")}
+                        ₹{o.total?.toLocaleString('en-IN')}
                       </div>
                     </div>
-
                     <button
+                      type="button"
                       onClick={() => toggleExpand(o.id)}
-                      className="saas-btn-ghost text-xs font-mono flex items-center gap-1"
+                      className="buyer-cta-ghost !px-3 !py-1.5 text-xs"
                     >
-                      <span>
-                        {isExpanded ? "Hide Details" : "View Details"}
-                      </span>
+                      {isExpanded ? 'Hide' : 'Details'}
                       {isExpanded ? (
                         <ChevronUp className="w-3.5 h-3.5" />
                       ) : (
@@ -252,36 +297,34 @@ export default function CustomerOrdersPage() {
                   </div>
                 </div>
 
-                {/* Stepper Progress Bar */}
                 {!isCancelled ? (
-                  <div className="p-6 border-b border-[#E2E4E8] ">
-                    <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
+                  <div className="p-5 border-b border-[#D9DCE1]">
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
                       {stages.map((st, idx) => {
                         const stepNum = idx + 1;
                         const isDone = stepNum < currentStep;
                         const isCurrent = stepNum === currentStep;
-
                         return (
                           <div
                             key={idx}
-                            className={`p-3 rounded-3xl border transition-all ${
+                            className={`p-3 rounded-xl border transition-all ${
                               isDone
-                                ? "bg-[#F0FDF4] border-[#BBF7D0] text-[#15803D]"
+                                ? 'bg-[#E8F5EC] border-[#D9DCE1] text-[#15803D]'
                                 : isCurrent
-                                  ? "bg-[#111315] border-[#111315] text-white shadow-xs"
-                                  : "bg-white/40 border-[#E2E4E8] text-[#6B7280]"
+                                  ? 'bg-[#111315] border-[#111315] text-white'
+                                  : 'bg-[#E8EAED] border-[#D9DCE1] text-[#6B7280]'
                             }`}
                           >
-                            <div className="flex items-center justify-between text-xs font-mono mb-1">
-                              <span className="font-bold">{st.label}</span>
+                            <div className="flex items-center justify-between text-xs font-semibold mb-1">
+                              <span>{st.label}</span>
                               {isDone ? (
-                                <CheckCircle2 className="w-3.5 h-3.5 text-[#15803D]" />
+                                <CheckCircle2 className="w-3.5 h-3.5" />
                               ) : isCurrent ? (
-                                <Clock className="w-3.5 h-3.5 text-white animate-pulse" />
+                                <Clock className="w-3.5 h-3.5 animate-pulse" />
                               ) : null}
                             </div>
                             <div
-                              className={`text-[10px] font-sans ${isCurrent ? "text-[#ECEEF0]" : "text-[#6B7280]"}`}
+                              className={`text-[11px] ${isCurrent ? 'opacity-80' : 'text-[#6B7280]'}`}
                             >
                               {st.desc}
                             </div>
@@ -291,55 +334,38 @@ export default function CustomerOrdersPage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="p-4 bg-[#FEF2F2] border-b border-[#FECACA] text-xs text-[#B91C1C] flex items-center gap-2">
+                  <div className="p-4 bg-[#FDECEC] border-b border-[#D9DCE1] text-xs text-[#B91C1C] flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 shrink-0" />
-                    <span>
-                      This production order was cancelled. Please contact your
-                      procurement manager for details.
-                    </span>
+                    <span>This order was cancelled. Contact support if you need help.</span>
                   </div>
                 )}
 
-                {/* Line items & dispatch details expandable area */}
-                {isExpanded && (
-                  <div className="p-6 space-y-6 bg-[#FAFAFA]">
-                    {/* Line Items Table */}
+                {isExpanded ? (
+                  <div className="p-5 sm:p-6 space-y-6 bg-[#E8EAED]/30">
                     <div className="space-y-2">
-                      <div className="text-xs font-mono font-bold text-[#111315] uppercase tracking-wider">
-                        Manufactured Components & Batch Breakdown
+                      <div className="text-xs font-bold text-[#111315] uppercase tracking-wider">
+                        Line items
                       </div>
-                      <div className="saas-panel overflow-hidden">
-                        <table className="saas-table">
-                          <thead className="font-mono text-[#6B7280] border-b border-[#E2E4E8]">
+                      <div className="overflow-x-auto rounded-xl border border-[#D9DCE1] bg-[#F7F7F8]">
+                        <table className="w-full text-left text-sm">
+                          <thead>
                             <tr>
-                              <th className="py-2.5 px-4">
-                                COMPONENT SPECIFICATION
-                              </th>
-                              <th className="py-2.5 px-4 text-center">
-                                ORDERED LOT
-                              </th>
-                              <th className="py-2.5 px-4 text-right">
-                                UNIT CONTRACT PRICE
-                              </th>
-                              <th className="py-2.5 px-4 text-right">
-                                LINE TOTAL
-                              </th>
+                              <th>Component</th>
+                              <th className="text-center">Qty</th>
+                              <th className="text-right">Unit</th>
+                              <th className="text-right">Total</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-[#EEEEEE] font-mono">
+                          <tbody>
                             {o.items?.map((itm) => (
-                              <tr key={itm.id} className="hover:bg-[#FAFAFA]">
-                                <td className="py-3 px-4 font-semibold text-[#111315]">
-                                  {itm.product_name_snapshot}
+                              <tr key={itm.id}>
+                                <td className="font-semibold font-sans">{itm.product_name_snapshot}</td>
+                                <td className="text-center font-mono">{itm.quantity}</td>
+                                <td className="text-right font-mono">
+                                  ₹{itm.unit_price?.toLocaleString('en-IN')}
                                 </td>
-                                <td className="py-3 px-4 text-center">
-                                  {itm.quantity} Units
-                                </td>
-                                <td className="py-3 px-4 text-right">
-                                  ₹{itm.unit_price?.toLocaleString("en-IN")}
-                                </td>
-                                <td className="py-3 px-4 text-right font-bold text-[#111315]">
-                                  ₹{itm.total?.toLocaleString("en-IN")}
+                                <td className="text-right font-mono font-bold">
+                                  ₹{itm.total?.toLocaleString('en-IN')}
                                 </td>
                               </tr>
                             ))}
@@ -348,51 +374,44 @@ export default function CustomerOrdersPage() {
                       </div>
                     </div>
 
-                    {/* Delivery & QA Info Bar */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
-                      <div className="p-4 rounded-3xl border border-[#E2E4E8] space-y-1.5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                      <div className="p-4 rounded-xl border border-[#D9DCE1] bg-[#F7F7F8] space-y-1.5">
                         <div className="flex items-center gap-1.5 font-bold text-[#111315]">
-                          <MapPin className="w-3.5 h-3.5 text-[#111315]" />
-                          <span>Delivery Consignment Snapshot</span>
+                          <MapPin className="w-3.5 h-3.5" />
+                          Delivery address
                         </div>
-                        <div className="text-[#555555] leading-relaxed text-[11px]">
-                          {o.delivery_address_snapshot?.address_line_1 ||
-                            "Registered Destination"}
-                          <br />
-                          {o.delivery_address_snapshot?.address_line_2 && (
+                        <div className="text-[#6B7280] leading-relaxed">
+                          {o.delivery_address_snapshot?.address_line_1 || 'Registered destination'}
+                          {o.delivery_address_snapshot?.address_line_2 ? (
                             <>
-                              {o.delivery_address_snapshot.address_line_2}
                               <br />
+                              {o.delivery_address_snapshot.address_line_2}
                             </>
-                          )}
-                          {o.delivery_address_snapshot?.city},{" "}
-                          {o.delivery_address_snapshot?.state} -{" "}
+                          ) : null}
+                          <br />
+                          {o.delivery_address_snapshot?.city}, {o.delivery_address_snapshot?.state} —{' '}
                           {o.delivery_address_snapshot?.postal_code}
                           <br />
-                          {o.delivery_address_snapshot?.country || "India"}
+                          {o.delivery_address_snapshot?.country || 'India'}
                         </div>
                       </div>
-
-                      <div className="p-4 rounded-3xl border border-[#E2E4E8] space-y-1.5">
+                      <div className="p-4 rounded-xl border border-[#D9DCE1] bg-[#F7F7F8] space-y-1.5">
                         <div className="flex items-center gap-1.5 font-bold text-[#15803D]">
                           <ShieldCheck className="w-3.5 h-3.5" />
-                          <span>Quality & Compliance Credentials</span>
+                          Quality
                         </div>
-                        <p className="text-[#555555] text-[11px] leading-relaxed">
-                          All lots include ISO/IEC 17025 accredited material
-                          test certificates (MTC), raw alloy spectroscopic
-                          reports, and dimensional coordinate measuring machine
-                          (CMM) inspection data.
+                        <p className="text-[#6B7280] leading-relaxed">
+                          Lots include material test certificates and dimensional inspection as applicable.
                         </p>
                       </div>
                     </div>
                   </div>
-                )}
+                ) : null}
               </div>
             );
           })
         )}
       </div>
-    </div>
+    </CustomerPageShell>
   );
 }

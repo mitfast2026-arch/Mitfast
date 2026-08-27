@@ -23,8 +23,8 @@ export function ChartCard({
   showExpand = false,
 }: ChartCardProps) {
   return (
-    <div className={clsx('saas-panel p-5 flex flex-col min-h-0', className)}>
-      <div className="flex items-start justify-between gap-3 mb-3 shrink-0">
+    <div className={clsx('saas-panel p-4 flex flex-col', className)}>
+      <div className="flex items-start justify-between gap-3 mb-2 shrink-0">
         <div className="min-w-0">
           <h3 className="type-section">{title}</h3>
           {subtitle ? <p className="type-desc mt-0.5">{subtitle}</p> : null}
@@ -41,7 +41,7 @@ export function ChartCard({
           </button>
         ) : null}
       </div>
-      <div className="w-full flex-1 min-h-0 flex items-center">{children}</div>
+      <div className="w-full flex items-center justify-center min-w-0">{children}</div>
     </div>
   );
 }

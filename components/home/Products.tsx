@@ -77,7 +77,7 @@ export default function Products() {
   }, [products]);
 
   const categories = [
-    { id: 'all', label: 'All Indexed Components' },
+    { id: 'all', label: 'All Products' },
     { id: 'aerospace', label: 'Aerospace Fasteners' },
     { id: 'marine', label: 'Marine & Subsea' },
     { id: 'cnc', label: 'Custom CNC Turned' },
@@ -88,7 +88,7 @@ export default function Products() {
       id="catalog"
       ref={sectionRef}
       className="relative bg-[#f8f9fb] py-24 md:py-36 border-b border-slate-200/80"
-      aria-label="Component Catalog and Inventory"
+      aria-label="Product Catalog and Inventory"
     >
       {/* Anchor for products hash */}
       <div id="products" className="absolute -top-20 left-0" />
@@ -99,7 +99,7 @@ export default function Products() {
           <div className="space-y-3 max-w-2xl">
             <div className="flex items-center gap-2">
               <span className="home-badge-teal">02 / CATALOG INDEX</span>
-              <span className="home-badge-mono">LIVE COMPONENT INVENTORY</span>
+              <span className="home-badge-mono">LIVE PRODUCT INVENTORY</span>
             </div>
 
             <h2 className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-[#090e17]">

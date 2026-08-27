@@ -6,7 +6,7 @@ import { addToCustomerWishlist } from '@/lib/server/guest/wishlist-service';
 
 /**
  * Merges guest cart + wishlist into the authenticated customer account, then clears guest state.
- * Idempotent if guest cookie is already gone.
+ * Claims guest rows atomically via DB RPC to prevent double-merge across tabs/instances.
  */
 export async function mergeGuestStateIntoCustomer(
   customerId: string
@@ -19,37 +19,38 @@ export async function mergeGuestStateIntoCustomer(
 
     const admin = createAdminClient();
 
-    const { data: guestCart } = await admin
-      .from('guest_cart_items')
-      .select('product_id, quantity')
-      .eq('guest_session_id', guestSessionId);
+    const { data: claimedRows, error: claimError } = await (admin as any).rpc(
+      'claim_guest_session_for_merge',
+      { p_guest_session_id: guestSessionId }
+    );
 
-    const { data: guestWish } = await admin
-      .from('guest_wishlist_items')
-      .select('product_id')
-      .eq('guest_session_id', guestSessionId);
+    if (claimError) {
+      return {
+        success: false,
+        error: { message: claimError.message, code: 'MERGE_ERROR' },
+      };
+    }
 
-    // Ensure customer cart exists
     await getCustomerCart(customerId);
 
     let mergedCartLines = 0;
-    for (const line of guestCart || []) {
-      const result = await addToCart(customerId, line.product_id, line.quantity);
+    const cartLines = (claimedRows || []).filter(
+      (row: { cart_product_id?: string | null; cart_quantity?: number | null }) =>
+        row.cart_product_id && row.cart_quantity
+    );
+    for (const line of cartLines) {
+      const result = await addToCart(customerId, line.cart_product_id, line.cart_quantity);
       if (result.success) mergedCartLines += 1;
     }
 
     let mergedWishlist = 0;
-    for (const line of guestWish || []) {
-      const result = await addToCustomerWishlist(customerId, line.product_id);
+    const wishLines = (claimedRows || []).filter(
+      (row: { wishlist_product_id?: string | null }) => row.wishlist_product_id
+    );
+    for (const line of wishLines) {
+      const result = await addToCustomerWishlist(customerId, line.wishlist_product_id);
       if (result.success) mergedWishlist += 1;
     }
-
-    await admin.from('guest_cart_items').delete().eq('guest_session_id', guestSessionId);
-    await admin.from('guest_wishlist_items').delete().eq('guest_session_id', guestSessionId);
-    await admin
-      .from('guest_sessions')
-      .update({ expires_at: new Date(0).toISOString() })
-      .eq('id', guestSessionId);
 
     await clearGuestCookie();
 

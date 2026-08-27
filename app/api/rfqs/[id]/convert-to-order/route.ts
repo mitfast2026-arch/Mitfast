@@ -4,7 +4,7 @@ import { getServerSession, unauthorizedResponse, forbiddenResponse } from '@/lib
 import { createAdminClient } from '@/lib/supabase/admin';
 
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
@@ -27,7 +27,8 @@ export async function POST(
       }
     }
 
-    const result = await convertRfqToOrder({ rfqId: params.id });
+    const idempotencyKey = request.headers.get('Idempotency-Key');
+    const result = await convertRfqToOrder({ rfqId: params.id }, idempotencyKey);
     if (!result.success) return NextResponse.json(result, { status: 400 });
     return NextResponse.json(result, { status: 201 });
   } catch (error) {

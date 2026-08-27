@@ -1,10 +1,18 @@
 .service-showcase {
-  --ss-bg: #111315;
-  --ss-bg-deep: #191c20;
+  --ss-bg: #07090b;
+  --ss-bg-deep: #0c0e11;
   --ss-fg: #f7f7f8;
   --ss-muted: #9ca3af;
   --ss-hairline: rgba(255, 255, 255, 0.12);
-  background: var(--ss-bg);
+  /* Darker body; fade to page white at the top */
+  background: linear-gradient(
+    180deg,
+    #ffffff 0%,
+    #1a1d21 7%,
+    #0c0e11 14%,
+    var(--ss-bg) 22%,
+    var(--ss-bg) 100%
+  );
   color: var(--ss-fg);
 }
 
@@ -152,6 +160,8 @@ font-size: clamp(0.75rem, 0.95vw, 0.875rem);
 
 .service-panel__media-inner img {
   object-fit: cover;
+  /* Pull back saturation + brightness for a darker cinematic read */
+  filter: brightness(0.58) saturate(0.72) contrast(1.05);
 }
 
 .service-panel__content {

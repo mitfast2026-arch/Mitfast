@@ -13,6 +13,7 @@ import {
 } from '@/lib/client/portal-data-cache';
 import { PORTAL_PAGE_LIMIT } from '@/lib/client/portal-nav-prefetch';
 import { useMutation, mutationKey } from '@/lib/client/use-mutation';
+import { toast } from 'sonner';
 import { notifyDashboardChanged } from '@/components/portal/ApprovalsCountContext';
 import { SalesWorkflowBar, ContactGrid } from '@/components/admin/SalesWorkflow';
 import AdminPageHeader from '@/components/admin/AdminPageHeader';
@@ -31,6 +32,7 @@ function AdminOrdersPageContent() {
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -38,7 +40,7 @@ function AdminOrdersPageContent() {
 
   const loadOrders = useCallback(async (showLoading = true) => {
     const statusParam = statusFilter === 'all' ? '' : `&status=${statusFilter}`;
-    const url = `/api/orders?convertedOnly=true&page=1&limit=${PORTAL_PAGE_LIMIT}&search=${encodeURIComponent(searchTerm)}${statusParam}`;
+    const url = `/api/orders?convertedOnly=true&page=1&limit=${PORTAL_PAGE_LIMIT}&search=${encodeURIComponent(debouncedSearch)}${statusParam}`;
     const existing = peekPortalCache<{ orders: any[] }>(url);
     if (existing) {
       const list = existing.data.orders || [];
@@ -75,12 +77,17 @@ function AdminOrdersPageContent() {
     } finally {
       setLoading(false);
     }
-  }, [searchTerm, statusFilter]);
+  }, [debouncedSearch, statusFilter]);
 
   useEffect(() => {
     const q = searchParams.get('search');
     if (q !== null) setSearchTerm(q);
   }, [searchParams]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   useEffect(() => {
     loadOrders();
@@ -94,6 +101,7 @@ function AdminOrdersPageContent() {
   async function handleSaveOrderLines() {
     if (!selectedOrder) return;
     setActionError(null);
+    toast.loading('Saving line items...', { id: 'order-lines' });
     await run(
       () =>
         apiPut(`/api/orders/${selectedOrder.id}`, {
@@ -109,34 +117,60 @@ function AdminOrdersPageContent() {
         }),
       {
         key: mutationKey(selectedOrder.id, 'save-lines'),
-        onError: (msg) => setActionError(msg),
+        onSuccess: () => {
+          toast.success('Order items updated', { id: 'order-lines' });
+        },
+        onError: (msg) => {
+          setActionError(msg);
+          toast.error(msg, { id: 'order-lines' });
+        },
       }
     );
   }
 
   async function handleUpdateStatus(orderId: string, newStatus: OrderStatus) {
     setActionError(null);
+    const currentOrder = orders.find((o) => o.id === orderId);
+    const oldStatus = currentOrder?.status;
+
     await run(
       () => apiPut(`/api/orders/${orderId}/status`, { status: newStatus }),
       {
         key: mutationKey(orderId, `status-${newStatus}`),
+        optimistic: () => patchOrder(orderId, { status: newStatus }),
+        rollback: () => oldStatus && patchOrder(orderId, { status: oldStatus }),
         onSuccess: () => {
           patchOrder(orderId, { status: newStatus });
           notifyDashboardChanged();
+          toast.success(`Status updated to ${formatStatusLabel(newStatus)}`);
         },
-        onError: (msg) => setActionError(msg),
+        onError: (msg) => {
+          setActionError(msg);
+          toast.error(msg);
+        },
       }
     );
   }
 
   async function handleUpdatePayment(orderId: string, newPaymentStatus: PaymentStatus) {
     setActionError(null);
+    const currentOrder = orders.find((o) => o.id === orderId);
+    const oldPayment = currentOrder?.payment_status;
+
     await run(
       () => apiPut(`/api/orders/${orderId}/payment`, { paymentStatus: newPaymentStatus }),
       {
         key: mutationKey(orderId, `payment-${newPaymentStatus}`),
-        onSuccess: () => patchOrder(orderId, { payment_status: newPaymentStatus }),
-        onError: (msg) => setActionError(msg),
+        optimistic: () => patchOrder(orderId, { payment_status: newPaymentStatus }),
+        rollback: () => oldPayment && patchOrder(orderId, { payment_status: oldPayment }),
+        onSuccess: () => {
+          patchOrder(orderId, { payment_status: newPaymentStatus });
+          toast.success(`Payment updated to ${formatStatusLabel(newPaymentStatus)}`);
+        },
+        onError: (msg) => {
+          setActionError(msg);
+          toast.error(msg);
+        },
       }
     );
   }
@@ -151,10 +185,10 @@ function AdminOrdersPageContent() {
   const contact = selectedOrder ? orderContact(selectedOrder) : null;
 
   return (
-    <div className="space-y-6 w-full">
+    <div className="space-y-4 w-full min-w-0">
       <AdminPageHeader
         title="Orders"
-        description="Accepted conversions from enquiries and RFQs — fulfillment, payment, and delivery."
+        description="Orders from accepted enquiries and RFQs — status, payment, and delivery."
         actions={
           <button onClick={() => loadOrders()} className="saas-btn-secondary gap-2">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -397,7 +431,7 @@ function AdminOrdersPageContent() {
             </div>
           ) : (
             <div className="saas-panel p-16 text-center text-sm text-portal-muted">
-              Select an order to manage fulfillment.
+              Select an order to manage status and payment.
             </div>
           )
         }

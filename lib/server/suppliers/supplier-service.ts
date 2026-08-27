@@ -6,6 +6,12 @@ import {
   updateSupplierProfileSchema,
 } from '@/lib/validation/supplier.schema';
 import type { ServerResult } from '@/lib/server/auth/get-session';
+import {
+  allowedFrom,
+  SUPPLIER_TRANSITIONS,
+  transitionStatus,
+} from '@/lib/server/db/conditional-update';
+import { invalidateAdminCaches } from '@/lib/server/db/invalidate-caches';
 import type { SupplierStatus } from '@/types/database';
 
 /**
@@ -99,26 +105,25 @@ export async function createSupplierByAdmin(formData: unknown): Promise<ServerRe
 export async function approveSupplier(supplierId: string): Promise<ServerResult<{ approved: boolean }>> {
   try {
     const adminClient = createAdminClient();
-    const { error } = await adminClient
-      .from('suppliers')
-      .update({
-        status: 'active',
-        rejection_reason: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', supplierId);
+    const result = await transitionStatus(
+      adminClient,
+      'suppliers',
+      supplierId,
+      'status',
+      'active',
+      allowedFrom(SUPPLIER_TRANSITIONS, 'active'),
+      { rejection_reason: null }
+    );
 
-    if (error) {
+    if (!result.ok) {
       return {
         success: false,
-        error: { message: error.message, code: 'DATABASE_ERROR' },
+        error: { message: 'Supplier cannot be approved in its current state', code: 'INVALID_STATUS' },
       };
     }
 
-    return {
-      success: true,
-      data: { approved: true },
-    };
+    invalidateAdminCaches();
+    return { success: true, data: { approved: true } };
   } catch (error) {
     console.error('[approveSupplier] Error:', error);
     return {
@@ -144,26 +149,25 @@ export async function rejectSupplier(formData: unknown): Promise<ServerResult<{ 
     const { supplierId, rejectionReason } = validated.data;
     const adminClient = createAdminClient();
 
-    const { error } = await adminClient
-      .from('suppliers')
-      .update({
-        status: 'rejected',
-        rejection_reason: rejectionReason,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', supplierId);
+    const result = await transitionStatus(
+      adminClient,
+      'suppliers',
+      supplierId,
+      'status',
+      'rejected',
+      allowedFrom(SUPPLIER_TRANSITIONS, 'rejected'),
+      { rejection_reason: rejectionReason }
+    );
 
-    if (error) {
+    if (!result.ok) {
       return {
         success: false,
-        error: { message: error.message, code: 'DATABASE_ERROR' },
+        error: { message: 'Supplier cannot be rejected in its current state', code: 'INVALID_STATUS' },
       };
     }
 
-    return {
-      success: true,
-      data: { rejected: true },
-    };
+    invalidateAdminCaches();
+    return { success: true, data: { rejected: true } };
   } catch (error) {
     console.error('[rejectSupplier] Error:', error);
     return {
@@ -181,24 +185,24 @@ export async function archiveSupplier(supplierId: string): Promise<ServerResult<
   try {
     const adminClient = createAdminClient();
 
-    // 1. Mark supplier as archived
-    const { error: supplierError } = await adminClient
-      .from('suppliers')
-      .update({
-        status: 'archived',
-        archived_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', supplierId);
+    const result = await transitionStatus(
+      adminClient,
+      'suppliers',
+      supplierId,
+      'status',
+      'archived',
+      allowedFrom(SUPPLIER_TRANSITIONS, 'archived'),
+      { archived_at: new Date().toISOString() }
+    );
 
-    if (supplierError) {
+    if (!result.ok) {
       return {
         success: false,
-        error: { message: supplierError.message, code: 'DATABASE_ERROR' },
+        error: { message: 'Supplier cannot be archived in its current state', code: 'INVALID_STATUS' },
       };
     }
 
-    // 2. Archive all active products belonging to this supplier, saving their current publication state
+    // Archive all active products belonging to this supplier
     const { data: supplierProducts } = await adminClient
       .from('products')
       .select('id, publication_status')
@@ -218,6 +222,7 @@ export async function archiveSupplier(supplierId: string): Promise<ServerResult<
       }
     }
 
+    invalidateAdminCaches();
     return {
       success: true,
       data: { archived: true },
@@ -248,24 +253,24 @@ export async function restoreSupplier(formData: unknown): Promise<ServerResult<{
     const { supplierId, restoreAllProducts, selectedProductIds } = validated.data;
     const adminClient = createAdminClient();
 
-    // 1. Mark supplier as active
-    const { error: supplierError } = await adminClient
-      .from('suppliers')
-      .update({
-        status: 'active',
-        archived_at: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', supplierId);
+    const result = await transitionStatus(
+      adminClient,
+      'suppliers',
+      supplierId,
+      'status',
+      'active',
+      allowedFrom(SUPPLIER_TRANSITIONS, 'active'),
+      { archived_at: null }
+    );
 
-    if (supplierError) {
+    if (!result.ok) {
       return {
         success: false,
-        error: { message: supplierError.message, code: 'DATABASE_ERROR' },
+        error: { message: 'Supplier cannot be restored in its current state', code: 'INVALID_STATUS' },
       };
     }
 
-    // 2. Fetch archived products of this supplier
+    // Fetch archived products of this supplier
     let query = adminClient
       .from('products')
       .select('id, pre_archive_publication_status')
@@ -293,6 +298,7 @@ export async function restoreSupplier(formData: unknown): Promise<ServerResult<{
       }
     }
 
+    invalidateAdminCaches();
     return {
       success: true,
       data: { restored: true },

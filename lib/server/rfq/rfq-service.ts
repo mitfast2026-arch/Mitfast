@@ -1,10 +1,36 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getCustomerCart, clearCustomerCart } from '@/lib/server/cart/cart-service';
+import { getBusinessSettings } from '@/lib/server/settings/settings-service';
 import { negotiateRfqSchema, rejectRfqSchema, submitRfqSchema } from '@/lib/validation/rfq.schema';
 import { convertEnquiryToRfqSchema } from '@/lib/validation/enquiry.schema';
 import { ensureCustomerFromGuest } from '@/lib/server/auth/ensure-customer-from-guest';
+import { isProfileIdentityComplete } from '@/lib/server/auth/profile-complete';
 import type { ServerResult } from '@/lib/server/auth/get-session';
 import type { RfqStatus } from '@/types/database';
+import { mapRpcError } from '@/lib/server/db/rpc-errors';
+import {
+  allowedFrom,
+  ENQUIRY_TRANSITIONS,
+  RFQ_TRANSITIONS,
+  transitionStatus,
+} from '@/lib/server/db/conditional-update';
+import { withIdempotency } from '@/lib/server/db/idempotency';
+import { invalidateAdminCaches } from '@/lib/server/db/invalidate-caches';
+
+export async function getNextRfqNumber(adminClient: any): Promise<string> {
+  try {
+    const { data, error } = await adminClient.rpc('generate_rfq_number');
+    if (!error && data && typeof data === 'string') {
+      return data;
+    }
+  } catch {
+    // fallback
+  }
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+  const timeSuffix = Date.now().toString().slice(-4);
+  return `RFQ-${dateStr}-${timeSuffix}${randomSuffix}`;
+}
 
 /**
  * Submits an RFQ from the customer's active cart.
@@ -12,8 +38,10 @@ import type { RfqStatus } from '@/types/database';
  */
 export async function submitRfqFromCart(
   customerId: string,
-  formData: unknown
+  formData: unknown,
+  idempotencyKey?: string | null
 ): Promise<ServerResult<{ rfqId: string; rfqNumber: string }>> {
+  return withIdempotency('submit_rfq_from_cart', idempotencyKey, async () => {
   try {
     const validated = submitRfqSchema.safeParse(formData);
     if (!validated.success) {
@@ -23,16 +51,60 @@ export async function submitRfqFromCart(
       };
     }
 
-    const { customerMessage, deliveryAddress: customAddress } = validated.data;
+    const { customerMessage, deliveryAddress: customAddress, contact } = validated.data;
     const adminClient = createAdminClient();
 
-    // 1. Fetch business settings to check minimum RFQ value
-    const { data: settings } = await adminClient
-      .from('business_settings')
-      .select('minimum_rfq_value, currency')
+    const { data: profile, error: profileError } = await adminClient
+      .from('profiles')
+      .select('id, full_name, email, phone, role')
+      .eq('id', customerId)
       .single();
 
-    const minRfqValue = settings?.minimum_rfq_value || 500000;
+    if (profileError || !profile) {
+      return {
+        success: false,
+        error: { message: 'Customer profile not found', code: 'NOT_FOUND' },
+      };
+    }
+
+    if (contact) {
+      const { error: contactUpdateError } = await adminClient
+        .from('profiles')
+        .update({
+          full_name: contact.fullName.trim(),
+          email: contact.email.trim().toLowerCase(),
+          phone: contact.phone.trim(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', customerId);
+
+      if (contactUpdateError) {
+        return {
+          success: false,
+          error: { message: contactUpdateError.message, code: 'PROFILE_ERROR' },
+        };
+      }
+
+      profile.full_name = contact.fullName.trim();
+      profile.email = contact.email.trim().toLowerCase();
+      profile.phone = contact.phone.trim();
+    }
+
+    if (!isProfileIdentityComplete(profile)) {
+      return {
+        success: false,
+        error: {
+          message: 'Name, email, and phone are required before submitting an RFQ.',
+          code: 'INCOMPLETE_PROFILE',
+        },
+      };
+    }
+
+    // 1. Fetch business settings to check minimum RFQ value (cached)
+    const settingsRes = await getBusinessSettings();
+    const settings = settingsRes.success ? settingsRes.data : null;
+
+    const minRfqValue = settings?.minimumRfqValue || 500000;
     const currency = settings?.currency || 'INR';
 
     // 2. Fetch customer cart
@@ -43,7 +115,7 @@ export async function submitRfqFromCart(
     if (!cart.items || cart.items.length === 0) {
       return {
         success: false,
-        error: { message: 'Your RFQ workspace is empty. Add components to submit an RFQ.', code: 'EMPTY_CART' },
+        error: { message: 'Your RFQ cart is empty. Add products to submit an RFQ.', code: 'EMPTY_CART' },
       };
     }
 
@@ -52,7 +124,7 @@ export async function submitRfqFromCart(
     if (availableItems.length === 0) {
       return {
         success: false,
-        error: { message: 'None of the products in your RFQ workspace are currently available for RFQ.', code: 'PRODUCTS_UNAVAILABLE' },
+        error: { message: 'None of the products in your RFQ cart are currently available for RFQ.', code: 'PRODUCTS_UNAVAILABLE' },
       };
     }
 
@@ -120,10 +192,8 @@ export async function submitRfqFromCart(
       }
     }
 
-    // 6. Generate sequential RFQ number: RFQ-YYYYMMDD-XXXX
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-    const rfqNumber = `RFQ-${dateStr}-${randomSuffix}`;
+    // 6. Generate collision-free RFQ number
+    const rfqNumber = await getNextRfqNumber(adminClient);
 
     // 7. Insert RFQ Header
     const { data: rfq, error: rfqError } = await adminClient
@@ -171,6 +241,8 @@ export async function submitRfqFromCart(
     // 9. Clear the customer's cart
     await clearCustomerCart(customerId);
 
+    invalidateAdminCaches();
+
     return {
       success: true,
       data: {
@@ -185,6 +257,7 @@ export async function submitRfqFromCart(
       error: { message: 'Unexpected error submitting RFQ', code: 'INTERNAL_ERROR' },
     };
   }
+  });
 }
 
 /**
@@ -192,8 +265,10 @@ export async function submitRfqFromCart(
  * Bypasses cart/minimum-RFQ rules — this is an internal sales step.
  */
 export async function createRfqFromEnquiry(
-  formData: unknown
+  formData: unknown,
+  idempotencyKey?: string | null
 ): Promise<ServerResult<{ rfqId: string; rfqNumber: string }>> {
+  return withIdempotency('create_rfq_from_enquiry', idempotencyKey, async () => {
   try {
     const validated = convertEnquiryToRfqSchema.safeParse(formData);
     if (!validated.success) {
@@ -214,13 +289,6 @@ export async function createRfqFromEnquiry(
 
     if (enquiryError || !enquiry) {
       return { success: false, error: { message: 'Enquiry not found', code: 'NOT_FOUND' } };
-    }
-
-    if (enquiry.status === 'converted_to_rfq' || enquiry.status === 'converted_to_order') {
-      return {
-        success: false,
-        error: { message: 'Enquiry has already been converted', code: 'INVALID_STATUS' },
-      };
     }
 
     const resolvedProductId = enquiry.product_id || clientProductId;
@@ -279,61 +347,38 @@ export async function createRfqFromEnquiry(
       country: enquiry.country || 'India',
     };
 
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-    const rfqNumber = `RFQ-${dateStr}-${randomSuffix}`;
+    const rfqNumber = await getNextRfqNumber(adminClient);
 
-    const { data: rfq, error: rfqError } = await adminClient
-      .from('rfqs')
-      .insert({
-        rfq_number: rfqNumber,
-        customer_id: customerId,
-        enquiry_id: enquiryId,
-        status: 'submitted',
-        delivery_address_snapshot: addressSnapshot,
-        customer_message: enquiry.message,
-        original_total: originalTotal,
-        final_total: null,
-      })
-      .select()
-      .single();
+    const { data: rpcRows, error: rpcError } = await (adminClient as any).rpc(
+      'create_rfq_from_enquiry_atomic',
+      {
+        p_enquiry_id: enquiryId,
+        p_customer_id: customerId,
+        p_rfq_number: rfqNumber,
+        p_delivery_address: addressSnapshot,
+        p_customer_message: enquiry.message,
+        p_original_total: originalTotal,
+        p_product_id: product.id,
+        p_product_name_snapshot: product.name,
+        p_quantity: quantity,
+        p_unit_price: unitPrice,
+      }
+    );
 
-    if (rfqError || !rfq) {
-      return {
-        success: false,
-        error: { message: rfqError?.message || 'Failed to create RFQ', code: 'DATABASE_ERROR' },
-      };
+    if (rpcError) {
+      return { success: false, error: mapRpcError(rpcError) };
     }
 
-    const { error: itemsError } = await adminClient.from('rfq_items').insert({
-      rfq_id: rfq.id,
-      product_id: product.id,
-      product_name_snapshot: product.name,
-      original_quantity: quantity,
-      original_unit_price: unitPrice,
-      final_quantity: null,
-      final_unit_price: null,
-    });
-
-    if (itemsError) {
-      await adminClient.from('rfqs').delete().eq('id', rfq.id);
-      return {
-        success: false,
-        error: { message: 'Failed to record RFQ line items', code: 'DATABASE_ERROR' },
-      };
+    const row = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+    if (!row?.rfq_id) {
+      return { success: false, error: { message: 'Failed to create RFQ', code: 'DATABASE_ERROR' } };
     }
 
-    await adminClient
-      .from('enquiries')
-      .update({
-        status: 'converted_to_rfq',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', enquiryId);
+    invalidateAdminCaches();
 
     return {
       success: true,
-      data: { rfqId: rfq.id, rfqNumber },
+      data: { rfqId: row.rfq_id, rfqNumber: row.rfq_number || rfqNumber },
     };
   } catch (error) {
     console.error('[createRfqFromEnquiry] Error:', error);
@@ -342,6 +387,7 @@ export async function createRfqFromEnquiry(
       error: { message: 'Unexpected error creating RFQ from enquiry', code: 'INTERNAL_ERROR' },
     };
   }
+  });
 }
 
 /**
@@ -436,15 +482,29 @@ export async function adminNegotiateRfq(formData: unknown): Promise<ServerResult
     calculatedFinalTotal = Math.round(calculatedFinalTotal * 100) / 100;
 
     // Update RFQ header with final total and status
-    const newStatus: RfqStatus = rfq.status === 'submitted' ? 'under_review' : rfq.status;
-    await adminClient
-      .from('rfqs')
-      .update({
+    const targetStatus: RfqStatus = rfq.status === 'submitted' ? 'under_review' : rfq.status;
+    if (targetStatus !== rfq.status) {
+      const allowed = allowedFrom(RFQ_TRANSITIONS, targetStatus);
+      const tr = await transitionStatus(adminClient, 'rfqs', rfqId, 'status', targetStatus, allowed, {
         final_total: calculatedFinalTotal,
-        status: newStatus,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', rfqId);
+      });
+      if (!tr.ok) {
+        await adminClient
+          .from('rfqs')
+          .update({ final_total: calculatedFinalTotal, updated_at: new Date().toISOString() })
+          .eq('id', rfqId);
+      }
+    } else {
+      await adminClient
+        .from('rfqs')
+        .update({
+          final_total: calculatedFinalTotal,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', rfqId);
+    }
+
+    invalidateAdminCaches();
 
     return {
       success: true,
@@ -462,18 +522,17 @@ export async function adminNegotiateRfq(formData: unknown): Promise<ServerResult
 export async function adminAcceptRfq(rfqId: string): Promise<ServerResult<{ accepted: boolean }>> {
   try {
     const adminClient = createAdminClient();
-    const { error } = await adminClient
-      .from('rfqs')
-      .update({
-        status: 'accepted',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', rfqId);
+    const allowed = allowedFrom(RFQ_TRANSITIONS, 'accepted');
+    const result = await transitionStatus(adminClient, 'rfqs', rfqId, 'status', 'accepted', allowed);
 
-    if (error) {
-      return { success: false, error: { message: error.message, code: 'DATABASE_ERROR' } };
+    if (!result.ok) {
+      return {
+        success: false,
+        error: { message: 'RFQ cannot be accepted in its current state', code: 'INVALID_STATUS' },
+      };
     }
 
+    invalidateAdminCaches();
     return { success: true, data: { accepted: true } };
   } catch (error) {
     console.error('[adminAcceptRfq] Error:', error);
@@ -497,19 +556,19 @@ export async function adminRejectRfq(formData: unknown): Promise<ServerResult<{ 
     const { rfqId, rejectionReason } = validated.data;
     const adminClient = createAdminClient();
 
-    const { error } = await adminClient
-      .from('rfqs')
-      .update({
-        status: 'rejected',
-        rejection_reason: rejectionReason,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', rfqId);
+    const allowed = allowedFrom(RFQ_TRANSITIONS, 'rejected');
+    const result = await transitionStatus(adminClient, 'rfqs', rfqId, 'status', 'rejected', allowed, {
+      rejection_reason: rejectionReason,
+    });
 
-    if (error) {
-      return { success: false, error: { message: error.message, code: 'DATABASE_ERROR' } };
+    if (!result.ok) {
+      return {
+        success: false,
+        error: { message: 'RFQ cannot be rejected in its current state', code: 'INVALID_STATUS' },
+      };
     }
 
+    invalidateAdminCaches();
     return { success: true, data: { rejected: true } };
   } catch (error) {
     console.error('[adminRejectRfq] Error:', error);
@@ -539,10 +598,16 @@ export async function adminDeleteRfq(rfqId: string): Promise<ServerResult<{ dele
 /**
  * Customer retrieves their own list of RFQs.
  */
-export async function getCustomerRfqs(customerId: string): Promise<ServerResult<{ rfqs: any[] }>> {
+export async function getCustomerRfqs(
+  customerId: string,
+  options?: { limit?: number; offset?: number }
+): Promise<ServerResult<{ rfqs: any[]; total?: number }>> {
   try {
     const adminClient = createAdminClient();
-    const { data: rfqs, error } = await adminClient
+    const limit = Math.min(100, Math.max(1, options?.limit ?? 50));
+    const offset = Math.max(0, options?.offset ?? 0);
+
+    const { data: rfqs, count, error } = await adminClient
       .from('rfqs')
       .select(`
         id,
@@ -563,9 +628,10 @@ export async function getCustomerRfqs(customerId: string): Promise<ServerResult<
           final_unit_price,
           product:products(sku)
         )
-      `)
+      `, { count: 'exact' })
       .eq('customer_id', customerId)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
 
     if (error) {
       return { success: false, error: { message: error.message, code: 'DATABASE_ERROR' } };
@@ -573,7 +639,7 @@ export async function getCustomerRfqs(customerId: string): Promise<ServerResult<
 
     return {
       success: true,
-      data: { rfqs: rfqs || [] },
+      data: { rfqs: rfqs || [], total: count ?? undefined },
     };
   } catch (error) {
     console.error('[getCustomerRfqs] Error:', error);

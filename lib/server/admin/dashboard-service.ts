@@ -65,13 +65,57 @@ async function exactCount(
   return count ?? 0;
 }
 
+let cachedMetrics: AdminDashboardMetrics | null = null;
+let metricsFetchedAt = 0;
+const METRICS_TTL_MS = 15_000; // 15 seconds short cache
+
+export function invalidateDashboardMetricsCache(): void {
+  cachedMetrics = null;
+  metricsFetchedAt = 0;
+}
+
 /**
  * Live Admin Dashboard KPIs — each field is an exact Postgres COUNT (head:true).
- * Never returns mock, seed, or cached placeholder values.
+ * Never returns mock, seed, or placeholder values. Uses short in-memory cache to prevent storming.
  */
-export async function getAdminDashboardMetrics(): Promise<ServerResult<AdminDashboardMetrics>> {
+export async function getAdminDashboardMetrics(force = false): Promise<ServerResult<AdminDashboardMetrics>> {
   try {
+    const now = Date.now();
+    if (!force && cachedMetrics && now - metricsFetchedAt < METRICS_TTL_MS) {
+      return { success: true, data: cachedMetrics };
+    }
+
     const adminClient = createAdminClient();
+
+    const { data: metricsJson, error: rpcError } = await (adminClient as any).rpc(
+      'admin_dashboard_metrics'
+    );
+
+    if (!rpcError && metricsJson && typeof metricsJson === 'object') {
+      const m = metricsJson as Record<string, number>;
+      const pendingSuppliersCount = Number(m.pendingSuppliersCount) || 0;
+      const productsAwaitingApprovalCount = Number(m.productsAwaitingApprovalCount) || 0;
+      const newEnquiriesCount = Number(m.newEnquiriesCount) || 0;
+      const pendingRfqsCount = Number(m.pendingRfqsCount) || 0;
+
+      const data: AdminDashboardMetrics = {
+        pendingItemsCount:
+          pendingSuppliersCount + productsAwaitingApprovalCount + newEnquiriesCount + pendingRfqsCount,
+        pendingSuppliersCount,
+        totalProducts: Number(m.totalProducts) || 0,
+        totalSuppliers: Number(m.totalSuppliers) || 0,
+        newEnquiriesCount,
+        pendingRfqsCount,
+        activeOrdersCount: Number(m.activeOrdersCount) || 0,
+        productsAwaitingApprovalCount,
+        dataSource: 'live',
+      };
+
+      cachedMetrics = data;
+      metricsFetchedAt = now;
+
+      return { success: true, data };
+    }
 
     const [
       totalProducts,
@@ -85,40 +129,40 @@ export async function getAdminDashboardMetrics(): Promise<ServerResult<AdminDash
       exactCount(
         adminClient
           .from('products')
-          .select('*', { count: 'exact', head: true })
+          .select('id', { count: 'exact', head: true })
           .eq('archive_status', 'active')
       ),
       exactCount(
         adminClient
           .from('suppliers')
-          .select('*', { count: 'exact', head: true })
+          .select('id', { count: 'exact', head: true })
           .neq('status', 'archived')
       ),
       exactCount(
-        adminClient.from('enquiries').select('*', { count: 'exact', head: true }).eq('status', 'new')
+        adminClient.from('enquiries').select('id', { count: 'exact', head: true }).eq('status', 'new')
       ),
       exactCount(
         adminClient
           .from('rfqs')
-          .select('*', { count: 'exact', head: true })
+          .select('id', { count: 'exact', head: true })
           .in('status', ['submitted', 'under_review'])
       ),
       exactCount(
         adminClient
           .from('orders')
-          .select('*', { count: 'exact', head: true })
+          .select('id', { count: 'exact', head: true })
           .in('status', ['accepted', 'packing'])
       ),
       exactCount(
         adminClient
           .from('product_approval_requests')
-          .select('*', { count: 'exact', head: true })
+          .select('id', { count: 'exact', head: true })
           .in('status', ['pending', 'update_pending'])
       ),
       exactCount(
         adminClient
           .from('suppliers')
-          .select('*', { count: 'exact', head: true })
+          .select('id', { count: 'exact', head: true })
           .eq('status', 'pending')
       ),
     ]);
@@ -129,19 +173,24 @@ export async function getAdminDashboardMetrics(): Promise<ServerResult<AdminDash
       newEnquiriesCount +
       pendingRfqsCount;
 
+    const data: AdminDashboardMetrics = {
+      pendingItemsCount,
+      pendingSuppliersCount,
+      totalProducts,
+      totalSuppliers,
+      newEnquiriesCount,
+      pendingRfqsCount,
+      activeOrdersCount,
+      productsAwaitingApprovalCount,
+      dataSource: 'live',
+    };
+
+    cachedMetrics = data;
+    metricsFetchedAt = now;
+
     return {
       success: true,
-      data: {
-        pendingItemsCount,
-        pendingSuppliersCount,
-        totalProducts,
-        totalSuppliers,
-        newEnquiriesCount,
-        pendingRfqsCount,
-        activeOrdersCount,
-        productsAwaitingApprovalCount,
-        dataSource: 'live',
-      },
+      data,
     };
   } catch (error) {
     console.error('[getAdminDashboardMetrics] Error:', error);
@@ -464,20 +513,20 @@ export async function getApprovalCenterCounts(): Promise<
       exactCount(
         adminClient
           .from('suppliers')
-          .select('*', { count: 'exact', head: true })
+          .select('id', { count: 'exact', head: true })
           .eq('status', 'pending')
       ),
       exactCount(
         adminClient
           .from('product_approval_requests')
-          .select('*', { count: 'exact', head: true })
+          .select('id', { count: 'exact', head: true })
           .eq('status', 'pending')
           .eq('request_type', 'new_product')
       ),
       exactCount(
         adminClient
           .from('product_approval_requests')
-          .select('*', { count: 'exact', head: true })
+          .select('id', { count: 'exact', head: true })
           .eq('status', 'update_pending')
           .eq('request_type', 'update')
       ),

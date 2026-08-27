@@ -127,7 +127,7 @@ export function markPortalContentReady(href: string) {
     performance.measure(`portal-nav:${href}`, clickMark, `portal-nav-ready:${href}`);
     const measures = performance.getEntriesByName(`portal-nav:${href}`);
     const last = measures[measures.length - 1];
-    if (last) {
+    if (last && process.env.NODE_ENV !== 'production') {
       console.info(
         `[portal-perf] ${href} click→content ${Math.round(last.duration)}ms`
       );

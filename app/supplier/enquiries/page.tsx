@@ -12,16 +12,22 @@ export default function SupplierEnquiriesPage() {
   const [enquiries, setEnquiries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selected, setSelected] = useState<any>(null);
   const [responseDraft, setResponseDraft] = useState('');
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
   async function loadEnquiries() {
     setLoading(true);
     try {
       const res = await fetch(
-        `/api/supplier/enquiries?search=${encodeURIComponent(searchTerm)}`,
+        `/api/supplier/enquiries?search=${encodeURIComponent(debouncedSearch)}`,
       );
       const json = await res.json();
       if (json.success) {
@@ -45,7 +51,7 @@ export default function SupplierEnquiriesPage() {
   useEffect(() => {
     loadEnquiries();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm]);
+  }, [debouncedSearch]);
 
   function openEnquiry(enq: any) {
     setSelected(enq);

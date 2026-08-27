@@ -57,14 +57,19 @@ const PRODUCT_SELECT = `
 `;
 
 export async function getCustomerWishlist(
-  customerId: string
+  customerId: string,
+  options?: { limit?: number }
 ): Promise<ServerResult<{ items: WishlistItem[]; itemCount: number }>> {
   const admin = createAdminClient();
+  const limit = Math.min(100, Math.max(1, options?.limit ?? 50));
   const { data, error } = await admin
     .from('wishlist_items')
     .select(`id, product_id, added_at, product:products(${PRODUCT_SELECT})`)
     .eq('customer_id', customerId)
-    .order('added_at', { ascending: false });
+    .order('is_primary', { ascending: false, foreignTable: 'product_images' })
+    .limit(1, { foreignTable: 'product_images' })
+    .order('added_at', { ascending: false })
+    .limit(limit);
 
   if (error) {
     return { success: false, error: { message: error.message, code: 'DATABASE_ERROR' } };
@@ -82,6 +87,8 @@ export async function getGuestWishlist(
     .from('guest_wishlist_items')
     .select(`id, product_id, added_at, product:products(${PRODUCT_SELECT})`)
     .eq('guest_session_id', guestSessionId)
+    .order('is_primary', { ascending: false, foreignTable: 'product_images' })
+    .limit(1, { foreignTable: 'product_images' })
     .order('added_at', { ascending: false });
 
   if (error) {

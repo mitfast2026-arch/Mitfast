@@ -63,7 +63,10 @@ export async function getCategories(
     const { mode, status } = parsed.data;
     const adminClient = createAdminClient();
 
-    let query = adminClient.from('categories').select('*').order('name', { ascending: true });
+    let query = adminClient
+      .from('categories')
+      .select('id, name, image_url, image_storage_path, status, archived_at, created_at')
+      .order('name', { ascending: true });
 
     if (mode === 'public') {
       query = query.eq('status', 'active');
@@ -288,7 +291,7 @@ export async function deleteCategory(formData: unknown): Promise<ServerResult<{ 
 
     const { count: productCount } = await adminClient
       .from('products')
-      .select('*', { count: 'exact', head: true })
+      .select('id', { count: 'exact', head: true })
       .eq('category_id', categoryId);
 
     if (productCount && productCount > 0) {

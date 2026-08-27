@@ -17,6 +17,7 @@ export default function SupplierRfqsPage() {
   const [rfqs, setRfqs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedRfq, setSelectedRfq] = useState<any>(null);
 
   const [negotiatedQtys, setNegotiatedQtys] = useState<Record<string, number>>({});
@@ -25,6 +26,11 @@ export default function SupplierRfqsPage() {
   const [actionSuccess, setActionSuccess] = useState('');
   const [rejectReason, setRejectReason] = useState('');
   const [showReject, setShowReject] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   function initNegotiationQtys(rfq: any) {
     const map: Record<string, number> = {};
@@ -39,7 +45,7 @@ export default function SupplierRfqsPage() {
   async function loadRfqs() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/supplier/rfqs?search=${encodeURIComponent(searchTerm)}`);
+      const res = await fetch(`/api/supplier/rfqs?search=${encodeURIComponent(debouncedSearch)}`);
       const json = await res.json();
       if (json.success) {
         const list = json.data.rfqs || [];
@@ -68,7 +74,8 @@ export default function SupplierRfqsPage() {
 
   useEffect(() => {
     loadRfqs();
-  }, [searchTerm]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch]);
 
   function handleSelectRfq(rfq: any) {
     setSelectedRfq(rfq);
@@ -162,7 +169,7 @@ export default function SupplierRfqsPage() {
             Volume RFQs
           </h1>
           <p className="type-subtitle">
-            Quotation requests matching your manufactured precision engineering components.
+            Quotation requests matching your listed products.
           </p>
         </div>
 
@@ -233,7 +240,7 @@ export default function SupplierRfqsPage() {
                     </div>
 
                     <div className="flex items-center justify-between text-xs pt-2 border-t border-portal-border">
-                      <span className="text-portal-muted">{r.items?.length || 0} component line(s)</span>
+                      <span className="text-portal-muted">{r.items?.length || 0} product line(s)</span>
                       <span className="text-portal-muted flex items-center gap-1">
                         <Calendar className="w-3 h-3 text-portal-muted" />
                         <span>{new Date(r.created_at).toLocaleDateString()}</span>
@@ -342,14 +349,14 @@ export default function SupplierRfqsPage() {
               {/* Items Table */}
               <div className="space-y-2">
                 <div className="type-section text-portal-muted">
-                  Your Components in this Quotation Request
+                  Your products in this quotation request
                 </div>
 
                 <div className="saas-table-container">
                   <table className="saas-table text-xs">
                     <thead>
                       <tr>
-                        <th>Component</th>
+                        <th>Product</th>
                         <th className="text-right">Requested qty</th>
                         {canAct && <th className="text-right">Negotiate qty</th>}
                       </tr>
@@ -395,7 +402,7 @@ export default function SupplierRfqsPage() {
             </div>
           ) : (
             <div className="saas-panel p-16 text-center text-xs text-portal-muted">
-              Select an RFQ from the list to view component line items.
+              Select an RFQ from the list to view product line items.
             </div>
           )}
         </div>

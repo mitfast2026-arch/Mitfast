@@ -56,7 +56,7 @@ export default function SupplierProductViewsPage() {
         <div>
           <h1 className="type-page">Product views</h1>
           <p className="type-subtitle">
-            Catalog impressions for each of your listed components.
+            Catalog impressions for each of your listed products.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -86,7 +86,7 @@ export default function SupplierProductViewsPage() {
           </div>
         </div>
         <div className="type-kpi-meta">
-          {loading ? 'Loading…' : `${ranked.length} component${ranked.length === 1 ? '' : 's'} tracked`}
+          {loading ? 'Loading…' : `${ranked.length} product${ranked.length === 1 ? '' : 's'} tracked`}
         </div>
       </div>
 
@@ -98,7 +98,7 @@ export default function SupplierProductViewsPage() {
 
       <div className="saas-panel p-6 sm:p-7 space-y-5">
         <div className="flex items-center justify-between">
-          <h3 className="type-section">Views by component</h3>
+          <h3 className="type-section">Views by product</h3>
           <span className="type-meta bg-portal-inset px-2.5 py-1 rounded-full border border-portal-border">
             Sorted by views
           </span>
@@ -108,7 +108,7 @@ export default function SupplierProductViewsPage() {
           <table className="saas-table">
             <thead>
               <tr>
-                <th>Component</th>
+                <th>Product</th>
                 <th className="text-center">Views</th>
                 <th className="text-center">Enquiries</th>
                 <th className="text-center">RFQs</th>

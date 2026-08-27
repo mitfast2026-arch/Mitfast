@@ -14,8 +14,12 @@ import {
   Mail,
   Lock,
   Check,
+  Loader2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { createBrowserClient } from '@/lib/supabase/client';
+import { getSettings } from '@/lib/client/settings-cache';
+import { mergeGuestStateOnce } from '@/lib/client/guest-merge';
 import './auth.css';
 
 export type AuthSearchParams = {
@@ -291,20 +295,13 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch('/api/settings');
-        if (!res.ok) return;
-        const json = await res.json();
-        const enabled = json?.data?.googleLoginEnabled;
-        if (!cancelled && typeof enabled === 'boolean') setGoogleEnabled(enabled);
-      } catch {
-        /* keep default */
+    // Use shared settings-cache
+    getSettings().then((s) => {
+      if (!cancelled && typeof s?.googleLoginEnabled === 'boolean') {
+        setGoogleEnabled(s.googleLoginEnabled);
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -418,6 +415,7 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
     }
 
     setLoading(true);
+    toast.loading('Signing in...', { id: 'auth-toast' });
     try {
       const supabase = createBrowserClient();
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -434,6 +432,7 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
           setAuthMode('register');
           setRegisterStep('otp');
           await deliverOtp();
+          toast.info('Verify your email to continue signing in.', { id: 'auth-toast' });
           setSuccessMsg('Verify your email to continue signing in.');
           return;
         }
@@ -446,11 +445,14 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
         setAuthMode('register');
         setRegisterStep('otp');
         await deliverOtp();
+        toast.info('Enter verification code sent to your email.', { id: 'auth-toast' });
         return;
       }
 
+      toast.success('Signed in successfully! Redirecting...', { id: 'auth-toast' });
+
       try {
-        await fetch('/api/guest/merge', { method: 'POST' });
+        await mergeGuestStateOnce();
       } catch {
         /* best-effort */
       }
@@ -462,7 +464,9 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
       });
       redirectHard(target);
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'Could not sign in');
+      const msg = err instanceof Error ? err.message : 'Could not sign in';
+      setErrorMsg(msg);
+      toast.error(msg, { id: 'auth-toast' });
     } finally {
       setLoading(false);
     }
@@ -494,6 +498,7 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
     }
 
     setLoading(true);
+    toast.loading('Creating account...', { id: 'auth-toast' });
     try {
       const supabase = createBrowserClient();
       const role = activeRole === 'supplier' ? 'supplier' : 'customer';
@@ -514,8 +519,11 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
       if (!data.user) throw new Error('Registration failed. Please try again.');
 
       await deliverOtp();
+      toast.success('Verification code sent to your email!', { id: 'auth-toast' });
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'Could not create account');
+      const msg = err instanceof Error ? err.message : 'Could not create account';
+      setErrorMsg(msg);
+      toast.error(msg, { id: 'auth-toast' });
     } finally {
       setLoading(false);
     }
@@ -532,6 +540,7 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
     }
 
     setLoading(true);
+    toast.loading('Verifying code...', { id: 'auth-toast' });
     try {
       const supabase = createBrowserClient();
       const token = otp.trim();
@@ -552,8 +561,10 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
       if (result.error) throw result.error;
       if (!result.data.user) throw new Error('Verification failed');
 
+      toast.success('Verified! Redirecting to dashboard...', { id: 'auth-toast' });
+
       try {
-        await fetch('/api/guest/merge', { method: 'POST' });
+        await mergeGuestStateOnce();
       } catch {
         /* best-effort */
       }
@@ -565,7 +576,9 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
       });
       redirectHard(target);
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'Invalid or expired code');
+      const msg = err instanceof Error ? err.message : 'Invalid or expired code';
+      setErrorMsg(msg);
+      toast.error(msg, { id: 'auth-toast' });
       setLoading(false);
     }
   }
@@ -597,14 +610,14 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
   }
 
   const heading = isAdminAuth
-    ? { title: 'Staff sign in', subtitle: 'Admin command center access' }
+    ? { title: 'Staff sign in', subtitle: 'Admin dashboard access' }
     : authMode === 'signin'
       ? {
           title: 'Sign in',
           subtitle:
             activeRole === 'buyer'
-              ? 'Access your buyer procurement workspace'
-              : 'Access your supplier portal',
+              ? 'Sign in to your buyer account'
+              : 'Sign in to your supplier account',
         }
       : registerStep === 'otp'
         ? { title: 'Verify your email', subtitle: `Enter the code sent to ${email}` }

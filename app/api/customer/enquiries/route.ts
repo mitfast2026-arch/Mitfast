@@ -1,12 +1,15 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireCustomer } from '@/lib/server/auth/get-session';
 import { signedDocumentUrl } from '@/lib/server/storage/storage-service';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const auth = await requireCustomer();
     if (!auth.ok) return auth.response;
+
+    const { searchParams } = new URL(request.url);
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50', 10)));
 
     const adminClient = createAdminClient();
     const targetCustomerId = auth.session.profile.id;
@@ -17,8 +20,9 @@ export async function GET() {
       .select(`
         *,
         product:products(id, name, selling_price)
-      `)
-      .order('created_at', { ascending: false });
+      `, { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .limit(limit);
 
     if (targetCustomerId && customerEmail) {
       query = query.or(`customer_id.eq.${targetCustomerId},guest_email.eq.${customerEmail}`);
@@ -26,7 +30,7 @@ export async function GET() {
       query = query.eq('customer_id', targetCustomerId);
     }
 
-    const { data: enquiries, error } = await query;
+    const { data: enquiries, count, error } = await query;
 
     if (error) {
       return NextResponse.json(
@@ -45,7 +49,7 @@ export async function GET() {
 
     return NextResponse.json({
       success: true,
-      data: { enquiries: signed },
+      data: { enquiries: signed, total: count ?? signed.length },
     });
   } catch (error) {
     console.error('[GET /api/customer/enquiries] Error:', error);

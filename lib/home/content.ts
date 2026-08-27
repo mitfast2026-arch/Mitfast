@@ -25,7 +25,7 @@ export const SERVICES: ServiceItem[] = [
     tag: 'OFF-CATALOG PROCUREMENT',
     title: 'Procurement Service',
     description:
-      'Looking for a specialized component or raw material specification not listed in our catalog? We source accredited suppliers and negotiate factory-direct terms.',
+      'Looking for a specialized product or material not listed in our catalog? We source verified suppliers and negotiate factory-direct terms.',
     ctaText: 'Learn More',
     ctaHref: '/enquiry?type=procurement',
   },
@@ -42,10 +42,10 @@ export const SERVICES: ServiceItem[] = [
   {
     id: 'quote-dispatch',
     number: '04',
-    tag: 'FREIGHT & LOGISTICS',
-    title: 'Quote for Dispatch',
+    tag: 'DELIVERY & SHIPPING',
+    title: 'Delivery Quote',
     description:
-      'Get transparent freight schedules, customs clearance guarantees, and door-to-port logistics quotes for scheduled batch deliveries and international container cargo.',
+      'Get delivery schedules and shipping quotes for confirmed bulk orders and export deliveries.',
     ctaText: 'Learn More',
     ctaHref: '/enquiry?type=dispatch',
   },
@@ -74,7 +74,7 @@ export const TESTIMONIALS: TestimonialItem[] = [
   },
   {
     name: 'Daniel Okonkwo',
-    role: 'Supply Chain Director',
+    role: 'Procurement Manager',
     company: 'Helix Hydraulics',
     quote:
       'We run custom RFQs directly off CAD and 2D blueprints. The turnaround on locked pricing and guaranteed manufacturing windows is faster than any traditional broker.',
@@ -107,7 +107,7 @@ export const TESTIMONIALS: TestimonialItem[] = [
     role: 'Lead Manufacturing Engineer',
     company: 'Velocity Systems',
     quote:
-      'Lead times on custom CNC turned components dropped significantly once we centralized our orders through their unified RFQ workspace.',
+      'Lead times on custom CNC turned parts dropped significantly once we centralized our orders through their RFQ cart.',
     photo: '/images/testimonial-marcus.png',
     rating: 5,
     relativeDate: '1 month ago',

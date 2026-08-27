@@ -124,7 +124,7 @@ export default function SupplierApplyPage() {
           <span className="text-xl font-semibold text-[#111315] tracking-tight">MITFAST B2B</span>
         </Link>
         <h1 className="type-page text-2xl">Supplier application</h1>
-        <p className="type-subtitle">Admin approval required before portal access</p>
+        <p className="type-subtitle">Admin approval required before account access</p>
       </div>
 
       <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md">

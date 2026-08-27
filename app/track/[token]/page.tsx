@@ -30,17 +30,17 @@ export default function TrackOrderPage() {
 
   return (
     <div className="container-custom py-12 max-w-xl space-y-4">
-      <h1 className="type-page">Production order tracking</h1>
+      <h1 className="type-page">Order tracking</h1>
       {loading && <p className="type-subtitle">Loading status…</p>}
       {!loading && error && <p className="text-sm text-rose-700">{error}</p>}
       {!loading && !error && !data && (
-        <p className="type-subtitle">No production order found for this tracking link.</p>
+        <p className="type-subtitle">No order found for this tracking link.</p>
       )}
       {data && (
         <div className="saas-panel p-5 space-y-3 text-sm">
           <div className="font-mono font-bold">{data.orderNumber}</div>
           <div>
-            Fulfillment: <b>{String(data.status).replace(/_/g, " ")}</b>
+            Order status: <b>{String(data.status).replace(/_/g, " ")}</b>
           </div>
           <div>
             Payment: <b>{String(data.paymentStatus).replace(/_/g, " ")}</b>

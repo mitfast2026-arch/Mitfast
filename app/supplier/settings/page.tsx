@@ -152,7 +152,7 @@ export default function SupplierSettingsPage() {
               />
               <div className="space-y-0.5">
                 <div className="font-medium text-portal-text">New RFQ Alerts</div>
-                <div className="text-portal-muted">Receive notifications when buyers submit quotation requests for your components.</div>
+                <div className="text-portal-muted">Receive notifications when buyers submit quotation requests for your products.</div>
               </div>
             </label>
 
@@ -164,8 +164,8 @@ export default function SupplierSettingsPage() {
                 className="w-4 h-4 mt-0.5 rounded text-portal-text focus:ring-portal-accent"
               />
               <div className="space-y-0.5">
-                <div className="font-medium text-portal-text">Confirmed production order alerts</div>
-                <div className="text-portal-muted">Receive immediate dispatch alerts when commercial orders are confirmed.</div>
+                <div className="font-medium text-portal-text">Confirmed order alerts</div>
+                <div className="text-portal-muted">Receive alerts when buyers confirm orders.</div>
               </div>
             </label>
 
@@ -177,7 +177,7 @@ export default function SupplierSettingsPage() {
                 className="w-4 h-4 mt-0.5 rounded text-portal-text focus:ring-portal-accent"
               />
               <div className="space-y-0.5">
-                <div className="font-medium text-portal-text">QMS Approval Status Updates</div>
+                <div className="font-medium text-portal-text">Approval status updates</div>
                 <div className="text-portal-muted">Receive updates when product proposals or price changes are audited.</div>
               </div>
             </label>

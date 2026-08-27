@@ -58,8 +58,8 @@ function SupplierPendingContent() {
           </h1>
           <p className="type-subtitle max-w-sm mx-auto">
             {isArchived
-              ? 'Your supplier account has been archived by an administrator. Portal access is paused until the account is restored.'
-              : 'Your email is confirmed. An admin still needs to approve your supplier application before you can use the supplier portal.'}
+              ? 'Your supplier account has been archived by an administrator. Account access is paused until the account is restored.'
+              : 'Your email is confirmed. An admin still needs to approve your supplier application before you can access your supplier account.'}
           </p>
         </div>
 

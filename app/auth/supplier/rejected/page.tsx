@@ -110,7 +110,7 @@ export default function SupplierRejectedPage() {
           <div className="p-4 rounded-2xl bg-portal-danger-soft border border-portal-danger/30 space-y-1 text-xs">
             <div className="font-semibold text-portal-danger flex items-center gap-1.5">
               <AlertCircle className="w-4 h-4" />
-              Operations feedback
+              Admin feedback
             </div>
             <div className="text-portal-danger font-mono pl-5">"{supplier.rejection_reason}"</div>
           </div>
@@ -153,7 +153,7 @@ export default function SupplierRejectedPage() {
             </div>
 
             <div className="space-y-1">
-              <label className="saas-label">Manufacturing Facility Address *</label>
+              <label className="saas-label">Factory / Office Address *</label>
               <input
                 type="text"
                 required
