@@ -1,10 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import {
   createEnquiry,
-  getCustomerEnquiries,
   getEnquiriesForAdmin,
 } from '@/lib/server/enquiries/enquiry-service';
-import { getServerSession, requireAdmin, requireCustomer } from '@/lib/server/auth/get-session';
+import { getServerSession, requireAdmin } from '@/lib/server/auth/get-session';
 import type { EnquiryStatus } from '@/types/database';
 
 export async function GET(request: NextRequest) {
@@ -13,17 +12,17 @@ export async function GET(request: NextRequest) {
     const customerId = searchParams.get('customerId');
 
     if (customerId) {
-      const auth = await requireCustomer();
-      if (!auth.ok) return auth.response;
-      if (customerId !== auth.session.profile.id) {
-        return NextResponse.json(
-          { success: false, error: { message: 'Forbidden', code: 'FORBIDDEN' } },
-          { status: 403 }
-        );
-      }
-      const result = await getCustomerEnquiries(customerId);
-      if (!result.success) return NextResponse.json(result, { status: 400 });
-      return NextResponse.json(result);
+      const target = new URL('/api/customer/enquiries', request.url);
+      searchParams.forEach((value, key) => {
+        if (key !== 'customerId') target.searchParams.set(key, value);
+      });
+      return NextResponse.redirect(target, {
+        status: 307,
+        headers: {
+          Deprecation: 'true',
+          Link: '</api/customer/enquiries>; rel="successor-version"',
+        },
+      });
     }
 
     const auth = await requireAdmin();

@@ -90,7 +90,29 @@ export async function submitSupplierApplication(
         };
       }
       if (byUser.status === 'pending') {
-        return { success: true, data: { supplierId: byUser.id, status: 'pending' } };
+        const { data: updated, error: updateError } = await adminClient
+          .from('suppliers')
+          .update({
+            company_name: companyName,
+            contact_person: contactPerson,
+            email,
+            phone,
+            country,
+            address,
+            website: website || null,
+          })
+          .eq('id', byUser.id)
+          .select('id, status')
+          .single();
+
+        if (updateError || !updated) {
+          return {
+            success: false,
+            error: { message: updateError?.message || 'Failed to update supplier', code: 'DATABASE_ERROR' },
+          };
+        }
+
+        return { success: true, data: { supplierId: updated.id, status: updated.status } };
       }
       // rejected / archived: update and set pending
       const { data: updated, error: updateError } = await adminClient

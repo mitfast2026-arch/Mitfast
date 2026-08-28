@@ -8,6 +8,10 @@ export type WishlistItem = {
   product: {
     id: string;
     name: string;
+    sku: string | null;
+    moq: number;
+    price: number;
+    categoryName: string | null;
     primaryImage: string | null;
     isAvailable: boolean;
   };
@@ -21,9 +25,14 @@ async function mapWishlistRows(
     product: {
       id: string;
       name: string;
+      sku: string | null;
+      moq: number;
+      selling_price: number;
+      discount: number;
       publication_status: string;
       archive_status: string;
       approval_status: string;
+      category?: { name: string } | null;
       images?: { image_url: string; is_primary?: boolean }[] | null;
     } | null;
   }[]
@@ -41,6 +50,10 @@ async function mapWishlistRows(
         product: {
           id: p.id,
           name: p.name,
+          sku: p.sku ?? null,
+          moq: p.moq ?? 1,
+          price: Math.max(0, (p.selling_price ?? 0) - (p.discount ?? 0)),
+          categoryName: p.category?.name ?? null,
           primaryImage: primaryImg,
           isAvailable:
             p.publication_status === 'published' &&
@@ -52,7 +65,9 @@ async function mapWishlistRows(
 }
 
 const PRODUCT_SELECT = `
-  id, name, publication_status, archive_status, approval_status,
+  id, name, sku, moq, selling_price, discount,
+  publication_status, archive_status, approval_status,
+  category:categories(name),
   images:product_images(image_url, is_primary)
 `;
 

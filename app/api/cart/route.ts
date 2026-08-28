@@ -100,27 +100,27 @@ export async function GET(request: NextRequest) {
           .maybeSingle();
         let itemCount = 0;
         if (cart?.id) {
-          const { count } = await admin
+          const { data: rows } = await admin
             .from('cart_items')
-            .select('id', { count: 'exact', head: true })
+            .select('quantity')
             .eq('cart_id', cart.id);
-          itemCount = count || 0;
+          itemCount = (rows || []).reduce((sum, row) => sum + (row.quantity || 0), 0);
         }
         return NextResponse.json({
           success: true,
           data: { itemCount, items: [], isGuest: false },
         });
       }
-      // Cheap count — avoid product_images embed used by getGuestCart.
       const admin = (await import('@/lib/supabase/admin')).createAdminClient();
-      const { count } = await admin
+      const { data: rows } = await admin
         .from('guest_cart_items')
-        .select('id', { count: 'exact', head: true })
+        .select('quantity')
         .eq('guest_session_id', actor.guestSessionId);
+      const itemCount = (rows || []).reduce((sum, row) => sum + (row.quantity || 0), 0);
       return NextResponse.json({
         success: true,
         data: {
-          itemCount: count || 0,
+          itemCount,
           items: [],
           isGuest: true,
         },
@@ -243,7 +243,16 @@ export async function DELETE(request: NextRequest) {
     const actor = await resolveCartActor({ createGuest: false });
     if (actor.kind === 'forbidden') return forbiddenCartResponse(actor.role);
     if (actor.kind === 'anonymous') {
-      return NextResponse.json({ success: true, data: { cleared: true } });
+      if (clearAll === '1' || clearAll === 'true') {
+        return NextResponse.json(
+          { success: false, error: { message: 'No cart session', code: 'NOT_FOUND' } },
+          { status: 404 }
+        );
+      }
+      return NextResponse.json(
+        { success: false, error: { message: 'No cart session', code: 'NOT_FOUND' } },
+        { status: 404 }
+      );
     }
 
     if (cartItemId) {

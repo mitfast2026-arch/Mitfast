@@ -15,6 +15,7 @@ export const PORTAL_ROUTE_PREFETCH: Record<string, string[]> = {
     '/api/categories?mode=admin&status=active',
   ],
   '/admin/suppliers': [`/api/suppliers?page=1&limit=${PORTAL_PAGE_LIMIT}`],
+  '/admin/customers': [`/api/customers?page=1&limit=${PORTAL_PAGE_LIMIT}`],
   '/admin/enquiries': [`/api/enquiries?page=1&limit=${PORTAL_PAGE_LIMIT}`],
   '/admin/rfqs': [`/api/rfqs?page=1&limit=${PORTAL_PAGE_LIMIT}`],
   '/admin/orders': [

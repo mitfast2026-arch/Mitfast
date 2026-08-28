@@ -4,7 +4,7 @@ const nextConfig = {
   compress: true,
   poweredByHeader: false,
   eslint: {
-    ignoreDuringBuilds: true,
+    ignoreDuringBuilds: false,
   },
   images: {
     formats: ['image/avif', 'image/webp'],

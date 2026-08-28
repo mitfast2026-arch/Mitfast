@@ -5,6 +5,7 @@ import {
   uploadProductImage,
   deleteProductImageFromStorage,
 } from '@/lib/server/storage/storage-service';
+import { processImageForUpload } from '@/lib/server/storage/image-upload';
 
 export type ProductImageActor = {
   role: UserRole;
@@ -14,6 +15,8 @@ export type ProductImageActor = {
 type ProductRow = {
   id: string;
   supplier_id: string | null;
+  approval_status?: string;
+  publication_status?: string;
 };
 
 async function getMaxProductImages(): Promise<number> {
@@ -33,7 +36,7 @@ async function verifyProductAccess(
   const adminClient = createAdminClient();
   const { data: product, error } = await adminClient
     .from('products')
-    .select('id, supplier_id')
+    .select('id, supplier_id, approval_status, publication_status')
     .eq('id', productId)
     .maybeSingle();
 
@@ -48,6 +51,16 @@ async function verifyProductAccess(
   if (actor.role === 'supplier') {
     if (!actor.supplierId || product.supplier_id !== actor.supplierId) {
       return { success: false, error: { message: 'Forbidden', code: 'FORBIDDEN' } };
+    }
+    if (product.publication_status === 'published') {
+      return {
+        success: false,
+        error: {
+          message:
+            'Image changes on published products require an admin-approved update. Submit a product update request first.',
+          code: 'PUBLISHED_PRODUCT_LOCKED',
+        },
+      };
     }
     return { success: true, data: { product } };
   }
@@ -117,12 +130,21 @@ export async function addProductImage(
       };
     }
 
+    const rawBuffer = Buffer.isBuffer(input.buffer) ? input.buffer : Buffer.from(input.buffer);
+    const processed = await processImageForUpload(
+      rawBuffer,
+      input.fileName,
+      input.contentType,
+      'product'
+    );
+    if (!processed.success) return processed;
+
     const uploadResult = await uploadProductImage(
       product.supplier_id ?? 'internal',
       productId,
-      input.fileName,
-      input.buffer,
-      input.contentType
+      processed.data.fileName,
+      processed.data.buffer,
+      processed.data.contentType
     );
 
     if (!uploadResult.success) return uploadResult;
@@ -247,6 +269,9 @@ export async function reorderProductImages(
         };
       }
     }
+
+    // Clear primary first to avoid violating product_images_primary_idx when swapping primary.
+    await clearPrimaryFlags(productId);
 
     for (let idx = 0; idx < orderedImageIds.length; idx++) {
       const imageId = orderedImageIds[idx];

@@ -138,7 +138,7 @@ export default function SupplierProfilePage() {
             Admin Feedback: <b className="font-medium text-rose-950">{supplier.rejection_reason || 'Incomplete compliance credentials.'}</b>
           </p>
           <p className="text-xs text-portal-danger">
-            Please update the required information below and click "Save & Resubmit for Approval" to notify the operations team.
+            Please update the required information below and click &quot;Save &amp; Resubmit for Approval&quot; to notify the operations team.
           </p>
         </div>
       )}

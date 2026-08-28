@@ -6,11 +6,9 @@ export function revalidateHomepageCaches() {
 }
 
 export function deferRevalidateHomepage() {
-  void Promise.resolve().then(() => {
-    try {
-      revalidateHomepageCaches();
-    } catch (error) {
-      console.error('[deferRevalidateHomepage]', error);
-    }
-  });
+  try {
+    revalidateHomepageCaches();
+  } catch (error) {
+    console.error('[deferRevalidateHomepage]', error);
+  }
 }

@@ -52,11 +52,11 @@ export async function getCustomerBadgeCounts(
 
     let cartCount = 0;
     if (carts.data?.id) {
-      const cartItems = await admin
+      const { data: cartRows } = await admin
         .from('cart_items')
-        .select('id', { count: 'exact', head: true })
+        .select('quantity')
         .eq('cart_id', carts.data.id);
-      cartCount = cartItems.count || 0;
+      cartCount = (cartRows || []).reduce((sum, row) => sum + (row.quantity || 0), 0);
     }
 
     return {

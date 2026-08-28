@@ -1,12 +1,16 @@
 'use client';
 
 import React from 'react';
+import { useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
   Package,
   Eye,
   User,
   Settings,
+  MessageSquare,
+  FileText,
+  ShoppingBag,
 } from 'lucide-react';
 import SupplierApprovalGate from '@/components/supplier/SupplierApprovalGate';
 import { SupplierProvider, useSupplier } from '@/components/portal/SupplierContext';
@@ -16,6 +20,7 @@ import { signOutTo } from '@/lib/client/sign-out';
 import { cachedApiGet, peekPortalCache } from '@/lib/client/portal-data-cache';
 
 function SupplierLayoutInner({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const { supplier, loading } = useSupplier();
   const [totalViews, setTotalViews] = React.useState<number | undefined>();
 
@@ -67,11 +72,13 @@ function SupplierLayoutInner({ children }: { children: React.ReactNode }) {
     { label: 'My Products', href: '/supplier/products', icon: Package },
     {
       label: 'Product views',
-      href: '/supplier/dashboard',
+      href: '/supplier/product-views',
       icon: Eye,
       badge: totalViews,
-      neverActive: true,
     },
+    { label: 'Enquiries', href: '/supplier/enquiries', icon: MessageSquare },
+    { label: 'RFQs', href: '/supplier/rfqs', icon: FileText },
+    { label: 'Orders', href: '/supplier/orders', icon: ShoppingBag },
     { label: 'Profile', href: '/supplier/profile', icon: User },
     { label: 'Settings', href: '/supplier/settings', icon: Settings },
   ];
@@ -84,6 +91,11 @@ function SupplierLayoutInner({ children }: { children: React.ReactNode }) {
       brandHref="/supplier/profile"
       avatarLabel={supplier?.company_name || 'S'}
       settingsHref="/supplier/settings"
+      notificationsHref="/supplier/rfqs"
+      onSearchSubmit={(query) => {
+        if (!query) return;
+        router.push(`/supplier/products?search=${encodeURIComponent(query)}`);
+      }}
       signOutHref="/auth?role=supplier&mode=signin"
       onSignOut={handleSignOut}
       searchPlaceholder="Search catalog…"

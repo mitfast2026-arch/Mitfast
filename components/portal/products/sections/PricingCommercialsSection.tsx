@@ -38,7 +38,8 @@ export default function PricingCommercialsSection({
   const isSupplier = mode.includes('supplier');
   const readOnly = mode === 'review-admin';
   const proposed = product?.pendingRequest?.proposed_data as Record<string, number> | undefined;
-  const hasPendingUpdate = product?.approval_status === 'update_pending' && proposed;
+  const hasPendingUpdate =
+    product?.pendingRequest?.status === 'update_pending' && Boolean(proposed);
 
   const liveSupplierPrice = product?.supplier_price ?? 0;
   const liveSelling = product?.selling_price ?? 0;

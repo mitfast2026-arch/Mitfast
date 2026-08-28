@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
   Package,
@@ -12,12 +13,14 @@ import {
   Layers,
   Images,
   Settings,
+  Users,
 } from 'lucide-react';
 import { ApprovalsCountProvider, useApprovalsCount } from '@/components/portal/ApprovalsCountContext';
 import PortalShell from '@/components/portal/PortalShell';
 import { signOutTo } from '@/lib/client/sign-out';
 
 function AdminLayoutInner({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const { pendingApprovalsCount } = useApprovalsCount();
 
   function handleSignOut() {
@@ -34,6 +37,7 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
     },
     { label: 'Products', href: '/admin/products', icon: Package },
     { label: 'Suppliers', href: '/admin/suppliers', icon: Building2 },
+    { label: 'Customers', href: '/admin/customers', icon: Users },
     { label: 'Enquiries', href: '/admin/enquiries', icon: Mail },
     { label: 'RFQs', href: '/admin/rfqs', icon: FileText },
     { label: 'Orders', href: '/admin/orders', icon: ShoppingCart },
@@ -49,6 +53,11 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
       brandSubtitle="Admin Panel"
       avatarLabel="M"
       settingsHref="/admin/settings"
+      notificationsHref="/admin/enquiries"
+      onSearchSubmit={(query) => {
+        if (!query) return;
+        router.push(`/admin/products?search=${encodeURIComponent(query)}`);
+      }}
       signOutHref="/auth?role=admin&mode=signin"
       onSignOut={handleSignOut}
       searchPlaceholder="Search admin…"

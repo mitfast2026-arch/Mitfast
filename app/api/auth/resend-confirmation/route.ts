@@ -11,7 +11,13 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(body),
     });
     const json = await res.json();
-    return NextResponse.json(json, { status: res.status });
+    return NextResponse.json(json, {
+      status: res.status,
+      headers: {
+        Deprecation: 'true',
+        Link: '</api/auth/otp/send>; rel="successor-version"',
+      },
+    });
   } catch {
     return NextResponse.json(
       { success: false, error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } },

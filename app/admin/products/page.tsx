@@ -13,6 +13,7 @@ import {
 import { PORTAL_PAGE_LIMIT } from '@/lib/client/portal-nav-prefetch';
 import { useMutation, mutationKey } from '@/lib/client/use-mutation';
 import { notifyApprovalsChanged } from '@/components/portal/ApprovalsCountContext';
+import { invalidateProductPortalCaches } from '@/lib/client/invalidate-product-portal-cache';
 import ProductFormPanel, { loadProductForPanel } from '@/components/portal/products/ProductFormPanel';
 import type { ProductFormMode, ProductFormProduct } from '@/components/portal/products/product-form.types';
 import ProductCard from './ProductCard';
@@ -56,9 +57,10 @@ function AdminProductsPageContent() {
     }
   }
 
-  const loadProducts = useCallback(async (showLoading = true) => {
+  const loadProducts = useCallback(async (showLoading = true, opts?: { force?: boolean }) => {
     const url = `/api/products?mode=admin&search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=${PORTAL_PAGE_LIMIT}&sort=newest`;
-    const existing = peekPortalCache<{ products: AdminProduct[]; total: number }>(url);
+    const force = Boolean(opts?.force);
+    const existing = force ? null : peekPortalCache<{ products: AdminProduct[]; total: number }>(url);
     if (existing) {
       setProducts(existing.data.products || []);
       setTotal(existing.data.total ?? 0);
@@ -69,7 +71,7 @@ function AdminProductsPageContent() {
     setLoadError(null);
     try {
       const result = await cachedApiGet<{ products: AdminProduct[]; total: number }>(url, {
-        force: showLoading && !existing,
+        force: force || (showLoading && !existing),
       });
       if (result.ok) {
         setProducts(result.data.products || []);
@@ -247,7 +249,7 @@ function AdminProductsPageContent() {
               <Plus className="w-4 h-4" />
               Create Product
             </button>
-            <button onClick={() => loadProducts()} className="saas-btn-secondary gap-2">
+            <button onClick={() => loadProducts(true, { force: true })} className="saas-btn-secondary gap-2">
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </button>
@@ -317,7 +319,9 @@ function AdminProductsPageContent() {
               onEdit={(prod) =>
                 openEditPanel(
                   prod,
-                  prod.approval_status === 'pending' || prod.approval_status === 'update_pending'
+                  prod.approval_status === 'pending' ||
+                    prod.has_open_update_request ||
+                    prod.approval_status === 'update_pending'
                 )
               }
               onApprove={handleApproveProduct}
@@ -360,7 +364,8 @@ function AdminProductsPageContent() {
         detailLoading={detailLoading}
         onClose={closePanel}
         onSuccess={() => {
-          loadProducts(false);
+          invalidateProductPortalCaches();
+          loadProducts(false, { force: true });
           notifyApprovalsChanged();
         }}
         onApprove={

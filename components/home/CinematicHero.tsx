@@ -88,7 +88,7 @@ export default function CinematicHero({
           className="absolute inset-0 w-full h-full bg-cover bg-center bg-no-repeat z-0 transition-opacity duration-700"
           style={{
             backgroundImage: `url('${s.imageUrl}')`,
-            backgroundPosition: 'center center',
+            backgroundPosition: 'right center',
             opacity: i === index ? 1 : 0,
           }}
           aria-hidden={i !== index}

@@ -2,8 +2,8 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import type { ServerResult } from '@/lib/server/auth/get-session';
 import {
   deleteFromBucket,
-  uploadBusinessAsset,
 } from '@/lib/server/storage/storage-service';
+import { processAndUploadBusinessAsset } from '@/lib/server/storage/image-upload';
 import { deferRevalidateHomepage } from '@/lib/server/homepage/revalidate-homepage';
 
 export const MAX_HERO_SLIDES = 6;
@@ -595,10 +595,11 @@ export async function uploadHeroSlideImage(
 
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
-    const uploaded = await uploadBusinessAsset(
+    const uploaded = await processAndUploadBusinessAsset(
       'homepage/hero',
-      file.name || 'hero.webp',
+      'hero',
       buffer,
+      file.name || 'hero.webp',
       file.type || 'image/webp'
     );
     if (!uploaded.success) return uploaded;
@@ -656,10 +657,11 @@ export async function uploadContainersImage(
 
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
-    const uploaded = await uploadBusinessAsset(
+    const uploaded = await processAndUploadBusinessAsset(
       'homepage/containers',
-      file.name || 'containers.webp',
+      'containers',
       buffer,
+      file.name || 'containers.webp',
       file.type || 'image/webp'
     );
     if (!uploaded.success) return uploaded;
@@ -874,10 +876,11 @@ export async function uploadCarouselOverrideImage(
 
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
-    const uploaded = await uploadBusinessAsset(
+    const uploaded = await processAndUploadBusinessAsset(
       'homepage/products',
-      file.name || 'product.webp',
+      'carousel',
       buffer,
+      file.name || 'product.webp',
       file.type || 'image/webp'
     );
     if (!uploaded.success) return uploaded;

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 
 type PortalModalProps = {
@@ -19,6 +19,9 @@ const maxWidthClass = {
   xl: 'max-w-4xl',
 };
 
+const FOCUSABLE =
+  'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
+
 export default function PortalModal({
   open,
   onClose,
@@ -27,16 +30,56 @@ export default function PortalModal({
   footer,
   maxWidth = 'md',
 }: PortalModalProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
   useEffect(() => {
     if (!open) return;
+
+    previousFocusRef.current = document.activeElement as HTMLElement | null;
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+      if (e.key !== 'Tab' || !panelRef.current) return;
+
+      const focusables = Array.from(
+        panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE)
+      ).filter((el) => !el.hasAttribute('disabled') && el.tabIndex !== -1);
+
+      if (focusables.length === 0) return;
+
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement as HTMLElement;
+
+      if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
+
     document.addEventListener('keydown', onKey);
     document.body.style.overflow = 'hidden';
+
+    const focusTimer = window.setTimeout(() => {
+      const panel = panelRef.current;
+      if (!panel) return;
+      const auto = panel.querySelector<HTMLElement>(FOCUSABLE);
+      if (auto) auto.focus();
+      else panel.focus();
+    }, 0);
+
     return () => {
+      window.clearTimeout(focusTimer);
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = '';
+      previousFocusRef.current?.focus?.();
     };
   }, [open, onClose]);
 
@@ -46,16 +89,22 @@ export default function PortalModal({
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70"
       onClick={onClose}
-      role="dialog"
-      aria-modal="true"
+      role="presentation"
     >
       <div
-        className={`saas-panel w-full ${maxWidthClass[maxWidth]} flex flex-col max-h-[90vh] shadow-lg`}
+        ref={panelRef}
+        className={`saas-panel w-full ${maxWidthClass[maxWidth]} flex flex-col max-h-[90vh] shadow-lg outline-none`}
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? 'portal-modal-title' : undefined}
+        tabIndex={-1}
       >
         {title ? (
           <div className="flex items-center justify-between px-5 py-4 border-b border-portal-border shrink-0">
-            <h2 className="type-section">{title}</h2>
+            <h2 id="portal-modal-title" className="type-section">
+              {title}
+            </h2>
             <button type="button" onClick={onClose} className="saas-btn-ghost" aria-label="Close">
               <X className="w-4 h-4" />
             </button>

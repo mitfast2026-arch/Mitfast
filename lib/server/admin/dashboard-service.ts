@@ -67,7 +67,7 @@ async function exactCount(
 
 let cachedMetrics: AdminDashboardMetrics | null = null;
 let metricsFetchedAt = 0;
-const METRICS_TTL_MS = 15_000; // 15 seconds short cache
+const METRICS_TTL_MS = 5_000; // 5 seconds short cache
 
 export function invalidateDashboardMetricsCache(): void {
   cachedMetrics = null;
@@ -615,6 +615,20 @@ export async function getApprovalCenterItems(params?: {
         .order('created_at', { ascending: false })
         .limit(limit),
     ]);
+
+    const queryErrors = [
+      pendingSuppliersRes.error,
+      newProductRequestsRes.error,
+      productUpdateRequestsRes.error,
+    ].filter(Boolean);
+
+    if (queryErrors.length > 0) {
+      const message = queryErrors.map((e) => e?.message).filter(Boolean).join('; ') || 'Database error';
+      return {
+        success: false,
+        error: { message, code: 'DATABASE_ERROR' },
+      };
+    }
 
     return {
       success: true,

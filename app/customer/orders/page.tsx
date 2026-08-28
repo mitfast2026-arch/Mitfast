@@ -33,14 +33,8 @@ interface OrderItem {
 interface Order {
   id: string;
   order_number: string;
-  status:
-    | "pending_payment"
-    | "accepted"
-    | "packing"
-    | "dispatched"
-    | "completed"
-    | "cancelled";
-  payment_status: "pending" | "payment_done" | "refunded";
+  status: 'accepted' | 'packing' | 'dispatched' | 'cancelled';
+  payment_status: 'payment_required' | 'payment_done';
   total: number;
   created_at: string;
   delivery_address_snapshot: any;
@@ -103,10 +97,11 @@ export default function CustomerOrdersPage() {
   }
 
   function getStepIndex(status: Order["status"], paymentStatus: string) {
-    if (status === "completed") return 5;
-    if (status === "dispatched") return 4;
-    if (status === "packing") return 3;
-    if (status === "accepted" || paymentStatus === "payment_done") return 2;
+    if (status === "cancelled") return 0;
+    if (status === "dispatched") return 5;
+    if (status === "packing") return 4;
+    if (status === "accepted" && paymentStatus === "payment_done") return 3;
+    if (status === "accepted") return 2;
     return 1;
   }
 
@@ -129,8 +124,8 @@ export default function CustomerOrdersPage() {
 
     const matchesStatus =
       statusFilter === "all" ||
-      (statusFilter === "active" && o.status !== "completed" && o.status !== "cancelled") ||
-      (statusFilter === "completed" && o.status === "completed") ||
+      (statusFilter === "active" && o.status !== "dispatched" && o.status !== "cancelled") ||
+      (statusFilter === "completed" && o.status === "dispatched") ||
       (statusFilter === "cancelled" && o.status === "cancelled");
 
     return matchesSearch && matchesStatus;
@@ -228,16 +223,16 @@ export default function CustomerOrdersPage() {
                       </span>
                       <span
                         className={`text-[11px] font-mono uppercase px-2.5 py-0.5 rounded-full font-semibold ${
-                          o.status === 'completed'
+                          o.status === 'dispatched'
                             ? 'inline-flex items-center px-2.5 py-0.5 text-xs rounded-full bg-[#E8F5EC] text-[#15803D]'
-                            : o.status === 'dispatched'
+                            : o.status === 'packing'
                               ? 'inline-flex items-center px-2.5 py-0.5 text-xs rounded-full bg-[#EEF2FF] text-[#3730A3]'
                               : isCancelled
                                 ? 'inline-flex items-center px-2.5 py-0.5 text-xs rounded-full bg-[#FDECEC] text-[#B91C1C]'
                                 : 'inline-flex items-center px-2.5 py-0.5 text-xs rounded-full bg-[#FEF6E7] text-[#B45309]'
                         }`}
                       >
-                        {o.status.replace('_', ' ')}
+                        {o.status === 'dispatched' ? 'delivered' : o.status.replace('_', ' ')}
                       </span>
                       <span
                         className={`text-[11px] font-mono px-2.5 py-0.5 rounded-full ${

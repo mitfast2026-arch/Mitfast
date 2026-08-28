@@ -5,6 +5,7 @@ import {
 } from '@/lib/server/products/cached-storefront';
 import { siteUrl } from '@/lib/seo/product-json-ld';
 import ProductsCatalogClient from './ProductsCatalogClient';
+import { parseMoqFilterBounds } from '@/lib/storefront/moq-filter';
 
 export const revalidate = 60;
 
@@ -49,6 +50,8 @@ export default async function ProductsPage({ searchParams }: PageProps) {
   else if (sort === 'price_desc') sortBy = 'price_desc';
   else if (sort === 'name_asc') sortBy = 'name_asc';
 
+  const { moqMin, moqMax } = parseMoqFilterBounds(moq);
+
   const [productsRes, categoriesRes] = await Promise.all([
     getCachedStorefrontProducts({
       page,
@@ -57,6 +60,8 @@ export default async function ProductsPage({ searchParams }: PageProps) {
       categoryId: category || undefined,
       minPrice: minPrice ? Number(minPrice) : undefined,
       maxPrice: maxPrice ? Number(maxPrice) : undefined,
+      moqMin,
+      moqMax,
       sortBy,
     }),
     getCachedPublicCategories(),

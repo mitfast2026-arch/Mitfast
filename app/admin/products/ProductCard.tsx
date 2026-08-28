@@ -48,8 +48,14 @@ export default function ProductCard({
   const imageUrl = getProductImageUrl(p);
   const isArchived = p.archive_status === 'archived';
   const isPublished = p.publication_status === 'published';
+  const isApproved = p.approval_status === 'approved';
   const needsApproval =
-    p.approval_status === 'pending' || p.approval_status === 'update_pending';
+    p.approval_status === 'pending' ||
+    p.approval_status === 'update_pending' ||
+    p.has_open_new_request ||
+    p.has_open_update_request;
+  const hasUpdatePending = p.approval_status === 'update_pending' || p.has_open_update_request;
+  const netPrice = Math.max(0, (p.selling_price || 0) - (p.discount || 0));
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -71,7 +77,7 @@ export default function ProductCard({
   if (needsApproval) {
     badges.push({
       key: 'approval',
-      label: p.approval_status === 'update_pending' ? 'Update pending' : 'Pending',
+      label: hasUpdatePending ? 'Update pending' : 'Pending',
       tone: 'warning',
     });
   }
@@ -138,7 +144,7 @@ export default function ProductCard({
             {categoryLabel} · {supplierLabel}
           </p>
           <p className="text-sm text-portal-text mt-1 type-metric">
-            ₹{p.selling_price?.toLocaleString('en-IN')} · MOQ {p.moq}
+            ₹{netPrice.toLocaleString('en-IN')} · MOQ {p.moq}
           </p>
         </div>
 
@@ -159,7 +165,8 @@ export default function ProductCard({
           <button
             type="button"
             onClick={() => onTogglePublish(p.id, p.publication_status || 'unpublished')}
-            disabled={publishPending}
+            disabled={publishPending || (!isPublished && !isApproved)}
+            title={!isPublished && !isApproved ? 'Product must be approved before publishing' : undefined}
             className="saas-btn-secondary flex-1 text-sm py-2 flex items-center justify-center gap-1.5 disabled:opacity-50"
             aria-busy={publishPending || undefined}
           >

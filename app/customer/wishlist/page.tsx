@@ -44,16 +44,17 @@ export default function CustomerWishlistPage() {
           res.data.items.map((item: any) => ({
             id: item.id || item.productId,
             productId: item.productId || item.product?.id,
-            name: item.name || item.product?.name || 'Precision Component',
+            name: item.name || item.product?.name || 'Product',
             sku: item.sku || item.product?.sku || '',
-            price: item.price || item.product?.price || 0,
+            price: item.price ?? item.product?.price ?? 0,
             imageUrl:
               item.imageUrl ||
               item.product?.primaryImage ||
               item.product?.image_url ||
               '/images/placeholder.png',
-            category: item.category || item.product?.category?.name || 'Fasteners',
-            moq: item.moq || item.product?.moq || 100,
+            category: item.category || item.product?.categoryName || '',
+            moq: item.moq ?? item.product?.moq ?? 1,
+            isAvailable: item.product?.isAvailable !== false,
           }))
         );
       }
@@ -70,9 +71,6 @@ export default function CustomerWishlistPage() {
 
   async function handleRemove(productId: string) {
     const prevItems = items;
-    // 1. Optimistic removal
-    setItems((prev) => prev.filter((i) => i.productId !== productId));
-    toast.success('Item removed from wishlist');
 
     try {
       const res = await fetch(`/api/wishlist?productId=${productId}`, {
@@ -80,11 +78,12 @@ export default function CustomerWishlistPage() {
       });
       const json = await res.json();
       if (!res.ok || !json.success) {
-        // Rollback
-        setItems(prevItems);
         toast.error(json.error?.message || 'Failed to remove item');
+        return;
       }
-    } catch (err) {
+      setItems((prev) => prev.filter((i) => i.productId !== productId));
+      toast.success('Item removed from wishlist');
+    } catch {
       setItems(prevItems);
       toast.error('Network error removing item');
     }
@@ -94,25 +93,6 @@ export default function CustomerWishlistPage() {
     const prevItems = items;
     setMovingId(item.productId);
 
-    // 1. Optimistic remove from wishlist
-    setItems((prev) => prev.filter((i) => i.productId !== item.productId));
-
-    // 2. Synchronous cart badge bump
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('cart-updated', { detail: { delta: 1 } }));
-    }
-
-    // 3. Instant toast feedback
-    toast.success(`Added "${item.name}" to your RFQ Cart!`, {
-      action: {
-        label: 'View Cart',
-        onClick: () => {
-          window.location.href = '/cart';
-        },
-      },
-    });
-
-    // 4. Background API sync
     try {
       const [cartRes, wishRes] = await Promise.all([
         fetch('/api/cart', {
@@ -120,7 +100,7 @@ export default function CustomerWishlistPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             productId: item.productId,
-            quantity: item.moq || 100,
+            quantity: item.moq || 1,
           }),
         }),
         fetch(`/api/wishlist?productId=${item.productId}`, {
@@ -129,19 +109,30 @@ export default function CustomerWishlistPage() {
       ]);
 
       const cartJson = await cartRes.json();
+      const wishJson = await wishRes.json();
       if (!cartRes.ok || !cartJson.success) {
-        // Rollback
-        setItems(prevItems);
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('cart-updated', { detail: { delta: -1 } }));
-        }
         toast.error(cartJson.error?.message || 'Failed to add to cart');
+        return;
       }
-    } catch (err) {
-      setItems(prevItems);
+      if (!wishRes.ok || !wishJson.success) {
+        toast.error(wishJson.error?.message || 'Added to cart but failed to remove from wishlist');
+        return;
+      }
+
+      setItems((prev) => prev.filter((i) => i.productId !== item.productId));
       if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('cart-updated', { detail: { delta: -1 } }));
+        window.dispatchEvent(new CustomEvent('cart-updated', { detail: { delta: 1 } }));
       }
+      toast.success(`Added "${item.name}" to your RFQ Cart!`, {
+        action: {
+          label: 'View Cart',
+          onClick: () => {
+            window.location.href = '/cart';
+          },
+        },
+      });
+    } catch {
+      setItems(prevItems);
       toast.error('Error moving item to cart');
     } finally {
       setMovingId(null);

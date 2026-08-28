@@ -39,6 +39,7 @@ export async function GET(request: NextRequest) {
         { count: 'exact' }
       )
       .eq('supplier_id', supplierId)
+      .eq('archive_status', 'active')
       .order('created_at', { ascending: false });
 
     if (search) {

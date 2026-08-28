@@ -41,9 +41,9 @@ export default async function HomePage() {
         stats={{ productCount, categoryCount }}
         slides={heroSlides}
       />
-      <AsymmetricShowcase imageSrc={containersImageUrl} />
-      <ServicesScroll />
       <EditorialProducts initialProducts={carouselProducts} />
+      <ServicesScroll />
+      <AsymmetricShowcase imageSrc={containersImageUrl} />
       <FloatingTestimonials />
     </div>
   );

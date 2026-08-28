@@ -12,6 +12,7 @@ import {
   transitionStatus,
 } from '@/lib/server/db/conditional-update';
 import { invalidateAdminCaches } from '@/lib/server/db/invalidate-caches';
+import { deferRevalidateProduct } from '@/lib/server/products/revalidate-product-paths';
 import { sanitizePostgrestSearch } from '@/lib/server/db/sanitize-search';
 import type { SupplierStatus } from '@/types/database';
 
@@ -220,6 +221,7 @@ export async function archiveSupplier(supplierId: string): Promise<ServerResult<
             updated_at: new Date().toISOString(),
           })
           .eq('id', prod.id);
+        deferRevalidateProduct(prod.id);
       }
     }
 

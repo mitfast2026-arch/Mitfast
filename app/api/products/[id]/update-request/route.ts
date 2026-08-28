@@ -29,7 +29,16 @@ export async function POST(
           ? body.suggested_moq
           : body.moq;
 
-    const payload = {
+    const specifications =
+      body.specifications !== undefined
+        ? (body.specifications || []).map((s: any, idx: number) => ({
+            spec_name: s.spec_name || s.key || s.name || `Spec ${idx + 1}`,
+            spec_value: s.spec_value || s.value || '',
+            sort_order: s.sort_order !== undefined ? s.sort_order : idx,
+          }))
+        : undefined;
+
+    const payload: Record<string, unknown> = {
       productId: params.id,
       name: body.name || existing?.name,
       categoryId: body.categoryId || body.category_id || existing?.category_id,
@@ -42,15 +51,16 @@ export async function POST(
           : body.supplier_price !== undefined
             ? Number(body.supplier_price)
             : undefined,
-      specifications: (body.specifications || []).map((s: any, idx: number) => ({
-        spec_name: s.spec_name || s.key || s.name || `Spec ${idx + 1}`,
-        spec_value: s.spec_value || s.value || '',
-        sort_order: s.sort_order !== undefined ? s.sort_order : idx,
-      })),
-      imageUrls: body.imageUrls || body.images || [],
     };
-    if (!payload.specifications.length) delete (payload as any).specifications;
-    if (!payload.imageUrls.length) delete (payload as any).imageUrls;
+
+    if (specifications !== undefined) {
+      payload.specifications = specifications;
+    }
+
+    const imageUrls = body.imageUrls || body.images;
+    if (Array.isArray(imageUrls) && imageUrls.length > 0) {
+      payload.imageUrls = imageUrls;
+    }
 
     const result = await submitProductUpdateBySupplier(supplierId, payload);
 

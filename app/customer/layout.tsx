@@ -15,6 +15,7 @@ import {
   LogOut,
   Menu,
   X,
+  Bell,
 } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
 import { signOutTo } from '@/lib/client/sign-out';
@@ -141,6 +142,7 @@ export default function CustomerLayout({
   const accountNav: NavItem[] = [
     { label: 'Profile', href: '/customer/profile', icon: User },
     { label: 'Addresses', href: '/customer/addresses', icon: MapPin },
+    { label: 'Notifications', href: '/customer/notifications', icon: Bell },
     { label: 'Security', href: '/customer/settings', icon: Shield },
   ];
 

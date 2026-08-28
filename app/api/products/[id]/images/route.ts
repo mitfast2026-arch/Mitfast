@@ -12,6 +12,9 @@ import {
   type ProductImageActor,
 } from '@/lib/server/products/product-image-service';
 import { deferRevalidateProduct } from '@/lib/server/products/revalidate-product-paths';
+import { syncPendingApprovalImageUrls } from '@/lib/server/products/product-service';
+
+export const runtime = 'nodejs';
 
 async function requireAdminOrProductOwner(productId: string): Promise<
   | { ok: true; actor: ProductImageActor }
@@ -78,6 +81,7 @@ export async function POST(
     }
 
     deferRevalidateProduct(params.id);
+    await syncPendingApprovalImageUrls(params.id);
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     return NextResponse.json(
@@ -111,6 +115,7 @@ export async function DELETE(
     }
 
     deferRevalidateProduct(params.id);
+    await syncPendingApprovalImageUrls(params.id);
     return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json(
@@ -146,6 +151,7 @@ export async function PATCH(
     }
 
     deferRevalidateProduct(params.id);
+    await syncPendingApprovalImageUrls(params.id);
     return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json(

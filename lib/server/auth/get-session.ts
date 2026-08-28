@@ -124,6 +124,18 @@ export async function requireCustomer(): Promise<
   return { ok: true, session };
 }
 
+export async function requireSupplierRole(): Promise<
+  | { ok: true; session: AuthSessionData }
+  | { ok: false; response: NextResponse }
+> {
+  const session = await getServerSession();
+  if (!session) return { ok: false, response: unauthorizedResponse() };
+  if (session.profile.role !== 'supplier') {
+    return { ok: false, response: forbiddenResponse('Supplier account required') };
+  }
+  return { ok: true, session };
+}
+
 export async function requireSupplier(): Promise<
   | { ok: true; session: AuthSessionData }
   | { ok: false; response: NextResponse }

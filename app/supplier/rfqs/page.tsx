@@ -101,6 +101,7 @@ export default function SupplierRfqsPage() {
         onSuccess: () => {
           setActionSuccess('Negotiation saved. Quantities updated.');
           patchRfq(selectedRfq.id, { status: 'under_review' });
+          void loadRfqs();
         },
         onError: (msg) => setActionError(msg),
       }

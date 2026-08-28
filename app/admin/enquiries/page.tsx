@@ -356,16 +356,16 @@ export default function AdminEnquiriesPage() {
 
   async function handleDeleteEnquiry(enquiryId: string) {
     if (!confirm('Delete this enquiry?')) return;
-    try {
-      await apiDelete(`/api/enquiries/${enquiryId}`);
-      if (selectedEnquiry?.id === enquiryId) setSelectedEnquiry(null);
-      setEnquiries((prev) => prev.filter((e) => e.id !== enquiryId));
-      setTotal((t) => Math.max(0, t - 1));
-      await refreshEnquiries();
-      notifyDashboardChanged();
-    } catch (err) {
-      console.error('Delete enquiry error:', err);
+    const result = await apiDelete(`/api/enquiries/${enquiryId}`);
+    if (!result.ok) {
+      setLoadError(result.message || 'Failed to delete enquiry');
+      return;
     }
+    if (selectedEnquiry?.id === enquiryId) setSelectedEnquiry(null);
+    setEnquiries((prev) => prev.filter((e) => e.id !== enquiryId));
+    setTotal((t) => Math.max(0, t - 1));
+    await refreshEnquiries();
+    notifyDashboardChanged();
   }
 
   const contact = selectedEnquiry ? enquiryContact(selectedEnquiry) : null;
@@ -686,6 +686,26 @@ export default function AdminEnquiriesPage() {
           )
         }
       />
+      {total > PORTAL_PAGE_LIMIT && (
+        <div className="flex justify-end gap-2 mt-4">
+          <button
+            type="button"
+            className="saas-btn-secondary text-xs"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+          >
+            Previous
+          </button>
+          <button
+            type="button"
+            className="saas-btn-secondary text-xs"
+            disabled={page * PORTAL_PAGE_LIMIT >= total}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            Next
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -198,16 +198,26 @@ export default function ProductFormPanel({
     }
   }
 
-  async function saveSupplierCountry() {
-    if (!values.supplierId) return;
+  async function saveSupplierCountry(): Promise<boolean> {
     const country = resolveLocationCountry(values.locationMode, values.locationOther);
-    if (country) {
-      await fetch(`/api/suppliers/${values.supplierId}`, {
+    if (!country) return true;
+    if (mode === 'create-supplier' || mode === 'edit-supplier') {
+      const res = await fetch('/api/supplier/profile', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ country }),
       });
+      const json = await res.json().catch(() => null);
+      return res.ok && json?.success !== false;
     }
+    if (!values.supplierId) return true;
+    const res = await fetch(`/api/suppliers/${values.supplierId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ country }),
+    });
+    const json = await res.json().catch(() => null);
+    return res.ok && json?.success !== false;
   }
 
   async function handleSubmit(finalize = true): Promise<boolean> {
@@ -222,7 +232,8 @@ export default function ProductFormPanel({
     setSubmitting(true);
 
     try {
-      const payload = buildPayload(values, categories);
+      const isSupplier = mode.includes('supplier');
+      const payload = buildPayload(values, categories, { isSupplier });
 
       if (mode === 'create-admin') {
         const res = await fetch('/api/products', {
@@ -238,7 +249,10 @@ export default function ProductFormPanel({
         const id = json.data?.productId;
         if (id) {
           await uploadImages(id);
-          await saveSupplierCountry();
+          if (!(await saveSupplierCountry())) {
+            setFormError('Product saved but supplier country update failed');
+            return false;
+          }
         }
         onSuccess();
         onClose();
@@ -258,6 +272,10 @@ export default function ProductFormPanel({
         }
         const id = json.data?.productId;
         if (id) await uploadImages(id);
+        if (!(await saveSupplierCountry())) {
+          setFormError('Product saved but supplier country update failed');
+          return false;
+        }
         onSuccess();
         onClose();
         return true;
@@ -276,6 +294,20 @@ export default function ProductFormPanel({
           setFormError(json.error?.message || 'Failed to submit update');
           return false;
         }
+        try {
+          await uploadImages(product.id);
+        } catch (err) {
+          setFormError(
+            err instanceof Error
+              ? err.message
+              : 'Update submitted but image upload failed. Retry uploading images.'
+          );
+          return false;
+        }
+        if (!(await saveSupplierCountry())) {
+          setFormError('Update submitted but supplier country update failed');
+          return false;
+        }
         onSuccess();
         onClose();
         return true;
@@ -292,8 +324,17 @@ export default function ProductFormPanel({
           setFormError(json.error?.message || 'Failed to save product');
           return false;
         }
-        await saveSupplierCountry();
+        if (!(await saveSupplierCountry())) {
+          setFormError('Product saved but supplier country update failed');
+          return false;
+        }
         if (mode === 'edit-admin') {
+          try {
+            await uploadImages(product.id);
+          } catch (err) {
+            setFormError(err instanceof Error ? err.message : 'Product saved but image upload failed');
+            return false;
+          }
           onSuccess();
           onClose();
         }
@@ -353,7 +394,17 @@ export default function ProductFormPanel({
     setFormError('');
     try {
       if (action === 'approve') {
-        if (product && (mode === 'review-admin' || mode === 'edit-admin')) {
+        if (product && mode === 'review-admin' && values.pendingImageFiles.length > 0) {
+          try {
+            await uploadImages(product.id);
+          } catch (err) {
+            setFormError(
+              err instanceof Error ? err.message : 'Failed to upload images before approval'
+            );
+            return;
+          }
+        }
+        if (product && mode === 'edit-admin') {
           const saved = await handleSubmit(true);
           if (!saved) return;
         }
@@ -401,7 +452,9 @@ export default function ProductFormPanel({
   if (!open || !mounted) return null;
 
   const needsApproval =
-    product?.approval_status === 'pending' || product?.approval_status === 'update_pending';
+    product?.approval_status === 'pending' ||
+    product?.pendingRequest?.status === 'update_pending' ||
+    product?.approval_status === 'update_pending';
   const isPublished = product?.publication_status === 'published';
   const isArchived = product?.archive_status === 'archived';
   const pid = product?.id;
@@ -539,7 +592,14 @@ export default function ProductFormPanel({
                 mode={mode}
                 onChange={patch}
               />
-              <MediaSection productId={product?.id} values={values} mode={mode} onChange={patch} />
+              <MediaSection
+                productId={product?.id}
+                values={values}
+                mode={mode}
+                publicationStatus={product?.publication_status}
+                onChange={patch}
+                onUploadError={(message) => setFormError(message)}
+              />
               <SpecificationsSection
                 values={values}
                 errors={errors}

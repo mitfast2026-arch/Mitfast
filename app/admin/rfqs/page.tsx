@@ -47,15 +47,18 @@ export default function AdminRfqsPage() {
   const [rejectReason, setRejectReason] = useState('');
   const [showReject, setShowReject] = useState(false);
   const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [convertSuccess, setConvertSuccess] = useState('');
 
-  const loadRfqs = useCallback(async (showLoading = true) => {
+  const loadRfqs = useCallback(async (showLoading = true, opts?: { force?: boolean }) => {
     const statusParam = statusFilter === 'all' ? '' : `&status=${statusFilter}`;
     const url = `/api/rfqs?search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=${PORTAL_PAGE_LIMIT}${statusParam}`;
-    const existing = peekPortalCache<{ rfqs: any[]; total: number }>(url);
+    const force = Boolean(opts?.force);
+    const existing = force ? null : peekPortalCache<{ rfqs: any[]; total: number }>(url);
     if (existing) {
       const list = existing.data.rfqs || [];
       setRfqs(list);
+      setTotal(existing.data.total || 0);
       setSelectedRfq((prev: any) => {
         if (prev) {
           const updated = list.find((r: any) => r.id === prev.id);
@@ -76,11 +79,12 @@ export default function AdminRfqsPage() {
     }
     try {
       const result = await cachedApiGet<{ rfqs: any[]; total: number }>(url, {
-        force: showLoading && !existing,
+        force: force || (showLoading && !existing),
       });
       if (result.ok) {
         const list = result.data.rfqs || [];
         setRfqs(list);
+        setTotal(result.data.total || 0);
         setSelectedRfq((prev: any) => {
           if (prev) {
             const updated = list.find((r: any) => r.id === prev.id);
@@ -237,7 +241,7 @@ export default function AdminRfqsPage() {
         title="RFQs"
         description="Quotation requests — review products, negotiate pricing, accept, then convert to order."
         actions={
-          <button onClick={() => loadRfqs()} className="saas-btn-secondary gap-2">
+          <button onClick={() => loadRfqs(true, { force: true })} className="saas-btn-secondary gap-2">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
@@ -463,6 +467,26 @@ export default function AdminRfqsPage() {
           )
         }
       />
+      {total > PORTAL_PAGE_LIMIT && (
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            className="saas-btn-secondary text-xs"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+          >
+            Previous
+          </button>
+          <button
+            type="button"
+            className="saas-btn-secondary text-xs"
+            disabled={page * PORTAL_PAGE_LIMIT >= total}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            Next
+          </button>
+        </div>
+      )}
     </div>
   );
 }

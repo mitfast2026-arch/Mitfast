@@ -126,9 +126,7 @@ function CartRFQPageInner() {
       if (user) {
         const { data: profile } = await supabase
           .from("profiles")
-          .select(
-            "id, role, full_name, email, phone, company_name, gstin"
-          )
+          .select("id, role, full_name, email, phone")
           .eq("user_id", user.id)
           .single();
 
@@ -138,8 +136,6 @@ function CartRFQPageInner() {
           setContactName((profile.full_name || "").trim());
           setContactEmail((profile.email || "").trim());
           setContactPhone((profile.phone || "").trim());
-          setCompanyName((profile.company_name || "").trim());
-          setGstin((profile.gstin || "").trim());
         }
       }
 
@@ -1033,10 +1029,17 @@ function CartRFQPageInner() {
                             )}
 
                             <span>•</span>
-                            <span className="text-emerald-700 font-semibold flex items-center gap-1">
-                              <span className="w-2 h-2 rounded-full bg-emerald-600 inline-block" />
-                              In Stock
-                            </span>
+                            {p?.isAvailable === false ? (
+                              <span className="text-amber-800 font-semibold flex items-center gap-1">
+                                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                                No longer available
+                              </span>
+                            ) : (
+                              <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                                <span className="w-2 h-2 rounded-full bg-emerald-600 inline-block" />
+                                Available
+                              </span>
+                            )}
                           </div>
 
                           {/* Price */}

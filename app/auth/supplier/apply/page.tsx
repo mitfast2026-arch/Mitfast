@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AlertCircle, ArrowRight } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
+import CountrySelect from '@/components/ui/CountrySelect';
 
 export default function SupplierApplyPage() {
   const [email, setEmail] = useState('');
@@ -11,6 +12,7 @@ export default function SupplierApplyPage() {
   const [companyName, setCompanyName] = useState('');
   const [phone, setPhone] = useState('');
   const [plantAddress, setPlantAddress] = useState('');
+  const [country, setCountry] = useState('India');
   const [website, setWebsite] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -91,7 +93,7 @@ export default function SupplierApplyPage() {
           contactPerson: contactPerson.trim(),
           phone: phone.trim(),
           address: plantAddress.trim(),
-          country: 'India',
+          country: country.trim(),
           website: website.trim(),
           termsAccepted: true,
         }),
@@ -182,6 +184,16 @@ export default function SupplierApplyPage() {
                 onChange={(e) => setPlantAddress(e.target.value)}
                 className="saas-input"
                 placeholder="e.g. Peenya Industrial Area, Bengaluru"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="saas-label">Country *</label>
+              <CountrySelect
+                required
+                value={country}
+                onChange={setCountry}
+                className="saas-input"
               />
             </div>
 

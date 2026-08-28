@@ -87,7 +87,9 @@ export async function getBusinessSettings(force = false): Promise<ServerResult<B
 /**
  * Admin updates the business settings.
  */
-export async function updateBusinessSettings(formData: unknown): Promise<ServerResult<{ updated: boolean }>> {
+export async function updateBusinessSettings(
+  formData: unknown
+): Promise<ServerResult<BusinessSettingsData | { updated: boolean }>> {
   try {
     const validated = updateBusinessSettingsSchema.safeParse(formData);
     if (!validated.success) {
@@ -129,7 +131,12 @@ export async function updateBusinessSettings(formData: unknown): Promise<ServerR
 
     invalidateServerSettings();
 
-    return { success: true, data: { updated: true } };
+    const refreshed = await getBusinessSettings(true);
+    if (!refreshed.success) {
+      return { success: true, data: { updated: true } };
+    }
+
+    return { success: true, data: refreshed.data };
   } catch (error) {
     console.error('[updateBusinessSettings] Error:', error);
     return { success: false, error: { message: 'Failed to update settings', code: 'INTERNAL_ERROR' } };

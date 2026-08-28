@@ -21,6 +21,7 @@ import {
   peekPortalCache,
   setPortalCache,
 } from '@/lib/client/portal-data-cache';
+import { invalidateProductPortalCaches } from '@/lib/client/invalidate-product-portal-cache';
 import { useMutation, mutationKey } from '@/lib/client/use-mutation';
 import { notifyApprovalsChanged } from '@/components/portal/ApprovalsCountContext';
 import AdminPageHeader from '@/components/admin/AdminPageHeader';
@@ -46,8 +47,9 @@ export default function AdminApprovalsPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const { isPending, run } = useMutation();
 
-  const loadApprovals = useCallback(async (showLoading = true) => {
-    const existing = peekPortalCache<ApprovalsPayload>('/api/admin/approvals');
+  const loadApprovals = useCallback(async (showLoading = true, opts?: { force?: boolean }) => {
+    const force = Boolean(opts?.force);
+    const existing = force ? null : peekPortalCache<ApprovalsPayload>('/api/admin/approvals');
     if (existing) {
       setData(existing.data);
       setLoading(false);
@@ -56,7 +58,7 @@ export default function AdminApprovalsPage() {
     }
     try {
       const result = await cachedApiGet<ApprovalsPayload>('/api/admin/approvals', {
-        force: showLoading && !existing,
+        force: force || (showLoading && !existing),
       });
       if (result.ok) {
         setData(result.data);
@@ -121,6 +123,7 @@ export default function AdminApprovalsPage() {
             : prev
         );
         notifyApprovalsChanged();
+        invalidateProductPortalCaches();
         toast.success('Product request approved');
       },
       onError: (msg) => {
@@ -257,7 +260,7 @@ export default function AdminApprovalsPage() {
         title="Approval Center"
         description="Verify supplier applications and product submissions."
         actions={
-          <button onClick={() => loadApprovals()} className="saas-btn-secondary gap-2">
+          <button onClick={() => loadApprovals(true, { force: true })} className="saas-btn-secondary gap-2">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>

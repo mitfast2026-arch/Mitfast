@@ -16,15 +16,6 @@ export const createManualOrderSchema = z.object({
   items: z.array(createManualOrderItemSchema).min(1, 'At least one item is required'),
 });
 
-export const convertEnquiryToOrderSchema = z.object({
-  enquiryId: z.string().uuid('Invalid enquiry ID'),
-  customerId: z.string().uuid('Invalid customer ID').optional(),
-  /** Ignored when enquiry.product_id is set — server re-reads the product. */
-  productId: z.string().uuid('Invalid product ID').optional(),
-  quantity: z.number().int().min(1, 'Quantity must be at least 1'),
-  deliveryAddress: deliveryAddressInputSchema,
-});
-
 export const convertRfqToOrderSchema = z.object({
   rfqId: z.string().uuid('Invalid RFQ ID'),
 });

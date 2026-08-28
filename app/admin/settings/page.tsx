@@ -19,6 +19,7 @@ import {
   peekPortalCache,
   setPortalCache,
 } from '@/lib/client/portal-data-cache';
+import { invalidateSettings } from '@/lib/client/settings-cache';
 
 type SettingsData = {
   companyName: string;
@@ -132,6 +133,7 @@ export default function AdminSettingsPage() {
           applySettings(json.data);
           setPortalCache('/api/settings', json.data);
         }
+        invalidateSettings();
         setSuccessMsg('Settings saved.');
         setTimeout(() => setSuccessMsg(''), 4000);
       }

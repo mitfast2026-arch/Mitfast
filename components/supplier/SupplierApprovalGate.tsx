@@ -63,18 +63,17 @@ export default function SupplierApprovalGate({
     setErrorMsg('');
 
     try {
-      const res = await fetch('/api/auth/resubmit-supplier', {
-        method: 'POST',
+      const res = await fetch('/api/supplier/profile', {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          supplierId: supplier.id,
-          email: supplier.email,
           companyName,
           contactPerson,
           phone,
           address,
           country,
           website: website || null,
+          resubmit: true,
         }),
       });
 
@@ -192,7 +191,7 @@ export default function SupplierApprovalGate({
                 Administrator Rejection Reason:
               </div>
               <p className="text-xs font-mono text-portal-danger font-semibold">
-                "{supplier.rejection_reason || 'Please provide updated facility address and contact information.'}"
+                &ldquo;{supplier.rejection_reason || 'Please provide updated facility address and contact information.'}&rdquo;
               </p>
             </div>
 

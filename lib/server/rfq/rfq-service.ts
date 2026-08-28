@@ -3,6 +3,7 @@ import { getCustomerCart, clearCustomerCart } from '@/lib/server/cart/cart-servi
 import { getBusinessSettings } from '@/lib/server/settings/settings-service';
 import { negotiateRfqSchema, rejectRfqSchema, submitRfqSchema } from '@/lib/validation/rfq.schema';
 import { convertEnquiryToRfqSchema } from '@/lib/validation/enquiry.schema';
+import { calculatePricing, roundCurrency } from '@/lib/server/pricing/calculate-price';
 import { ensureCustomerFromGuest } from '@/lib/server/auth/ensure-customer-from-guest';
 import { isProfileIdentityComplete } from '@/lib/server/auth/profile-complete';
 import type { ServerResult } from '@/lib/server/auth/get-session';
@@ -17,6 +18,7 @@ import {
 } from '@/lib/server/db/conditional-update';
 import { withIdempotency } from '@/lib/server/db/idempotency';
 import { invalidateAdminCaches } from '@/lib/server/db/invalidate-caches';
+import { notifySuppliersForRfq } from '@/lib/server/email/supplier-notifications';
 
 export async function getNextRfqNumber(adminClient: any): Promise<string> {
   try {
@@ -261,6 +263,7 @@ export async function submitRfqFromCart(
         supplierKey: (row.supplier_key as string) || 'platform',
       }));
       invalidateAdminCaches();
+      void Promise.all(rfqs.map((r) => notifySuppliersForRfq(r.rfqId)));
       return {
         success: true,
         data: {
@@ -329,6 +332,7 @@ export async function submitRfqFromCart(
       }
       await clearCustomerCart(customerId);
       invalidateAdminCaches();
+      void Promise.all(created.map((r) => notifySuppliersForRfq(r.rfqId)));
       return {
         success: true,
         data: {
@@ -391,7 +395,7 @@ export async function createRfqFromEnquiry(
 
     const { data: product, error: prodError } = await adminClient
       .from('products')
-      .select('id, name, selling_price, moq')
+      .select('id, name, selling_price, discount, gst_rate, gst_included, moq')
       .eq('id', resolvedProductId)
       .single();
 
@@ -425,8 +429,17 @@ export async function createRfqFromEnquiry(
       customerId = provisioned.data.customerId;
     }
 
-    const unitPrice = Number(product.selling_price || 0);
-    const originalTotal = Math.round(quantity * unitPrice * 100) / 100;
+    const priced = calculatePricing({
+      supplier_price: Number(product.selling_price || 0),
+      profit_type: 'fixed',
+      profit_value: 0,
+      discount: Number(product.discount || 0),
+      gst_rate: Number(product.gst_rate ?? 18),
+      gst_included: Boolean(product.gst_included ?? false),
+      quantity,
+    });
+    const unitPrice = priced.discounted_unit_price;
+    const originalTotal = roundCurrency(quantity * unitPrice);
 
     const addressSnapshot = deliveryAddress || {
       address_line_1: 'To be confirmed',
@@ -465,6 +478,7 @@ export async function createRfqFromEnquiry(
     }
 
     invalidateAdminCaches();
+    void notifySuppliersForRfq(row.rfq_id);
 
     return {
       success: true,

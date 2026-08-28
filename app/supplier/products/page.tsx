@@ -10,6 +10,7 @@ import {
   markPortalContentReady,
   peekPortalCache,
 } from '@/lib/client/portal-data-cache';
+import { invalidateProductPortalCaches } from '@/lib/client/invalidate-product-portal-cache';
 import { PORTAL_PAGE_LIMIT } from '@/lib/client/portal-nav-prefetch';
 import { SkeletonTableRows } from '@/components/portal/ds';
 
@@ -17,6 +18,7 @@ export default function SupplierProductsPage() {
   const { supplier } = useSupplier();
   const [products, setProducts] = useState<any[]>([]);
   const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [defaultGstRate, setDefaultGstRate] = useState(18);
@@ -27,12 +29,14 @@ export default function SupplierProductsPage() {
   const [panelProduct, setPanelProduct] = useState<ProductFormProduct | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  async function loadData(showLoading = true) {
+  async function loadData(showLoading = true, opts?: { force?: boolean }) {
     if (!supplier) return;
     const productsUrl = `/api/supplier/products?page=${page}&limit=${PORTAL_PAGE_LIMIT}`;
-    const existing = peekPortalCache<{ products: any[]; total: number }>(productsUrl);
+    const force = Boolean(opts?.force);
+    const existing = force ? null : peekPortalCache<{ products: any[]; total: number }>(productsUrl);
     if (existing) {
       setProducts(existing.data.products || []);
+      setTotal(existing.data.total || 0);
       setLoading(false);
     } else if (showLoading) {
       setLoading(true);
@@ -40,7 +44,7 @@ export default function SupplierProductsPage() {
     try {
       const [prodsRes, catsRes, settingsRes] = await Promise.all([
         cachedApiGet<{ products: any[]; total: number }>(productsUrl, {
-          force: showLoading && !existing,
+          force: force || (showLoading && !existing),
         }),
         cachedApiGet<{ categories: any[] }>('/api/categories?status=active'),
         cachedApiGet<{ defaultGstRate?: number }>('/api/settings'),
@@ -48,6 +52,7 @@ export default function SupplierProductsPage() {
 
       if (prodsRes.ok) {
         setProducts(prodsRes.data.products || []);
+        setTotal(prodsRes.data.total || 0);
         markPortalContentReady('/supplier/products');
       }
       if (catsRes.ok) setCategories(catsRes.data.categories || []);
@@ -251,9 +256,31 @@ export default function SupplierProductsPage() {
               : 'Product update request submitted for review.'
           );
           setErrorMsg('');
-          loadData(false);
+          invalidateProductPortalCaches();
+          loadData(false, { force: true });
         }}
       />
+
+      {total > PORTAL_PAGE_LIMIT && (
+        <div className="flex justify-end gap-2 mt-4">
+          <button
+            type="button"
+            className="saas-btn-secondary text-xs"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+          >
+            Previous
+          </button>
+          <button
+            type="button"
+            className="saas-btn-secondary text-xs"
+            disabled={page * PORTAL_PAGE_LIMIT >= total}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            Next
+          </button>
+        </div>
+      )}
     </div>
   );
 }

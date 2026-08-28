@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
 
     const { data: rfqItems, error: itemsError } = await adminClient
       .from('rfq_items')
-      .select('id, rfq_id, product_id, product_name_snapshot, original_quantity, final_quantity, created_at, product:products(sku), rfq:rfqs(id, rfq_number, status, rejection_reason, created_at, updated_at)')
+      .select('id, rfq_id, product_id, product_name_snapshot, original_quantity, original_unit_price, final_quantity, final_unit_price, created_at, product:products(sku), rfq:rfqs(id, rfq_number, status, rejection_reason, created_at, updated_at)')
       .in('product_id', productIds)
       .order('created_at', { ascending: false })
       .limit(limit);
@@ -53,7 +53,9 @@ export async function GET(request: NextRequest) {
         product_id: item.product_id,
         product_name_snapshot: item.product_name_snapshot,
         original_quantity: item.original_quantity,
+        original_unit_price: item.original_unit_price,
         final_quantity: item.final_quantity,
+        final_unit_price: item.final_unit_price,
         sku: (item as any).product?.sku || null,
       });
     }

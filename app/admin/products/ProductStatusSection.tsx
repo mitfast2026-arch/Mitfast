@@ -34,7 +34,11 @@ export default function ProductStatusSection({
   onToggleArchive,
 }: ProductStatusSectionProps) {
   const needsApproval =
-    product.approval_status === 'pending' || product.approval_status === 'update_pending';
+    product.approval_status === 'pending' ||
+    product.approval_status === 'update_pending' ||
+    product.has_open_new_request ||
+    product.has_open_update_request;
+  const isApproved = product.approval_status === 'approved';
   const isPublished = product.publication_status === 'published';
   const isArchived = product.archive_status === 'archived';
 
@@ -107,7 +111,11 @@ export default function ProductStatusSection({
           <button
             type="button"
             onClick={onTogglePublish}
-            disabled={isPending(mutationKey(product.id, isPublished ? 'unpublish' : 'publish'))}
+            disabled={
+              isPending(mutationKey(product.id, isPublished ? 'unpublish' : 'publish')) ||
+              (!isPublished && !isApproved)
+            }
+            title={!isPublished && !isApproved ? 'Product must be approved before publishing' : undefined}
             className="saas-btn-secondary text-[11px] py-1.5 px-3 flex items-center gap-1.5 disabled:opacity-50"
           >
             {isPending(mutationKey(product.id, isPublished ? 'unpublish' : 'publish')) ? (

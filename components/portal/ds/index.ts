@@ -4,7 +4,6 @@ export { StatusSummaryCard } from './StatusSummaryCard';
 export { ChartCard } from './ChartCard';
 export { PortalBarChart, PortalDonutChart, PortalPieChart } from './Charts';
 export { StatusPill } from './StatusPill';
-export { FilterChip, FilterChipGroup } from './FilterChip';
 export { EmptyState, Skeleton, SkeletonCard, SkeletonTableRows } from './EmptyState';
 export { DataTable, type DataTableColumn } from './DataTable';
 export { PortalToaster } from './Toaster';

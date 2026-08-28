@@ -3,7 +3,7 @@
 import React, { Suspense, useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Search, RefreshCw, MapPin, ArrowRight } from 'lucide-react';
+import { Search, RefreshCw, MapPin, ArrowRight, Plus } from 'lucide-react';
 import type { OrderStatus, PaymentStatus } from '@/types/database';
 import { apiPut } from '@/lib/client/api-client';
 import {
@@ -19,6 +19,7 @@ import { SalesWorkflowBar, ContactGrid } from '@/components/admin/SalesWorkflow'
 import AdminPageHeader from '@/components/admin/AdminPageHeader';
 import AdminToolbar from '@/components/admin/AdminToolbar';
 import AdminSplitView from '@/components/admin/AdminSplitView';
+import ManualOrderModal from '@/app/admin/orders/ManualOrderModal';
 import {
   orderContact,
   orderStatusBadgeClass,
@@ -37,15 +38,20 @@ function AdminOrdersPageContent() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [manualOrderOpen, setManualOrderOpen] = useState(false);
   const { isPending, run } = useMutation();
 
-  const loadOrders = useCallback(async (showLoading = true) => {
+  const loadOrders = useCallback(async (showLoading = true, opts?: { force?: boolean }) => {
     const statusParam = statusFilter === 'all' ? '' : `&status=${statusFilter}`;
-    const url = `/api/orders?convertedOnly=true&page=1&limit=${PORTAL_PAGE_LIMIT}&search=${encodeURIComponent(debouncedSearch)}${statusParam}`;
-    const existing = peekPortalCache<{ orders: any[] }>(url);
+    const url = `/api/orders?convertedOnly=true&page=${page}&limit=${PORTAL_PAGE_LIMIT}&search=${encodeURIComponent(debouncedSearch)}${statusParam}`;
+    const force = Boolean(opts?.force);
+    const existing = force ? null : peekPortalCache<{ orders: any[]; total: number }>(url);
     if (existing) {
       const list = existing.data.orders || [];
       setOrders(list);
+      setTotal(existing.data.total || 0);
       setSelectedOrder((prev: any) => {
         if (prev) {
           const updated = list.find((o: any) => o.id === prev.id);
@@ -58,12 +64,13 @@ function AdminOrdersPageContent() {
       setLoading(true);
     }
     try {
-      const result = await cachedApiGet<{ orders: any[] }>(url, {
-        force: showLoading && !existing,
+      const result = await cachedApiGet<{ orders: any[]; total: number }>(url, {
+        force: force || (showLoading && !existing),
       });
       if (result.ok) {
         const list = result.data.orders || [];
         setOrders(list);
+        setTotal(result.data.total || 0);
         setSelectedOrder((prev: any) => {
           if (prev) {
             const updated = list.find((o: any) => o.id === prev.id);
@@ -78,7 +85,7 @@ function AdminOrdersPageContent() {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, statusFilter]);
+  }, [debouncedSearch, statusFilter, page]);
 
   useEffect(() => {
     const q = searchParams.get('search');
@@ -89,6 +96,10 @@ function AdminOrdersPageContent() {
     const timer = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
     return () => clearTimeout(timer);
   }, [searchTerm]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, statusFilter]);
 
   useEffect(() => {
     loadOrders();
@@ -193,10 +204,20 @@ function AdminOrdersPageContent() {
         title="Orders"
         description="Orders from accepted enquiries and RFQs — status, payment, and delivery."
         actions={
-          <button onClick={() => loadOrders()} className="saas-btn-secondary gap-2">
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setManualOrderOpen(true)}
+              className="saas-btn-primary gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              Manual order
+            </button>
+            <button onClick={() => loadOrders(true, { force: true })} className="saas-btn-secondary gap-2">
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+          </div>
         }
       />
 
@@ -444,6 +465,31 @@ function AdminOrdersPageContent() {
             </div>
           )
         }
+      />
+      {total > PORTAL_PAGE_LIMIT && (
+        <div className="flex justify-end gap-2 mt-4">
+          <button
+            type="button"
+            className="saas-btn-secondary text-xs"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+          >
+            Previous
+          </button>
+          <button
+            type="button"
+            className="saas-btn-secondary text-xs"
+            disabled={page * PORTAL_PAGE_LIMIT >= total}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            Next
+          </button>
+        </div>
+      )}
+      <ManualOrderModal
+        open={manualOrderOpen}
+        onClose={() => setManualOrderOpen(false)}
+        onCreated={() => loadOrders(true, { force: true })}
       />
     </div>
   );

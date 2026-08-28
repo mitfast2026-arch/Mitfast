@@ -66,7 +66,7 @@ export default function AdminSupplierDetailPage() {
       }
 
       if (statsRes.success) {
-        setStats(statsRes.data);
+        setStats(statsRes.data?.summary ?? statsRes.data);
       }
     } catch (err) {
       console.error('Failed to load supplier detail:', err);

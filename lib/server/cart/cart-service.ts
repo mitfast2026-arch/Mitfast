@@ -131,9 +131,12 @@ export async function getCustomerCart(customerId: string): Promise<ServerResult<
         subtotal += itemTotal;
       }
 
+      const sortedImages = [...(p.images || [])].sort(
+        (a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+      );
       const primaryImg =
-        p.images?.find((img: any) => img.is_primary)?.image_url ||
-        p.images?.[0]?.image_url ||
+        sortedImages.find((img: any) => img.is_primary)?.image_url ||
+        sortedImages[0]?.image_url ||
         null;
 
       formattedItems.push({

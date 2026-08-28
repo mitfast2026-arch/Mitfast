@@ -10,6 +10,12 @@ export async function POST() {
         code: 'DEPRECATED',
       },
     },
-    { status: 410 }
+    {
+      status: 410,
+      headers: {
+        Deprecation: 'true',
+        Link: '</api/auth/complete-profile>; rel="successor-version"',
+      },
+    }
   );
 }

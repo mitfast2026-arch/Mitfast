@@ -97,16 +97,21 @@ export async function createEnquiry(
         attachment.buffer,
         attachment.contentType
       );
-      if (uploaded.success) {
-        await adminClient
-          .from('enquiries')
-          .update({
-            attachment_url: uploaded.data.publicUrl,
-            attachment_path: uploaded.data.storagePath,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', enquiry.id);
+      if (!uploaded.success) {
+        await adminClient.from('enquiries').delete().eq('id', enquiry.id);
+        return {
+          success: false,
+          error: uploaded.error,
+        };
       }
+      await adminClient
+        .from('enquiries')
+        .update({
+          attachment_url: uploaded.data.publicUrl,
+          attachment_path: uploaded.data.storagePath,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', enquiry.id);
     }
 
     return {

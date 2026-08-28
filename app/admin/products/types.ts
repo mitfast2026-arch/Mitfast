@@ -25,6 +25,8 @@ export type AdminProduct = {
   approval_status?: string;
   publication_status?: string;
   archive_status?: string;
+  has_open_new_request?: boolean;
+  has_open_update_request?: boolean;
   category?: { id: string; name: string };
   supplier?: {
     id: string;

@@ -112,7 +112,7 @@ export default function SupplierRejectedPage() {
               <AlertCircle className="w-4 h-4" />
               Admin feedback
             </div>
-            <div className="text-portal-danger font-mono pl-5">"{supplier.rejection_reason}"</div>
+            <div className="text-portal-danger font-mono pl-5">&ldquo;{supplier.rejection_reason}&rdquo;</div>
           </div>
         )}
 

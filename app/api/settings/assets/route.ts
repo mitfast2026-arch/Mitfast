@@ -1,7 +1,10 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireAdmin } from '@/lib/server/auth/get-session';
-import { updateBusinessSettings } from '@/lib/server/settings/settings-service';
-import { uploadBusinessAsset } from '@/lib/server/storage/storage-service';
+import { updateBusinessSettings, getBusinessSettings } from '@/lib/server/settings/settings-service';
+import { processAndUploadBusinessAsset } from '@/lib/server/storage/image-upload';
+import { deleteFromBucket } from '@/lib/server/storage/storage-service';
+
+export const runtime = 'nodejs';
 
 /**
  * POST multipart: upload logo or products banner into business-assets and persist URL.
@@ -33,15 +36,32 @@ export async function POST(request: NextRequest) {
     const f = file as File;
     const buffer = Buffer.from(await f.arrayBuffer());
     const folder = kind === 'logo' ? 'branding' : 'catalog';
-    const uploaded = await uploadBusinessAsset(
+    const profile = kind === 'logo' ? 'logo' : 'banner';
+    const uploaded = await processAndUploadBusinessAsset(
       folder,
-      f.name || `${kind}.png`,
+      profile,
       buffer,
-      f.type || 'image/png'
+      f.name || `${kind}.webp`,
+      f.type || 'image/webp'
     );
 
     if (!uploaded.success) {
-      return NextResponse.json(uploaded, { status: 400 });
+      const status =
+        uploaded.error.code === 'PAYLOAD_TOO_LARGE'
+          ? 413
+          : uploaded.error.code === 'STORAGE_CONFIG_ERROR'
+            ? 503
+            : 400;
+      return NextResponse.json(uploaded, { status });
+    }
+
+    const settingsRes = await getBusinessSettings();
+    if (settingsRes.success && settingsRes.data) {
+      const oldUrl =
+        kind === 'logo' ? settingsRes.data.logoUrl : settingsRes.data.productsBannerUrl;
+      if (oldUrl && oldUrl !== uploaded.data.publicUrl) {
+        await deleteFromBucket('business-assets', oldUrl);
+      }
     }
 
     const update =
@@ -60,6 +80,9 @@ export async function POST(request: NextRequest) {
         kind,
         url: uploaded.data.publicUrl,
         storagePath: uploaded.data.storagePath,
+        width: uploaded.data.width,
+        height: uploaded.data.height,
+        bytes: uploaded.data.bytes,
       },
     });
   } catch (error) {

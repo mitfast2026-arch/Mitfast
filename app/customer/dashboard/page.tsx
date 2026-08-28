@@ -51,6 +51,8 @@ export default function CustomerDashboardPage() {
   const [recentEnquiries, setRecentEnquiries] = useState<any[]>([]);
   const [wishlistCount, setWishlistCount] = useState(0);
   const [cartCount, setCartCount] = useState(0);
+  const [ordersCount, setOrdersCount] = useState(0);
+  const [quotesCount, setQuotesCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -91,6 +93,7 @@ export default function CustomerDashboardPage() {
             enquiries: number;
             wishlist: number;
             cart: number;
+            quotes: number;
           }>(`/api/customer/badge-counts`),
         ]);
 
@@ -116,6 +119,8 @@ export default function CustomerDashboardPage() {
         if (badgeRes.ok && badgeRes.data) {
           setWishlistCount(badgeRes.data.wishlist ?? 0);
           setCartCount(badgeRes.data.cart ?? 0);
+          setOrdersCount(badgeRes.data.orders ?? 0);
+          setQuotesCount(badgeRes.data.quotes ?? 0);
         }
         setLoadError(errors.length ? errors.join(' · ') : null);
       } catch (err) {
@@ -132,7 +137,7 @@ export default function CustomerDashboardPage() {
   const firstName =
     (profile?.full_name || 'Buyer').split(' ').filter(Boolean)[0] || 'Buyer';
 
-  const quotesCount = recentRfqs.length + recentEnquiries.length;
+  const quotesCountDisplay = quotesCount;
 
   const quoteRows = [
     ...recentRfqs.map((rfq: any) => ({
@@ -160,7 +165,7 @@ export default function CustomerDashboardPage() {
   const stats = [
     {
       label: 'Orders',
-      value: recentOrders.length,
+      value: ordersCount,
       href: '/customer/orders',
       icon: Package,
       tone: 'orders' as const,
@@ -184,7 +189,7 @@ export default function CustomerDashboardPage() {
     },
     {
       label: 'Quotes',
-      value: quotesCount,
+      value: quotesCountDisplay,
       href: '/customer/quotes',
       icon: FileText,
       tone: 'quotes' as const,

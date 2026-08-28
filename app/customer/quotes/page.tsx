@@ -20,6 +20,8 @@ import { StatusPill } from '@/components/portal/ds';
 import { clsx } from 'clsx';
 import { toast } from 'sonner';
 import { cachedApiGet } from '@/lib/client/portal-data-cache';
+import { apiPost } from '@/lib/client/api-client';
+import { createIdempotencyKey } from '@/lib/client/idempotency-key';
 import { CustomerPageShell, CustomerPageSkeleton } from '@/components/customer/CustomerPageShell';
 import { BuyerEmptyState } from '@/components/customer/BuyerEmptyState';
 
@@ -135,14 +137,14 @@ function CustomerQuotesInner() {
     setConvertingId(rfqId);
     toast.loading('Converting RFQ to confirmed order...', { id: 'convert-order' });
     try {
-      const res = await fetch(`/api/rfqs/${rfqId}/convert-to-order`, { method: 'POST' });
-      const json = await res.json();
-      if (json.success) {
+      const result = await apiPost(`/api/rfqs/${rfqId}/convert-to-order`, undefined, {
+        idempotencyKey: createIdempotencyKey(),
+      });
+      if (result.ok) {
         toast.success('Order created successfully! Redirecting...', { id: 'convert-order' });
         router.push('/customer/orders');
       } else {
-        const msg = json.error?.message || 'Failed to convert RFQ to order';
-        toast.error(msg, { id: 'convert-order' });
+        toast.error(result.message || 'Failed to convert RFQ to order', { id: 'convert-order' });
       }
     } catch (err) {
       toast.error('Network error converting RFQ', { id: 'convert-order' });

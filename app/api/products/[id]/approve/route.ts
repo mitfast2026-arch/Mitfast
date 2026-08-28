@@ -45,38 +45,17 @@ export async function POST(
       return NextResponse.json(result);
     }
 
-    // Otherwise approve product directly in database
-    const { data: prod, error: prodErr } = await adminClient
-      .from('products')
-      .select('id, approval_status')
-      .eq('id', targetId)
-      .single();
-
-    if (prodErr || !prod) {
-      return NextResponse.json(
-        { success: false, error: { message: 'Product not found', code: 'NOT_FOUND' } },
-        { status: 404 }
-      );
-    }
-
-    const { error: updateErr } = await adminClient
-      .from('products')
-      .update({
-        approval_status: 'approved',
-        rejection_reason: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', targetId);
-
-    if (updateErr) {
-      return NextResponse.json(
-        { success: false, error: { message: updateErr.message, code: 'DATABASE_ERROR' } },
-        { status: 400 }
-      );
-    }
-
-    deferRevalidateProduct(targetId);
-    return NextResponse.json({ success: true, data: { approved: true } });
+    // Fail closed — approval must go through an open request with proposed_data.
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          message: 'No open approval request found for this product',
+          code: 'NO_OPEN_REQUEST',
+        },
+      },
+      { status: 400 }
+    );
   } catch (error) {
     console.error('[POST /api/products/[id]/approve] Error:', error);
     return NextResponse.json(

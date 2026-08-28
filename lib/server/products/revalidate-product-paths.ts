@@ -24,15 +24,14 @@ export function revalidateProductPaths(productId?: string | null) {
 }
 
 /**
- * Return mutation response immediately; revalidate storefront caches on next tick.
+ * Bust storefront caches after product mutations (tags + paths).
+ * Runs synchronously so revalidation completes before the API response returns.
  */
 export function deferRevalidateProduct(productId?: string | null) {
-  void Promise.resolve().then(() => {
-    try {
-      revalidateProductCaches(productId);
-      revalidatePath('/sitemap.xml');
-    } catch (error) {
-      console.error('[deferRevalidateProduct]', { productId, error });
-    }
-  });
+  try {
+    revalidateProductCaches(productId);
+    revalidatePath('/sitemap.xml');
+  } catch (error) {
+    console.error('[deferRevalidateProduct]', { productId, error });
+  }
 }

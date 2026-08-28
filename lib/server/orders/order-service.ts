@@ -2,7 +2,6 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { calculatePricing } from '@/lib/server/pricing/calculate-price';
 import { getBusinessSettings } from '@/lib/server/settings/settings-service';
 import {
-  convertEnquiryToOrderSchema,
   convertRfqToOrderSchema,
   createManualOrderSchema,
   editOrderSchema,
@@ -12,7 +11,6 @@ import {
 import type { ServerResult } from '@/lib/server/auth/get-session';
 import type { OrderStatus, PaymentStatus } from '@/types/database';
 import { generateTrackingToken } from '@/lib/server/tracking';
-import { ensureCustomerFromGuest } from '@/lib/server/auth/ensure-customer-from-guest';
 import { sanitizeIlikePattern } from '@/lib/server/db/sanitize-search';
 import { mapRpcError } from '@/lib/server/db/rpc-errors';
 import {
@@ -23,6 +21,7 @@ import {
 } from '@/lib/server/db/conditional-update';
 import { withIdempotency } from '@/lib/server/db/idempotency';
 import { invalidateAdminCaches } from '@/lib/server/db/invalidate-caches';
+import { notifySuppliersForOrder } from '@/lib/server/email/supplier-notifications';
 
 export async function getNextOrderNumber(adminClient: any): Promise<string> {
   try {
@@ -174,6 +173,7 @@ export async function convertRfqToOrder(
     }
 
     invalidateAdminCaches();
+    void notifySuppliersForOrder(row.order_id);
 
     return {
       success: true,
@@ -188,160 +188,6 @@ export async function convertRfqToOrder(
     return {
       success: false,
       error: { message: 'Unexpected error converting RFQ to order', code: 'INTERNAL_ERROR' },
-    };
-  }
-  });
-}
-
-/**
- * Admin converts an enquiry directly into an Order.
- */
-export async function convertEnquiryToOrder(
-  formData: unknown,
-  idempotencyKey?: string | null
-): Promise<ServerResult<{ orderId: string; orderNumber: string; trackingToken: string }>> {
-  return withIdempotency('convert_enquiry_to_order', idempotencyKey, async () => {
-  try {
-    const validated = convertEnquiryToOrderSchema.safeParse(formData);
-    if (!validated.success) {
-      return {
-        success: false,
-        error: { message: validated.error.errors[0].message, code: 'VALIDATION_ERROR' },
-      };
-    }
-
-    const {
-      enquiryId,
-      customerId: requestedCustomerId,
-      productId: clientProductId,
-      quantity,
-      deliveryAddress,
-    } = validated.data;
-    const adminClient = createAdminClient();
-
-    const { data: enquiry, error: enquiryError } = await adminClient
-      .from('enquiries')
-      .select('*')
-      .eq('id', enquiryId)
-      .single();
-
-    if (enquiryError || !enquiry) {
-      return { success: false, error: { message: 'Enquiry not found', code: 'NOT_FOUND' } };
-    }
-
-    let customerId = requestedCustomerId || enquiry.customer_id;
-    if (!customerId) {
-      const provisioned = await ensureCustomerFromGuest({
-        email: enquiry.guest_email,
-        phone: enquiry.guest_phone,
-        fullName: enquiry.guest_name,
-        deliveryAddress,
-      });
-      if (!provisioned.success) return provisioned;
-      customerId = provisioned.data.customerId;
-    }
-
-    // Authoritative product: enquiry.product_id, fallback only when enquiry has none
-    const resolvedProductId = enquiry.product_id || clientProductId;
-    if (!resolvedProductId) {
-      return {
-        success: false,
-        error: { message: 'Enquiry has no linked product; provide productId', code: 'VALIDATION_ERROR' },
-      };
-    }
-
-    const [{ data: product, error: prodError }, settingsRes] = await Promise.all([
-      adminClient
-        .from('products')
-        .select('*, supplier:suppliers(id, company_name)')
-        .eq('id', resolvedProductId)
-        .single(),
-      getBusinessSettings(),
-    ]);
-
-    if (prodError || !product) {
-      return { success: false, error: { message: 'Product not found', code: 'NOT_FOUND' } };
-    }
-
-    if (quantity < (product.moq || 1)) {
-      return {
-        success: false,
-        error: { message: `Quantity must be at least MOQ (${product.moq})`, code: 'BELOW_MOQ' },
-      };
-    }
-
-    const currencyCode = settingsRes.success && settingsRes.data ? settingsRes.data.currency : 'INR';
-
-    // Re-read price/GST from DB — never trust client price fields
-    const linePricing = calculatePricing({
-      supplier_price: product.selling_price,
-      profit_type: 'fixed',
-      profit_value: 0,
-      discount: product.discount || 0,
-      gst_rate: product.gst_rate ?? 18,
-      gst_included: product.gst_included ?? false,
-      quantity,
-    });
-
-    const unitPrice = linePricing.discounted_unit_price;
-    const gstRate = product.gst_rate ?? 18;
-    const gstIncluded = product.gst_included ?? false;
-    const discount = product.discount || 0;
-
-    const orderNumber = await getNextOrderNumber(adminClient);
-    const trackingToken = generateTrackingToken();
-
-    const { data: rpcRows, error: rpcError } = await (adminClient as any).rpc(
-      'convert_enquiry_to_order_atomic',
-      {
-        p_enquiry_id: enquiryId,
-        p_customer_id: customerId,
-        p_order_number: orderNumber,
-        p_tracking_token: trackingToken,
-        p_delivery_address: deliveryAddress,
-        p_subtotal: linePricing.subtotal,
-        p_total: linePricing.total,
-        p_product_id: product.id,
-        p_supplier_id: product.supplier_id,
-        p_product_name_snapshot: product.name,
-        p_supplier_name_snapshot: (product.supplier as any)?.company_name || 'Supplier',
-        p_quantity: quantity,
-        p_unit_price: unitPrice,
-        p_currency_code: currencyCode,
-        p_gst_rate: gstRate,
-        p_gst_included: gstIncluded,
-        p_discount: discount,
-        p_line_subtotal: linePricing.subtotal,
-        p_gst_amount: linePricing.total_gst_amount,
-        p_line_total: linePricing.total,
-      }
-    );
-
-    if (rpcError) {
-      const mapped = mapRpcError(rpcError);
-      return { success: false, error: mapped };
-    }
-
-    const row = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
-    if (!row?.order_id) {
-      return { success: false, error: { message: 'Failed to create order', code: 'DATABASE_ERROR' } };
-    }
-
-    invalidateAdminCaches();
-
-    return {
-      success: true,
-      data: {
-        orderId: row.order_id,
-        orderNumber: row.order_number || orderNumber,
-        trackingToken: row.tracking_token || trackingToken,
-      },
-    };
-  } catch (error) {
-    console.error('[convertEnquiryToOrder] Error:', error);
-    return {
-      success: false,
-      error: { message: 'Unexpected error converting enquiry to order', code: 'INTERNAL_ERROR' },
     };
   }
   });
@@ -865,6 +711,29 @@ export async function getOrdersForAdmin(params: {
 
     if (params.status) query = query.eq('status', params.status);
     if (params.paymentStatus) query = query.eq('payment_status', params.paymentStatus);
+    if (params.supplierId) {
+      const { data: supplierOrderRows, error: supplierFilterError } = await adminClient
+        .from('order_items')
+        .select('order_id')
+        .eq('supplier_id', params.supplierId);
+
+      if (supplierFilterError) {
+        return {
+          success: false,
+          error: { message: supplierFilterError.message, code: 'DATABASE_ERROR' },
+        };
+      }
+
+      const orderIds = [...new Set((supplierOrderRows || []).map((row) => row.order_id))];
+      if (orderIds.length === 0) {
+        return {
+          success: true,
+          data: { orders: [], total: 0, page, limit },
+        };
+      }
+
+      query = query.in('id', orderIds);
+    }
     if (params.search) {
       const q = sanitizeIlikePattern(params.search.trim());
       if (q) query = query.ilike('order_number', `%${q}%`);

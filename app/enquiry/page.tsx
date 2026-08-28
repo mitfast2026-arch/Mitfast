@@ -119,6 +119,7 @@ function EnquiryContent() {
   const [submitted, setSubmitted] = useState(false);
   const [trackingToken, setTrackingToken] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
 
   const typeCopy = isCartEnquiry
     ? ENQUIRY_TYPE_COPY.cart
@@ -249,6 +250,9 @@ function EnquiryContent() {
             })),
           ),
         );
+      }
+      if (attachmentFile) {
+        formData.set("attachment", attachmentFile);
       }
 
       toast.loading("Sending enquiry...", { id: "enquiry-submit" });
@@ -496,6 +500,32 @@ function EnquiryContent() {
                   setMessageDirty(true);
                 }}
               />
+            </div>
+
+            <div className="field">
+              <label className="field__label" htmlFor="enquiry-attachment">
+                Attachment (optional)
+              </label>
+              <input
+                id="enquiry-attachment"
+                className="field__input"
+                type="file"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,image/jpeg,image/png,image/webp"
+                onChange={(e) => {
+                  const file = e.target.files?.[0] || null;
+                  if (file && file.size > 10 * 1024 * 1024) {
+                    setErrorMsg("Attachment must be 10 MB or smaller");
+                    e.target.value = "";
+                    setAttachmentFile(null);
+                    return;
+                  }
+                  setErrorMsg("");
+                  setAttachmentFile(file);
+                }}
+              />
+              <p className="contact-form__hint">
+                PDF, Word, Excel, or images · max 10 MB
+              </p>
             </div>
 
             {errorMsg && (

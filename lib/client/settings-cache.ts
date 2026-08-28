@@ -32,12 +32,27 @@ type CacheState = {
 };
 
 const TTL_MS = 5 * 60_000; // 5 minutes
+const SETTINGS_BUST_KEY = 'mitfast:settings-cache-bust';
+const SETTINGS_EVENT = 'mitfast:settings-cache-invalidate';
 
 const state: CacheState = {
   data: null,
   fetchedAt: 0,
   inflight: null,
 };
+
+function clearCacheState() {
+  state.data = null;
+  state.fetchedAt = 0;
+  state.inflight = null;
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener(SETTINGS_EVENT, () => clearCacheState());
+  window.addEventListener('storage', (event) => {
+    if (event.key === SETTINGS_BUST_KEY) clearCacheState();
+  });
+}
 
 function isFresh(): boolean {
   return state.data !== null && Date.now() - state.fetchedAt < TTL_MS;
@@ -94,7 +109,12 @@ export function prefetchSettings(): void {
  * Invalidate the cache. Call after admin updates settings.
  */
 export function invalidateSettings(): void {
-  state.data = null;
-  state.fetchedAt = 0;
-  state.inflight = null;
+  clearCacheState();
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new Event(SETTINGS_EVENT));
+  try {
+    localStorage.setItem(SETTINGS_BUST_KEY, String(Date.now()));
+  } catch {
+    // ignore quota / private mode
+  }
 }

@@ -331,15 +331,11 @@ export default function AdminDashboardPage() {
             <>
               {SHOW_DATA_SOURCE_BADGE ? (
                 <span
-                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium border ${
-                    data?.dataSource === 'live' || metrics?.dataSource === 'live'
-                      ? 'border-portal-success/40 bg-portal-success-soft text-portal-success'
-                      : 'border-portal-warning/40 bg-portal-warning-soft text-portal-warning'
-                  }`}
+                  className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium border border-portal-success/40 bg-portal-success-soft text-portal-success"
                   title="Dashboard numbers come from live Postgres COUNT queries"
                 >
                   <Database className="w-3 h-3" aria-hidden />
-                  {data?.dataSource === 'live' || metrics?.dataSource === 'live' ? 'Live' : 'Mock'}
+                  Live
                 </span>
               ) : null}
               {pendingItemsCount > 0 ? (

@@ -10,6 +10,7 @@ const STALE_MS = 45_000;
 const TTL_MS = 5 * 60_000;
 
 const store = new Map<string, CacheEntry>();
+const listeners = new Set<(key: string) => void>();
 
 function isFresh(entry: CacheEntry, now = Date.now()) {
   return now - entry.fetchedAt < STALE_MS;
@@ -17,6 +18,19 @@ function isFresh(entry: CacheEntry, now = Date.now()) {
 
 function isUsable(entry: CacheEntry, now = Date.now()) {
   return now - entry.fetchedAt < TTL_MS;
+}
+
+function notifyCacheUpdate(key: string) {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('portal-cache-updated', { detail: { key } }));
+  }
+  listeners.forEach((listener) => listener(key));
+}
+
+/** Subscribe to cache writes (including background revalidation). */
+export function subscribePortalCache(listener: (key: string) => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 }
 
 /** Peek cached payload without fetching. */
@@ -28,16 +42,19 @@ export function peekPortalCache<T>(key: string): { data: T; stale: boolean } | n
 
 export function setPortalCache(key: string, data: unknown) {
   store.set(key, { data, fetchedAt: Date.now() });
+  notifyCacheUpdate(key);
 }
 
 export function invalidatePortalCache(prefix?: string) {
   if (!prefix) {
     store.clear();
+    notifyCacheUpdate('*');
     return;
   }
   for (const key of store.keys()) {
     if (key.startsWith(prefix) || key.includes(prefix)) {
       store.delete(key);
+      notifyCacheUpdate(key);
     }
   }
 }
@@ -96,6 +113,12 @@ export async function cachedApiGet<T>(
   }
 
   return inflight as Promise<MutationResult<T>>;
+}
+
+/** Drop cache entry and fetch fresh data (for Refresh buttons). */
+export async function refreshCachedApiGet<T>(url: string): Promise<MutationResult<T>> {
+  store.delete(url);
+  return cachedApiGet<T>(url, { force: true });
 }
 
 /** Fire-and-forget prefetch for hover intent. */

@@ -9,6 +9,8 @@ import {
 import type { ServerResult } from '@/lib/server/auth/get-session';
 import type { CategoryStatus } from '@/types/database';
 import type { CategoryListItem } from '@/types/category';
+import { processAndUploadCategoryImage } from '@/lib/server/storage/image-upload';
+import { deleteFromBucket } from '@/lib/server/storage/storage-service';
 
 type GetCategoriesOptions = {
   mode?: 'admin' | 'public';
@@ -314,5 +316,117 @@ export async function deleteCategory(formData: unknown): Promise<ServerResult<{ 
   } catch (error) {
     console.error('[deleteCategory] Error:', error);
     return { success: false, error: { message: 'Failed to delete category', code: 'INTERNAL_ERROR' } };
+  }
+}
+
+export async function uploadCategoryImageFile(
+  categoryId: string,
+  file: File
+): Promise<ServerResult<{ imageUrl: string; storagePath: string }>> {
+  try {
+    const validated = categoryIdSchema.safeParse({ categoryId });
+    if (!validated.success) {
+      return {
+        success: false,
+        error: { message: validated.error.errors[0].message, code: 'VALIDATION_ERROR' },
+      };
+    }
+
+    const adminClient = createAdminClient();
+    const { data: existing } = await adminClient
+      .from('categories')
+      .select('id, image_storage_path')
+      .eq('id', categoryId)
+      .maybeSingle();
+
+    if (!existing) {
+      return { success: false, error: { message: 'Category not found', code: 'NOT_FOUND' } };
+    }
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const uploaded = await processAndUploadCategoryImage(
+      categoryId,
+      buffer,
+      file.name || 'category.webp',
+      file.type || 'image/webp'
+    );
+
+    if (!uploaded.success) return uploaded;
+
+    const { error } = await adminClient
+      .from('categories')
+      .update({
+        image_url: uploaded.data.publicUrl,
+        image_storage_path: uploaded.data.storagePath,
+      })
+      .eq('id', categoryId);
+
+    if (error) {
+      return { success: false, error: { message: error.message, code: 'DATABASE_ERROR' } };
+    }
+
+    if (
+      existing.image_storage_path &&
+      existing.image_storage_path !== uploaded.data.storagePath
+    ) {
+      await deleteFromBucket('category-images', existing.image_storage_path);
+    }
+
+    return {
+      success: true,
+      data: { imageUrl: uploaded.data.publicUrl, storagePath: uploaded.data.storagePath },
+    };
+  } catch (error) {
+    console.error('[uploadCategoryImageFile] Error:', error);
+    return {
+      success: false,
+      error: { message: 'Failed to upload category image', code: 'INTERNAL_ERROR' },
+    };
+  }
+}
+
+export async function removeCategoryImage(
+  categoryId: string
+): Promise<ServerResult<{ removed: boolean }>> {
+  try {
+    const validated = categoryIdSchema.safeParse({ categoryId });
+    if (!validated.success) {
+      return {
+        success: false,
+        error: { message: validated.error.errors[0].message, code: 'VALIDATION_ERROR' },
+      };
+    }
+
+    const adminClient = createAdminClient();
+    const { data: existing } = await adminClient
+      .from('categories')
+      .select('id, image_storage_path')
+      .eq('id', categoryId)
+      .maybeSingle();
+
+    if (!existing) {
+      return { success: false, error: { message: 'Category not found', code: 'NOT_FOUND' } };
+    }
+
+    const { error } = await adminClient
+      .from('categories')
+      .update({ image_url: null, image_storage_path: null })
+      .eq('id', categoryId);
+
+    if (error) {
+      return { success: false, error: { message: error.message, code: 'DATABASE_ERROR' } };
+    }
+
+    if (existing.image_storage_path) {
+      await deleteFromBucket('category-images', existing.image_storage_path);
+    }
+
+    return { success: true, data: { removed: true } };
+  } catch (error) {
+    console.error('[removeCategoryImage] Error:', error);
+    return {
+      success: false,
+      error: { message: 'Failed to remove category image', code: 'INTERNAL_ERROR' },
+    };
   }
 }

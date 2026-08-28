@@ -19,17 +19,45 @@ export function productToFormValues(product: ProductFormProduct): ProductFormVal
   const country = product.supplier?.country || '';
   const loc = resolveLocationState(country);
   const proposed = product.pendingRequest?.proposed_data as Record<string, unknown> | undefined;
-  const isUpdatePending = product.approval_status === 'update_pending' && proposed;
+  const isUpdatePending = product.pendingRequest?.status === 'update_pending' && proposed;
   const discount =
     (isUpdatePending ? (proposed?.discount as number | undefined) : undefined) ??
     product.discount ??
     0;
 
+  const proposedImageUrls =
+    isUpdatePending && Array.isArray(proposed?.image_urls)
+      ? (proposed.image_urls as string[])
+      : null;
+
+  const rawImages = proposedImageUrls
+    ? proposedImageUrls.map((url, idx) => ({
+        id: `proposed-${idx}`,
+        image_url: url,
+        sort_order: idx,
+        is_primary: idx === 0,
+      }))
+    : (product.images || []);
+
+  const sortedImages = [...rawImages].sort(
+    (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+  );
+
   return {
-    name: product.name || '',
-    categoryId: product.category_id || product.category?.id || '',
+    name:
+      (isUpdatePending ? (proposed?.name as string | undefined) : undefined) ??
+      product.name ??
+      '',
+    categoryId:
+      (isUpdatePending ? (proposed?.category_id as string | undefined) : undefined) ??
+      product.category_id ??
+      product.category?.id ??
+      '',
     supplierId: product.supplier_id || product.supplier?.id || '',
-    description: product.description || '',
+    description:
+      (isUpdatePending ? (proposed?.description as string | undefined) : undefined) ??
+      product.description ??
+      '',
     sku: (proposed?.sku as string) ?? product.sku ?? '',
     moq: product.moq ?? 100,
     suggestedMoq:
@@ -51,7 +79,7 @@ export function productToFormValues(product: ProductFormProduct): ProductFormVal
     minValue: (proposed?.min_order_value as number) ?? product.min_order_value ?? 0,
     locationMode: loc.mode,
     locationOther: loc.other,
-    images: (product.images || []).map((img) => ({
+    images: sortedImages.map((img) => ({
       id: img.id,
       image_url: img.image_url,
       sort_order: img.sort_order,
@@ -110,7 +138,11 @@ export function validateFormValues(
   return errors;
 }
 
-export function buildPayload(values: ProductFormValues, _categories: { id: string; name: string }[]) {
+export function buildPayload(
+  values: ProductFormValues,
+  _categories: { id: string; name: string }[],
+  opts?: { isSupplier?: boolean }
+) {
   const specifications = values.specRows
     .map((row, idx) => ({
       spec_name: row.spec_name.trim(),
@@ -121,13 +153,12 @@ export function buildPayload(values: ProductFormValues, _categories: { id: strin
 
   const discount = values.discountEnabled ? values.discount : 0;
 
-  return {
+  const payload: Record<string, unknown> = {
     name: values.name.trim(),
     categoryId: values.categoryId,
     supplierId: values.supplierId || null,
     description: values.description.trim() || undefined,
     sku: values.sku.trim() || null,
-    moq: values.moq,
     suggestedMoq: values.suggestedMoq,
     supplierPrice: values.supplierPrice,
     gstRate: values.gst,
@@ -139,4 +170,10 @@ export function buildPayload(values: ProductFormValues, _categories: { id: strin
     ribbonLabel: values.ribbon.trim() || null,
     specifications,
   };
+
+  if (!opts?.isSupplier) {
+    payload.moq = values.moq;
+  }
+
+  return payload;
 }

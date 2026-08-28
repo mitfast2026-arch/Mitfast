@@ -55,40 +55,159 @@ function buildImageRows(productId: string, imageUrls: string[], maxImages: numbe
   }));
 }
 
+type ReplaceImagesResult = { success: true } | { success: false; message: string };
+
+/**
+ * Align product_images rows with an ordered URL list.
+ * Reuses existing rows when URLs match; only deletes orphaned storage objects.
+ */
 async function replaceProductImages(
   productId: string,
   imageUrls: string[]
-): Promise<void> {
+): Promise<ReplaceImagesResult> {
   const adminClient = createAdminClient();
   const maxImages = await getMaxProductImages();
+  const nextUrls = imageUrls.slice(0, maxImages);
 
-  const { data: existingImages } = await adminClient
+  const { data: existingImages, error: fetchError } = await adminClient
     .from('product_images')
-    .select('id, storage_path')
-    .eq('product_id', productId);
+    .select('id, image_url, storage_path, sort_order')
+    .eq('product_id', productId)
+    .order('sort_order', { ascending: true });
+
+  if (fetchError) {
+    return { success: false, message: fetchError.message };
+  }
 
   const oldRows = existingImages || [];
+  const currentUrls = oldRows.map((row) => row.image_url);
+
+  if (
+    nextUrls.length === currentUrls.length &&
+    nextUrls.every((url, index) => url === currentUrls[index])
+  ) {
+    return { success: true };
+  }
+
+  const urlToRow = new Map(oldRows.map((row) => [row.image_url, row]));
+  const reusedIds = new Set<string>();
+
+  // Update sort_order / is_primary on rows we keep (same URL set, possibly reordered).
+  if (nextUrls.length > 0 && nextUrls.every((url) => urlToRow.has(url))) {
+    await adminClient
+      .from('product_images')
+      .update({ is_primary: false })
+      .eq('product_id', productId);
+
+    for (let idx = 0; idx < nextUrls.length; idx++) {
+      const row = urlToRow.get(nextUrls[idx])!;
+      reusedIds.add(row.id);
+      const { error: updateError } = await adminClient
+        .from('product_images')
+        .update({ sort_order: idx, is_primary: idx === 0 })
+        .eq('id', row.id)
+        .eq('product_id', productId);
+
+      if (updateError) {
+        return { success: false, message: updateError.message };
+      }
+    }
+
+    const removedRows = oldRows.filter((row) => !reusedIds.has(row.id));
+    if (removedRows.length > 0) {
+      const { error: deleteError } = await adminClient
+        .from('product_images')
+        .delete()
+        .in(
+          'id',
+          removedRows.map((r) => r.id)
+        );
+
+      if (deleteError) {
+        return { success: false, message: deleteError.message };
+      }
+
+      for (const row of removedRows) {
+        if (row.storage_path) {
+          await deleteProductImageFromStorage(row.storage_path);
+        }
+      }
+    }
+
+    return { success: true };
+  }
+
+  // URL set changed: delete all existing rows first, then insert (avoids dual-primary constraint).
   const oldPaths = oldRows
     .map((img) => img.storage_path)
     .filter((p): p is string => Boolean(p));
 
-  if (imageUrls.length > 0) {
-    await adminClient.from('product_images').insert(buildImageRows(productId, imageUrls, maxImages));
-  }
-
   if (oldRows.length > 0) {
-    await adminClient
+    const { error: deleteError } = await adminClient
       .from('product_images')
       .delete()
-      .in(
-        'id',
-        oldRows.map((r) => r.id)
-      );
+      .eq('product_id', productId);
+
+    if (deleteError) {
+      return { success: false, message: deleteError.message };
+    }
   }
 
-  for (const storagePath of oldPaths) {
-    await deleteProductImageFromStorage(storagePath);
+  if (nextUrls.length > 0) {
+    const { error: insertError } = await adminClient
+      .from('product_images')
+      .insert(buildImageRows(productId, nextUrls, maxImages));
+
+    if (insertError) {
+      return { success: false, message: insertError.message };
+    }
   }
+
+  const nextPathSet = new Set(
+    nextUrls
+      .map((url) => storagePathFromPublicUrl(url, 'product-images'))
+      .filter((p): p is string => Boolean(p))
+  );
+
+  for (const storagePath of oldPaths) {
+    if (!nextPathSet.has(storagePath)) {
+      await deleteProductImageFromStorage(storagePath);
+    }
+  }
+
+  return { success: true };
+}
+
+/** Keep open approval request snapshots aligned with live product_images (post-upload flow). */
+export async function syncPendingApprovalImageUrls(productId: string): Promise<void> {
+  const adminClient = createAdminClient();
+
+  const { data: images } = await adminClient
+    .from('product_images')
+    .select('image_url')
+    .eq('product_id', productId)
+    .order('sort_order', { ascending: true });
+
+  const imageUrls = (images || []).map((img) => img.image_url).filter(Boolean);
+
+  const { data: request } = await adminClient
+    .from('product_approval_requests')
+    .select('id, proposed_data, status')
+    .eq('product_id', productId)
+    .in('status', ['pending', 'update_pending'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!request) return;
+
+  const proposed = ((request.proposed_data as Record<string, unknown>) || {}) as Record<string, unknown>;
+  await adminClient
+    .from('product_approval_requests')
+    .update({
+      proposed_data: { ...proposed, image_urls: imageUrls },
+    })
+    .eq('id', request.id);
 }
 
 /**
@@ -146,9 +265,9 @@ export async function createProductBySupplier(
     const gstInc = gstIncluded ?? false;
     const discountAmt = discount ?? 0;
     const maxImages = settings?.maxProductImages ?? 8;
-    const resolvedSuggestedMoq = suggestedMoq ?? moq ?? 100;
-    // Catalog MOQ starts as supplier suggestion until admin sets the final value.
-    const catalogMoq = moq ?? resolvedSuggestedMoq;
+    const resolvedSuggestedMoq = suggestedMoq ?? 100;
+    // Supplier submissions only set suggested MOQ; catalog MOQ mirrors it until admin adjusts.
+    const catalogMoq = resolvedSuggestedMoq;
 
     // Default profit & pricing computation (default 15% margin)
     const initialPricing = calculatePricing({
@@ -541,7 +660,7 @@ export async function saveProductDraft(
 
 /**
  * Supplier submits an update to an existing product.
- * Sets approval_status='update_pending' and queues proposed_data without immediately overwriting live product.
+ * Queues proposed_data without changing live product approval_status (listing stays visible).
  */
 export async function submitProductUpdateBySupplier(
   supplierId: string,
@@ -585,11 +704,10 @@ export async function submitProductUpdateBySupplier(
       .eq('product_id', productId)
       .in('status', ['pending', 'update_pending']);
 
-    // Mark product as update_pending
+    // Keep live product approved/published during review — pending state lives on the request row.
     await adminClient
       .from('products')
       .update({
-        approval_status: 'update_pending',
         updated_at: new Date().toISOString(),
       })
       .eq('id', productId);
@@ -669,8 +787,7 @@ export async function adminDirectUpdateProduct(formData: unknown): Promise<Serve
 
     if (
       directFields.supplierPrice !== undefined &&
-      !forceApply &&
-      currentProduct.approval_status === 'update_pending'
+      !forceApply
     ) {
       const { data: pendingReq } = await adminClient
         .from('product_approval_requests')
@@ -774,9 +891,14 @@ export async function adminDirectUpdateProduct(formData: unknown): Promise<Serve
       }
     }
 
-    // Update images if provided
     if (imageUrls) {
-      await replaceProductImages(productId, imageUrls);
+      const imageResult = await replaceProductImages(productId, imageUrls);
+      if (!imageResult.success) {
+        return {
+          success: false,
+          error: { message: imageResult.message, code: 'IMAGE_UPDATE_FAILED' },
+        };
+      }
     }
 
     return {
@@ -869,7 +991,10 @@ export async function approveProduct(requestId: string, adminUserId?: string): P
     if (proposed.category_id) productUpdate.category_id = proposed.category_id;
     if (proposed.description !== undefined) productUpdate.description = proposed.description;
     if (proposed.sku !== undefined) productUpdate.sku = proposed.sku;
-    if (proposed.suggested_moq !== undefined) productUpdate.suggested_moq = proposed.suggested_moq;
+    if (proposed.suggested_moq !== undefined) {
+      productUpdate.suggested_moq = proposed.suggested_moq;
+      productUpdate.moq = proposed.suggested_moq;
+    }
 
     const { error: approveRpcError } = await (adminClient as any).rpc('approve_product_core_atomic', {
       p_request_id: requestId,
@@ -937,9 +1062,23 @@ export async function approveProduct(requestId: string, adminUserId?: string): P
         .eq('id', productId);
     }
 
-    // Specs / images after core approve (best-effort; core status already committed)
-    if (proposed.specifications && Array.isArray(proposed.specifications)) {
-      await adminClient.from('product_specifications').delete().eq('product_id', productId);
+    // Specs / images after core approve — failures surface to caller (core status already committed).
+    if (proposed.specifications !== undefined && Array.isArray(proposed.specifications)) {
+      const { error: specDeleteError } = await adminClient
+        .from('product_specifications')
+        .delete()
+        .eq('product_id', productId);
+
+      if (specDeleteError) {
+        return {
+          success: false,
+          error: {
+            message: `Product approved but specifications update failed: ${specDeleteError.message}`,
+            code: 'SPEC_UPDATE_FAILED',
+          },
+        };
+      }
+
       if (proposed.specifications.length > 0) {
         const specRows = proposed.specifications.map((s: any, idx: number) => ({
           product_id: productId,
@@ -947,12 +1086,33 @@ export async function approveProduct(requestId: string, adminUserId?: string): P
           spec_value: s.spec_value,
           sort_order: s.sort_order ?? idx,
         }));
-        await adminClient.from('product_specifications').insert(specRows);
+        const { error: specInsertError } = await adminClient
+          .from('product_specifications')
+          .insert(specRows);
+
+        if (specInsertError) {
+          return {
+            success: false,
+            error: {
+              message: `Product approved but specifications update failed: ${specInsertError.message}`,
+              code: 'SPEC_UPDATE_FAILED',
+            },
+          };
+        }
       }
     }
 
-    if (proposed.image_urls && Array.isArray(proposed.image_urls)) {
-      await replaceProductImages(productId, proposed.image_urls);
+    if (Array.isArray(proposed.image_urls)) {
+      const imageResult = await replaceProductImages(productId, proposed.image_urls);
+      if (!imageResult.success) {
+        return {
+          success: false,
+          error: {
+            message: `Product approved but image update failed: ${imageResult.message}`,
+            code: 'IMAGE_UPDATE_FAILED',
+          },
+        };
+      }
     }
 
     invalidateAdminCaches();
@@ -1249,6 +1409,8 @@ export async function archiveProduct(productId: string): Promise<ServerResult<{ 
       })
       .eq('id', productId);
 
+    invalidateAdminCaches();
+
     return { success: true, data: { archived: true } };
   } catch (error) {
     console.error('[archiveProduct] Error:', error);
@@ -1283,6 +1445,8 @@ export async function restoreProduct(productId: string): Promise<ServerResult<{ 
         updated_at: new Date().toISOString(),
       })
       .eq('id', productId);
+
+    invalidateAdminCaches();
 
     return { success: true, data: { restored: true } };
   } catch (error) {
@@ -1484,10 +1648,14 @@ export async function getProductsForAdmin(params: {
         created_at,
         updated_at,
         category:categories(id, name),
-        supplier:suppliers(id, company_name, contact_person)
+        supplier:suppliers(id, company_name, contact_person),
+        images:product_images(id, image_url, sort_order, is_primary)
       `,
         { count: 'exact' }
-      );
+      )
+      .order('is_primary', { ascending: false, foreignTable: 'product_images' })
+      .order('sort_order', { ascending: true, foreignTable: 'product_images' })
+      .limit(1, { foreignTable: 'product_images' });
 
     if (params.categoryId) query = query.eq('category_id', params.categoryId);
     if (params.supplierId) query = query.eq('supplier_id', params.supplierId);
@@ -1511,10 +1679,37 @@ export async function getProductsForAdmin(params: {
       return { success: false, error: { message: error.message, code: 'DATABASE_ERROR' } };
     }
 
+    const productIds = (products || []).map((p) => p.id as string);
+    let openRequestByProduct = new Map<string, { status: string; request_type: string }>();
+
+    if (productIds.length > 0) {
+      const { data: openRequests } = await adminClient
+        .from('product_approval_requests')
+        .select('product_id, status, request_type')
+        .in('product_id', productIds)
+        .in('status', ['pending', 'update_pending']);
+
+      openRequestByProduct = new Map(
+        (openRequests || []).map((r) => [
+          r.product_id as string,
+          { status: r.status as string, request_type: r.request_type as string },
+        ])
+      );
+    }
+
+    const enrichedProducts = (products || []).map((p) => {
+      const open = openRequestByProduct.get(p.id as string);
+      return {
+        ...p,
+        has_open_new_request: open?.status === 'pending',
+        has_open_update_request: open?.status === 'update_pending',
+      };
+    });
+
     return {
       success: true,
       data: {
-        products: products || [],
+        products: enrichedProducts,
         total: count || 0,
         page,
         limit,
@@ -1575,11 +1770,17 @@ export async function getProductForAdminDetail(
     const pendingRequest = pendingReqRes.data;
     const priceHistory = priceHistRes.data;
 
+    const sortedImages = [...(product.images || [])].sort(
+      (a: { sort_order?: number }, b: { sort_order?: number }) =>
+        (a.sort_order ?? 0) - (b.sort_order ?? 0)
+    );
+
     return {
       success: true,
       data: {
         product: {
           ...product,
+          images: sortedImages,
           pendingRequest: pendingRequest ?? null,
           priceHistory: priceHistory ?? [],
         },

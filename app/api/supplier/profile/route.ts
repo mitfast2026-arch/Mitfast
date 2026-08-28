@@ -1,21 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { requireSupplierRole } from '@/lib/server/auth/get-session';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json({ success: false, error: { message: 'Unauthorized' } }, { status: 401 });
-    }
+    const auth = await requireSupplierRole();
+    if (!auth.ok) return auth.response;
 
     const admin = createAdminClient();
     const { data: supplier, error: supError } = await admin
       .from('suppliers')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', auth.session.user.id)
       .single();
 
     if (supError || !supplier) {
@@ -37,18 +33,14 @@ export async function GET(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json({ success: false, error: { message: 'Unauthorized' } }, { status: 401 });
-    }
+    const auth = await requireSupplierRole();
+    if (!auth.ok) return auth.response;
 
     const admin = createAdminClient();
     const { data: supplier, error: supError } = await admin
       .from('suppliers')
       .select('id, status')
-      .eq('user_id', user.id)
+      .eq('user_id', auth.session.user.id)
       .single();
 
     if (supError || !supplier) {
