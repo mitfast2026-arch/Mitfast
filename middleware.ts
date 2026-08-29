@@ -112,7 +112,17 @@ export async function middleware(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const { pathname } = request.nextUrl;
+  const { pathname, searchParams } = request.nextUrl;
+
+  // 0. Intercept stray OAuth code query parameter on any non-callback route (e.g. root or /auth)
+  const code = searchParams.get('code');
+  if (code && pathname !== '/auth/callback') {
+    const callbackUrl = new URL('/auth/callback', request.url);
+    searchParams.forEach((value, key) => {
+      callbackUrl.searchParams.set(key, value);
+    });
+    return NextResponse.redirect(callbackUrl, 307);
+  }
 
   // 1. Protected Route Guards
   const isAdminRoute = pathname.startsWith('/admin');
@@ -398,6 +408,7 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
+    '/',
     '/admin/:path*',
     '/supplier/:path*',
     '/customer/:path*',

@@ -109,27 +109,47 @@ export async function GET(request: NextRequest) {
 
   const role = profile?.role as string | undefined;
 
-  if (!isProfileIdentityComplete(profile)) {
-    // Prefer existing profiles.role; otherwise onboarding intent from next (not authz)
-    const roleQs =
-      role === 'supplier' || onboardingWantsSupplier(next) ? 'supplier' : 'buyer';
-    const redirectQs =
-      next &&
-      isSafeInternalPath(next) &&
-      !next.startsWith('/auth') &&
-      !next.startsWith('/auth/')
-        ? `&redirect=${encodeURIComponent(next)}`
-        : '';
-    return NextResponse.redirect(`${origin}/auth/complete-profile?role=${roleQs}${redirectQs}`);
+  // 1. Supplier Handling
+  if (role === 'supplier' || onboardingWantsSupplier(next)) {
+    // Ensure profile has supplier role
+    if (profile && profile.role !== 'supplier') {
+      await admin.from('profiles').update({ role: 'supplier' }).eq('user_id', user.id);
+    }
+
+    const { data: supplier } = await admin
+      .from('suppliers')
+      .select('id, status')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (!supplier) {
+      // New supplier -> direct straight to existing supplier application form
+      return NextResponse.redirect(`${origin}/auth/supplier/apply`);
+    }
+
+    if (supplier.status === 'active') {
+      const target = next && isSafeInternalPath(next) && next.startsWith('/supplier')
+        ? next
+        : '/supplier/dashboard';
+      return NextResponse.redirect(`${origin}${target}`);
+    }
+
+    if (supplier.status === 'rejected') {
+      return NextResponse.redirect(`${origin}/auth/supplier/rejected`);
+    }
+
+    const pendingQs = supplier.status === 'archived' ? '?status=archived' : '';
+    return NextResponse.redirect(`${origin}/auth/supplier/pending${pendingQs}`);
   }
 
-  // Merge guest cart/wishlist once buyer profile is complete (OAuth / magic link).
-  if (role === 'customer') {
+  // 2. Buyer (Customer) Handling
+  if (role === 'customer' || !role) {
     const { data: customerProfile } = await admin
       .from('profiles')
       .select('id')
       .eq('user_id', user.id)
       .maybeSingle();
+
     if (customerProfile?.id) {
       const mergeResult = await mergeGuestStateIntoCustomer(customerProfile.id);
       if (!mergeResult.success) {
@@ -140,58 +160,23 @@ export async function GET(request: NextRequest) {
         });
       }
     }
-  }
 
-  let supplierStatus: string | undefined;
-  if (role === 'supplier') {
-    const { data: supplier } = await admin
-      .from('suppliers')
-      .select('status')
-      .eq('user_id', user.id)
-      .maybeSingle();
-    supplierStatus = supplier?.status;
-    if (!supplier) {
-      return NextResponse.redirect(`${origin}/auth/supplier/apply`);
-    }
-  }
-
-  if (next && isSafeInternalPath(next) && roleAllowsPath(role, next)) {
-    if (next.startsWith('/auth/complete-profile') || next.startsWith('/auth/supplier/apply')) {
-      return NextResponse.redirect(`${origin}${next}`);
-    }
-    if (role === 'supplier') {
-      if (supplierStatus === 'rejected') {
-        return NextResponse.redirect(`${origin}/auth/supplier/rejected`);
-      }
-      if (supplierStatus !== 'active' && next.startsWith('/supplier')) {
-        const pendingQs = supplierStatus === 'archived' ? '?status=archived' : '';
-        return NextResponse.redirect(`${origin}/auth/supplier/pending${pendingQs}`);
+    if (next && isSafeInternalPath(next) && roleAllowsPath('customer', next)) {
+      if (!next.startsWith('/auth/supplier') && !next.startsWith('/admin')) {
+        return NextResponse.redirect(`${origin}${next}`);
       }
     }
-    return NextResponse.redirect(`${origin}${next}`);
-  }
 
-  if (role === 'admin') {
-    return NextResponse.redirect(`${origin}/admin/dashboard`);
-  }
-
-  if (role === 'supplier') {
-    if (supplierStatus === 'rejected') {
-      return NextResponse.redirect(`${origin}/auth/supplier/rejected`);
-    }
-    if (supplierStatus === 'active') {
-      return NextResponse.redirect(`${origin}/supplier/dashboard`);
-    }
-    if (!supplierStatus) {
-      return NextResponse.redirect(`${origin}/auth/supplier/apply`);
-    }
-    const pendingQs = supplierStatus === 'archived' ? '?status=archived' : '';
-    return NextResponse.redirect(`${origin}/auth/supplier/pending${pendingQs}`);
-  }
-
-  if (role === 'customer') {
     return NextResponse.redirect(`${origin}/customer/dashboard`);
   }
 
-  return NextResponse.redirect(`${origin}/auth/complete-profile?role=buyer`);
+  // 3. Admin Handling
+  if (role === 'admin') {
+    const target = next && isSafeInternalPath(next) && next.startsWith('/admin')
+      ? next
+      : '/admin/dashboard';
+    return NextResponse.redirect(`${origin}${target}`);
+  }
+
+  return NextResponse.redirect(`${origin}/customer/dashboard`);
 }

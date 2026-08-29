@@ -4,6 +4,7 @@ import { supplierApplicationSchema } from '@/lib/validation/auth.schema';
 import { updateSupplierProfileSchema } from '@/lib/validation/supplier.schema';
 import type { ServerResult } from './get-session';
 import { emailFromAuthUser, isProfileIdentityComplete } from './profile-complete';
+import { notifyAdminNewSupplierApplication } from '@/lib/server/email/supplier-notifications';
 
 /**
  * Creates supplier application on existing `suppliers` table as pending.
@@ -178,6 +179,8 @@ export async function submitSupplierApplication(
         error: { message: supplierError?.message || 'Failed to create supplier profile', code: 'DATABASE_ERROR' },
       };
     }
+
+    void notifyAdminNewSupplierApplication(supplier.id);
 
     return { success: true, data: { supplierId: supplier.id, status: supplier.status } };
   } catch (error) {

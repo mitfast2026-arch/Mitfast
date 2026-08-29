@@ -108,11 +108,7 @@ async function resolvePostAuthPath(
 
   const wantsSupplier = opts.preferredRole === 'supplier' || profile?.role === 'supplier';
 
-  if (!identityOk) {
-    return `/auth/complete-profile?role=${wantsSupplier ? 'supplier' : 'buyer'}`;
-  }
-
-  if (wantsSupplier || profile?.role === 'supplier') {
+  if (wantsSupplier) {
     if (profile?.role === 'customer') {
       throw new Error('This account is already a buyer. Use a different email for supplier access.');
     }
@@ -132,6 +128,10 @@ async function resolvePostAuthPath(
     }
     if (opts.redirectPath?.startsWith('/supplier')) return opts.redirectPath;
     return '/supplier/dashboard';
+  }
+
+  if (!identityOk) {
+    return `/auth/complete-profile?role=buyer`;
   }
 
   if (
@@ -380,7 +380,7 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
       // Supplier Google onboarding intent via next= only — never authorize from metadata alone
       const defaultNext =
         activeRole === 'supplier'
-          ? '/auth/complete-profile?role=supplier'
+          ? '/auth/supplier/apply'
           : '/customer/dashboard';
       let nextTarget = defaultNext;
       if (redirectPath && redirectPath.startsWith('/') && !redirectPath.startsWith('//')) {
@@ -388,7 +388,7 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
           // Keep supplier onboarding intent even when a deep-link redirect is present
           nextTarget = redirectPath.includes('role=supplier') || redirectPath.startsWith('/supplier')
             ? redirectPath
-            : `/auth/complete-profile?role=supplier&redirect=${encodeURIComponent(redirectPath)}`;
+            : `/auth/supplier/apply?redirect=${encodeURIComponent(redirectPath)}`;
         } else {
           nextTarget = redirectPath;
         }
