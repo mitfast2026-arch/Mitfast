@@ -22,9 +22,12 @@ export async function transitionStatus<T extends Record<string, unknown>>(
 ): Promise<TransitionResult<T>> {
   const payload: Record<string, unknown> = {
     [statusColumn]: newStatus,
-    updated_at: new Date().toISOString(),
     ...extraFields,
   };
+
+  if ((table as string) !== 'product_approval_requests') {
+    payload.updated_at = new Date().toISOString();
+  }
 
   const { data, error } = await (adminClient as any)
     .from(table)

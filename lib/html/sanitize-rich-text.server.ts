@@ -1,4 +1,3 @@
-import 'server-only';
 import DOMPurify from 'isomorphic-dompurify';
 
 const ALLOWED_TAGS = [
@@ -14,10 +13,24 @@ const ALLOWED_TAGS = [
   'li',
   'h2',
   'h3',
+  'h4',
   'span',
+  'table',
+  'thead',
+  'tbody',
+  'tfoot',
+  'tr',
+  'th',
+  'td',
+  'blockquote',
+  'code',
+  'pre',
+  'hr',
+  'sub',
+  'sup',
 ];
 
-const ALLOWED_ATTR = ['style', 'class'];
+const ALLOWED_ATTR = ['style', 'class', 'colspan', 'rowspan', 'align', 'valign'];
 
 export function sanitizeRichTextHtml(html: string): string {
   if (!html?.trim()) return '';

@@ -179,9 +179,7 @@ export function buildPayload(
     specifications,
   };
 
-  if (opts?.isSupplier) {
-    payload.imageUrls = values.images.map((img) => img.image_url).filter(Boolean);
-  }
+  payload.imageUrls = values.images.map((img) => img.image_url).filter(Boolean);
 
   if (!opts?.isSupplier) {
     payload.moq = values.moq;

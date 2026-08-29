@@ -86,9 +86,14 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
       payload.specifications = specifications;
     }
 
-    const imageUrls = body.imageUrls || body.images;
-    if (Array.isArray(imageUrls) && imageUrls.length > 0) {
-      payload.imageUrls = imageUrls;
+    const rawImages = body.imageUrls || body.images;
+    if (Array.isArray(rawImages)) {
+      const normalizedUrls = rawImages
+        .map((img: any) => (typeof img === 'string' ? img : img?.image_url))
+        .filter((url: any): url is string => typeof url === 'string' && url.trim().length > 0);
+      if (normalizedUrls.length > 0) {
+        payload.imageUrls = normalizedUrls;
+      }
     }
 
     const idempotencyKey = request.headers.get('Idempotency-Key');

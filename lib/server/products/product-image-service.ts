@@ -174,6 +174,79 @@ export async function addProductImage(
     const adminClient = createAdminClient();
     const maxImages = await getMaxProductImages();
 
+    // If product is published and supplier is updating, stage image URL into proposed_data without mutating live product_images
+    if (actor.role === 'supplier' && product.publication_status === 'published') {
+      const rawBuffer = Buffer.isBuffer(input.buffer) ? input.buffer : Buffer.from(input.buffer);
+      const processed = await processImageForUpload(
+        rawBuffer,
+        input.fileName,
+        input.contentType,
+        'product'
+      );
+      if (!processed.success) return processed;
+
+      const uploadResult = await uploadProductImage(
+        product.supplier_id ?? 'internal',
+        productId,
+        processed.data.fileName,
+        processed.data.buffer,
+        processed.data.contentType
+      );
+      if (!uploadResult.success) return uploadResult;
+
+      const { publicUrl, storagePath } = uploadResult.data;
+
+      const { data: openRequest } = await adminClient
+        .from('product_approval_requests')
+        .select('id, proposed_data')
+        .eq('product_id', productId)
+        .eq('status', 'update_pending')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (openRequest) {
+        const proposed = ((openRequest.proposed_data as Record<string, unknown>) || {}) as Record<string, unknown>;
+        let currentUrls: string[] = Array.isArray(proposed.image_urls) ? [...(proposed.image_urls as string[])] : [];
+        if (currentUrls.length === 0) {
+          const { data: liveImages } = await adminClient
+            .from('product_images')
+            .select('image_url')
+            .eq('product_id', productId)
+            .neq('image_url', 'pending://reserve')
+            .order('sort_order', { ascending: true });
+          currentUrls = (liveImages || []).map((img) => img.image_url).filter(Boolean);
+        }
+        if (!currentUrls.includes(publicUrl)) {
+          currentUrls.push(publicUrl);
+        }
+        await adminClient
+          .from('product_approval_requests')
+          .update({
+            proposed_data: { ...proposed, image_urls: currentUrls.slice(0, maxImages) },
+          })
+          .eq('id', openRequest.id);
+
+        return {
+          success: true,
+          data: {
+            imageId: `proposed-${currentUrls.length - 1}`,
+            imageUrl: publicUrl,
+            storagePath,
+          },
+        };
+      }
+
+      return {
+        success: true,
+        data: {
+          imageId: `staged-${Date.now()}`,
+          imageUrl: publicUrl,
+          storagePath,
+        },
+      };
+    }
+
     const slot = await reserveImageSlot(productId, maxImages);
     if (!slot.success) return slot;
     reservedImageId = slot.data.imageId;

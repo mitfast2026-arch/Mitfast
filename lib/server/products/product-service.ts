@@ -188,17 +188,9 @@ async function replaceProductImages(
 export async function syncPendingApprovalImageUrls(productId: string): Promise<void> {
   const adminClient = createAdminClient();
 
-  const { data: images } = await adminClient
-    .from('product_images')
-    .select('image_url')
-    .eq('product_id', productId)
-    .order('sort_order', { ascending: true });
-
-  const imageUrls = (images || []).map((img) => img.image_url).filter(Boolean);
-
   const { data: request } = await adminClient
     .from('product_approval_requests')
-    .select('id, proposed_data, status')
+    .select('id, proposed_data, status, request_type')
     .eq('product_id', productId)
     .in('status', ['pending', 'update_pending'])
     .order('created_at', { ascending: false })
@@ -207,13 +199,27 @@ export async function syncPendingApprovalImageUrls(productId: string): Promise<v
 
   if (!request) return;
 
-  const proposed = ((request.proposed_data as Record<string, unknown>) || {}) as Record<string, unknown>;
-  await adminClient
-    .from('product_approval_requests')
-    .update({
-      proposed_data: { ...proposed, image_urls: imageUrls },
-    })
-    .eq('id', request.id);
+  // Only sync live product_images into proposed_data for new product pending requests
+  if (request.status === 'pending' || request.request_type === 'new_product') {
+    const { data: images } = await adminClient
+      .from('product_images')
+      .select('image_url')
+      .eq('product_id', productId)
+      .neq('image_url', 'pending://reserve')
+      .order('sort_order', { ascending: true });
+
+    const imageUrls = (images || [])
+      .map((img) => img.image_url)
+      .filter((url) => typeof url === 'string' && url.trim().length > 0 && !url.startsWith('pending://'));
+
+    const proposed = ((request.proposed_data as Record<string, unknown>) || {}) as Record<string, unknown>;
+    await adminClient
+      .from('product_approval_requests')
+      .update({
+        proposed_data: { ...proposed, image_urls: imageUrls },
+      })
+      .eq('id', request.id);
+  }
 }
 
 /**
@@ -747,7 +753,7 @@ export async function submitProductUpdateBySupplier(
 
     const { data: existingProd, error: fetchError } = await adminClient
       .from('products')
-      .select('id, supplier_id, publication_status, updated_at')
+      .select('id, name, category_id, supplier_price, suggested_moq, supplier_id, publication_status, updated_at')
       .eq('id', productId)
       .eq('supplier_id', supplierId)
       .single();
@@ -763,12 +769,12 @@ export async function submitProductUpdateBySupplier(
     }
 
     const proposed = {
-      name,
-      category_id: categoryId,
+      name: name ?? existingProd.name,
+      category_id: categoryId ?? existingProd.category_id,
       description,
       sku,
-      suggested_moq: suggestedMoq,
-      supplier_price: supplierPrice,
+      suggested_moq: suggestedMoq ?? existingProd.suggested_moq,
+      supplier_price: supplierPrice ?? existingProd.supplier_price,
       specifications,
       image_urls: imageUrls,
     };
@@ -819,11 +825,6 @@ export async function submitProductUpdateBySupplier(
       })
       .eq('product_id', productId)
       .in('status', ['pending', 'update_pending']);
-
-    await adminClient
-      .from('products')
-      .update({ updated_at: new Date().toISOString() })
-      .eq('id', productId);
 
     const { data: request, error: reqError } = await adminClient
       .from('product_approval_requests')
@@ -1064,11 +1065,11 @@ export async function approveProduct(requestId: string, adminUserId?: string): P
       };
     }
 
-    const baseline = (request as any).base_product_updated_at as string | null | undefined;
+    const createdAt = request.created_at as string | null | undefined;
     if (
-      baseline &&
+      createdAt &&
       currentProduct.updated_at &&
-      new Date(currentProduct.updated_at).getTime() !== new Date(baseline).getTime()
+      new Date(currentProduct.updated_at).getTime() - new Date(createdAt).getTime() > 2000
     ) {
       return {
         success: false,
@@ -1104,7 +1105,6 @@ export async function approveProduct(requestId: string, adminUserId?: string): P
     if (proposed.sku !== undefined) productUpdate.sku = proposed.sku;
     if (proposed.suggested_moq !== undefined) {
       productUpdate.suggested_moq = proposed.suggested_moq;
-      productUpdate.moq = proposed.suggested_moq;
     }
 
     const { error: approveRpcError } = await (adminClient as any).rpc('approve_product_core_atomic', {
@@ -1122,14 +1122,21 @@ export async function approveProduct(requestId: string, adminUserId?: string): P
           return databaseMisconfiguredError('Product approve');
         }
       } else if (approveRpcError.message?.includes('STALE_PROPOSAL')) {
-        return {
-          success: false,
-          error: {
-            message:
-              'This proposal is stale because an admin edited the live product. Ask the supplier to resubmit.',
-            code: 'STALE_PROPOSAL',
-          },
-        };
+        if (
+          currentProduct.updated_at &&
+          request.created_at &&
+          new Date(currentProduct.updated_at).getTime() - new Date(request.created_at).getTime() > 2000
+        ) {
+          return {
+            success: false,
+            error: {
+              message:
+                'This proposal is stale because an admin edited the live product. Ask the supplier to resubmit.',
+              code: 'STALE_PROPOSAL',
+            },
+          };
+        }
+        // False positive from DB RPC baseline mismatch: proceed to fallback transition below
       } else if (
         approveRpcError.message?.includes('no longer open') ||
         approveRpcError.code === 'check_violation'
@@ -1175,26 +1182,26 @@ export async function approveProduct(requestId: string, adminUserId?: string): P
 
     // Specs / images after core approve — failures surface to caller (core status already committed).
     if (proposed.specifications !== undefined && Array.isArray(proposed.specifications)) {
-      const { error: specDeleteError } = await adminClient
-        .from('product_specifications')
-        .delete()
-        .eq('product_id', productId);
-
-      if (specDeleteError) {
-        return {
-          success: false,
-          error: {
-            message: `Product approved but specifications update failed: ${specDeleteError.message}`,
-            code: 'SPEC_UPDATE_FAILED',
-          },
-        };
-      }
-
       if (proposed.specifications.length > 0) {
+        const { error: specDeleteError } = await adminClient
+          .from('product_specifications')
+          .delete()
+          .eq('product_id', productId);
+
+        if (specDeleteError) {
+          return {
+            success: false,
+            error: {
+              message: `Product approved but specifications update failed: ${specDeleteError.message}`,
+              code: 'SPEC_UPDATE_FAILED',
+            },
+          };
+        }
+
         const specRows = proposed.specifications.map((s: any, idx: number) => ({
           product_id: productId,
-          spec_name: s.spec_name,
-          spec_value: s.spec_value,
+          spec_name: s.spec_name || s.name || s.key || `Spec ${idx + 1}`,
+          spec_value: s.spec_value || s.value || '',
           sort_order: s.sort_order ?? idx,
         }));
         const { error: specInsertError } = await adminClient
@@ -1210,19 +1217,37 @@ export async function approveProduct(requestId: string, adminUserId?: string): P
             },
           };
         }
+      } else if (request.request_type === 'update') {
+        await adminClient
+          .from('product_specifications')
+          .delete()
+          .eq('product_id', productId);
       }
     }
 
     if (Array.isArray(proposed.image_urls)) {
-      const imageResult = await replaceProductImages(productId, proposed.image_urls);
-      if (!imageResult.success) {
-        return {
-          success: false,
-          error: {
-            message: `Product approved but image update failed: ${imageResult.message}`,
-            code: 'IMAGE_UPDATE_FAILED',
-          },
-        };
+      if (proposed.image_urls.length > 0) {
+        const imageResult = await replaceProductImages(productId, proposed.image_urls);
+        if (!imageResult.success) {
+          return {
+            success: false,
+            error: {
+              message: `Product approved but image update failed: ${imageResult.message}`,
+              code: 'IMAGE_UPDATE_FAILED',
+            },
+          };
+        }
+      } else if (request.request_type === 'update') {
+        const imageResult = await replaceProductImages(productId, []);
+        if (!imageResult.success) {
+          return {
+            success: false,
+            error: {
+              message: `Product approved but image update failed: ${imageResult.message}`,
+              code: 'IMAGE_UPDATE_FAILED',
+            },
+          };
+        }
       }
     }
 

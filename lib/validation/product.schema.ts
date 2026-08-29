@@ -83,13 +83,13 @@ export const saveProductDraftSchema = z.object({
 
 export const updateProductBySupplierSchema = z.object({
   productId: z.string().uuid('Invalid product ID'),
-  name: z.string().min(2, 'Product name is required'),
-  categoryId: z.string().uuid('Valid category is required'),
+  name: z.string().min(2, 'Product name is required').optional(),
+  categoryId: z.string().uuid('Valid category is required').optional(),
   description: z.string().max(20000, 'Description is too long').optional(),
   sku: z.string().max(64).nullable().optional(),
   stockQuantity: z.number().int().min(0).optional(),
-  suggestedMoq: z.number().int().min(1, 'Suggested MOQ must be at least 1'),
-  supplierPrice: z.number().min(0, 'Supplier price must be non-negative'),
+  suggestedMoq: z.number().int().min(1, 'Suggested MOQ must be at least 1').optional(),
+  supplierPrice: z.number().min(0, 'Supplier price must be non-negative').optional(),
   specifications: z.array(specificationItemSchema).optional(),
   imageUrls: z.array(z.string().url('Invalid image URL')).max(8, 'Maximum 8 images allowed').optional(),
 });
