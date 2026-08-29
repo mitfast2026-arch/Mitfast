@@ -26,6 +26,7 @@ interface WishlistProduct {
   imageUrl?: string;
   category?: string;
   moq?: number;
+  isAvailable?: boolean;
 }
 
 export default function CustomerWishlistPage() {
@@ -90,6 +91,10 @@ export default function CustomerWishlistPage() {
   }
 
   async function handleMoveToCart(item: WishlistProduct) {
+    if (item.isAvailable === false) {
+      toast.error('This product is no longer available.');
+      return;
+    }
     const prevItems = items;
     setMovingId(item.productId);
 
@@ -203,6 +208,11 @@ export default function CustomerWishlistPage() {
                   <span className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[#F7F7F8] border border-[#D9DCE1] text-[#111315]">
                     {item.category}
                   </span>
+                  {item.isAvailable === false && (
+                    <span className="absolute bottom-2.5 left-2.5 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[#FDECEC] text-[#B91C1C] border border-[#FECACA]">
+                      No longer available
+                    </span>
+                  )}
                 </div>
 
                 <div className="space-y-1">
@@ -236,11 +246,15 @@ export default function CustomerWishlistPage() {
                 <button
                   type="button"
                   onClick={() => handleMoveToCart(item)}
-                  disabled={movingId === item.productId}
-                  className="flex-1 buyer-cta text-xs"
+                  disabled={movingId === item.productId || item.isAvailable === false}
+                  className="flex-1 buyer-cta text-xs disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <ShoppingCart className="w-3.5 h-3.5" />
-                  {movingId === item.productId ? 'Moving…' : 'Move to cart'}
+                  {item.isAvailable === false
+                    ? 'Unavailable'
+                    : movingId === item.productId
+                      ? 'Moving…'
+                      : 'Move to cart'}
                 </button>
                 <button
                   type="button"

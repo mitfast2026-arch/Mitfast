@@ -1,8 +1,18 @@
 'use client';
 
 import React from 'react';
+import dynamic from 'next/dynamic';
 import ProductFormSection, { FormField, FormGrid } from '../ProductFormSection';
 import type { ProductFormMode, ProductFormValues } from '../product-form.types';
+
+const RichTextEditor = dynamic(() => import('@/components/ui/RichTextEditor'), {
+  ssr: false,
+  loading: () => (
+    <div className="saas-input text-xs min-h-[160px] flex items-center text-portal-muted px-3">
+      Loading editor…
+    </div>
+  ),
+});
 
 type ProductInfoSectionProps = {
   values: ProductFormValues;
@@ -24,7 +34,7 @@ export default function ProductInfoSection({
 
   return (
     <ProductFormSection id="section-info" title="Product Information" defaultOpen>
-      <FormField label="Product name" required error={errors.name}>
+      <FormField label="Product name" required error={errors.name} fieldKey="name">
         <input
           type="text"
           required
@@ -37,7 +47,7 @@ export default function ProductInfoSection({
       </FormField>
 
       <FormGrid>
-        <FormField label="Category" required error={errors.categoryId}>
+        <FormField label="Category" required error={errors.categoryId} fieldKey="categoryId">
           <select
             required
             disabled={readOnly}
@@ -65,14 +75,12 @@ export default function ProductInfoSection({
         )}
       </FormGrid>
 
-      <FormField label="Description" optional>
-        <textarea
-          rows={3}
-          disabled={readOnly}
+      <FormField label="Description" optional error={errors.description} fieldKey="description">
+        <RichTextEditor
           value={values.description}
-          onChange={(e) => onChange({ description: e.target.value })}
+          onChange={(description) => onChange({ description })}
           placeholder="Brief technical description for buyers…"
-          className="saas-input text-xs resize-none"
+          readOnly={readOnly}
         />
       </FormField>
     </ProductFormSection>

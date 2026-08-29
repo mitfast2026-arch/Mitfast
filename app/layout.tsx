@@ -1,6 +1,15 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Inter, Instrument_Sans } from 'next/font/google';
 import './globals.css';
+import '@/components/home/curved-products/curved-products.css';
+import '@/components/home/service-showcase/service-showcase.css';
+import '@/components/ui/rich-text-editor.css';
+import '@/app/auth/auth.css';
+import '@/app/cart/cart.css';
+import '@/app/enquiry/enquiry.css';
+import '@/app/products/products-catalog.css';
+import '@/app/products/[id]/product-detail.css';
+import '@/app/services/services.css';
 import AppShell from '@/components/layout/AppShell';
 import { buildOrganizationJsonLd, buildWebSiteJsonLd, siteUrl } from '@/lib/seo/product-json-ld';
 import { serializeJsonLd } from '@/lib/server/seo/json-ld';
@@ -20,6 +29,11 @@ const instrumentSans = Instrument_Sans({
   display: 'swap',
   adjustFontFallback: false,
 });
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+};
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl()),
@@ -65,7 +79,10 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className={`${inter.className} min-h-screen bg-white text-[#111315] antialiased`}>
+      <body
+        className={`${inter.className} min-h-screen w-full min-w-0 bg-white text-[#111315] antialiased`}
+        suppressHydrationWarning
+      >
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: serializeJsonLd(orgLd) }}

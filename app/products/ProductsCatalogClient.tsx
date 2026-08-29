@@ -991,9 +991,9 @@ function ProductsCatalogContent({
                   }
                   aria-label="Sort products"
                 >
-                  <option value="relevance">Sort by: Relevance</option>
-                  <option value="price_asc">Unit price: low → high</option>
-                  <option value="price_desc">Unit price: high → low</option>
+                  <option value="relevance">Relevance</option>
+                  <option value="price_asc">Price: low → high</option>
+                  <option value="price_desc">Price: high → low</option>
                   <option value="name_asc">Name: A → Z</option>
                 </select>
               </div>

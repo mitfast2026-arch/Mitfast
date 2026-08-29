@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Plus, RefreshCw, Check, X, Eye } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Plus, RefreshCw, Check, X, Eye, Search } from 'lucide-react';
 import { useSupplier } from '@/components/portal/SupplierContext';
 import ProductFormPanel, { loadProductForPanel } from '@/components/portal/products/ProductFormPanel';
 import type { ProductFormMode, ProductFormProduct } from '@/components/portal/products/product-form.types';
@@ -12,9 +13,19 @@ import {
 } from '@/lib/client/portal-data-cache';
 import { invalidateProductPortalCaches } from '@/lib/client/invalidate-product-portal-cache';
 import { PORTAL_PAGE_LIMIT } from '@/lib/client/portal-nav-prefetch';
+import { stripHtmlTags } from '@/lib/html/strip-html';
 import { SkeletonTableRows } from '@/components/portal/ds';
 
 export default function SupplierProductsPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-xs text-portal-muted">Loading catalog…</div>}>
+      <SupplierProductsInner />
+    </Suspense>
+  );
+}
+
+function SupplierProductsInner() {
+  const searchParams = useSearchParams();
   const { supplier } = useSupplier();
   const [products, setProducts] = useState<any[]>([]);
   const [page, setPage] = useState(1);
@@ -28,47 +39,70 @@ export default function SupplierProductsPage() {
   const [panelMode, setPanelMode] = useState<ProductFormMode>('create-supplier');
   const [panelProduct, setPanelProduct] = useState<ProductFormProduct | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [searchInput, setSearchInput] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const deepLinkHandled = useRef<string | null>(null);
 
-  async function loadData(showLoading = true, opts?: { force?: boolean }) {
-    if (!supplier) return;
-    const productsUrl = `/api/supplier/products?page=${page}&limit=${PORTAL_PAGE_LIMIT}`;
-    const force = Boolean(opts?.force);
-    const existing = force ? null : peekPortalCache<{ products: any[]; total: number }>(productsUrl);
-    if (existing) {
-      setProducts(existing.data.products || []);
-      setTotal(existing.data.total || 0);
-      setLoading(false);
-    } else if (showLoading) {
-      setLoading(true);
-    }
-    try {
-      const [prodsRes, catsRes, settingsRes] = await Promise.all([
-        cachedApiGet<{ products: any[]; total: number }>(productsUrl, {
-          force: force || (showLoading && !existing),
-        }),
-        cachedApiGet<{ categories: any[] }>('/api/categories?status=active'),
-        cachedApiGet<{ defaultGstRate?: number }>('/api/settings'),
-      ]);
+  useEffect(() => {
+    const q = searchParams.get('search');
+    if (q !== null) setSearchInput(q);
+  }, [searchParams]);
 
-      if (prodsRes.ok) {
-        setProducts(prodsRes.data.products || []);
-        setTotal(prodsRes.data.total || 0);
-        markPortalContentReady('/supplier/products');
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchInput.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch]);
+
+  const loadData = useCallback(
+    async (showLoading = true, opts?: { force?: boolean }) => {
+      if (!supplier) return;
+      const searchQuery = debouncedSearch
+        ? `&search=${encodeURIComponent(debouncedSearch)}`
+        : '';
+      const productsUrl = `/api/supplier/products?page=${page}&limit=${PORTAL_PAGE_LIMIT}${searchQuery}`;
+      const force = Boolean(opts?.force);
+      const existing = force ? null : peekPortalCache<{ products: any[]; total: number }>(productsUrl);
+      if (existing) {
+        setProducts(existing.data.products || []);
+        setTotal(existing.data.total || 0);
+        setLoading(false);
+      } else if (showLoading) {
+        setLoading(true);
       }
-      if (catsRes.ok) setCategories(catsRes.data.categories || []);
-      if (settingsRes.ok && settingsRes.data?.defaultGstRate != null) {
-        setDefaultGstRate(Number(settingsRes.data.defaultGstRate) || 18);
+      try {
+        const [prodsRes, catsRes, settingsRes] = await Promise.all([
+          cachedApiGet<{ products: any[]; total: number }>(productsUrl, {
+            force: force || (showLoading && !existing),
+          }),
+          cachedApiGet<{ categories: any[] }>('/api/categories?status=active'),
+          cachedApiGet<{ defaultGstRate?: number }>('/api/settings'),
+        ]);
+
+        if (prodsRes.ok) {
+          setProducts(prodsRes.data.products || []);
+          setTotal(prodsRes.data.total || 0);
+          markPortalContentReady('/supplier/products');
+        }
+        if (catsRes.ok) setCategories(catsRes.data.categories || []);
+        if (settingsRes.ok && settingsRes.data?.defaultGstRate != null) {
+          setDefaultGstRate(Number(settingsRes.data.defaultGstRate) || 18);
+        }
+      } catch (err) {
+        console.error('Supplier products load error:', err);
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      console.error('Supplier products load error:', err);
-    } finally {
-      setLoading(false);
-    }
-  }
+    },
+    [supplier, page, debouncedSearch]
+  );
 
   useEffect(() => {
     loadData();
-  }, [supplier, page]);
+  }, [loadData]);
 
   function openCreatePanel() {
     setErrorMsg('');
@@ -78,7 +112,7 @@ export default function SupplierProductsPage() {
     setPanelOpen(true);
   }
 
-  async function openEditPanel(prod: any) {
+  const openEditPanel = useCallback(async (prod: any) => {
     setErrorMsg('');
     setPanelMode('edit-supplier');
     setPanelProduct(prod);
@@ -96,12 +130,37 @@ export default function SupplierProductsPage() {
     } finally {
       setDetailLoading(false);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    const action = searchParams.get('action');
+    const productId = searchParams.get('product');
+    const key = action === 'create' ? 'create' : productId ? `product:${productId}` : '';
+    if (!key || deepLinkHandled.current === key) return;
+    deepLinkHandled.current = key;
+
+    if (action === 'create') {
+      openCreatePanel();
+      return;
+    }
+    if (productId) {
+      const listed = products.find((p) => p.id === productId);
+      if (listed) {
+        void openEditPanel(listed);
+      } else {
+        void openEditPanel({ id: productId });
+      }
+    }
+  }, [searchParams, products, openEditPanel]);
 
   function closePanel() {
     setPanelOpen(false);
     setPanelProduct(null);
   }
+
+  const emptyMessage = debouncedSearch
+    ? `No products match "${debouncedSearch}". Try a different search term.`
+    : 'No products listed yet. Click "Add Product" to submit a new product for review.';
 
   return (
     <div className="space-y-7 w-full">
@@ -126,13 +185,25 @@ export default function SupplierProductsPage() {
             <span>Add Product</span>
           </button>
           <button
-            onClick={() => loadData()}
+            onClick={() => loadData(true, { force: true })}
             className="saas-neu-button text-xs py-2.5 px-3 flex items-center gap-1.5"
             title="Refresh List"
           >
             <RefreshCw className={`w-4 h-4 text-portal-muted ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
+      </div>
+
+      <div className="relative max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-portal-muted" />
+        <input
+          type="search"
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          placeholder="Search your catalog…"
+          className="saas-input text-xs pl-9 w-full"
+          aria-label="Search catalog"
+        />
       </div>
 
       {successMsg && (
@@ -150,7 +221,63 @@ export default function SupplierProductsPage() {
       )}
 
       <div className="saas-table-container">
-        <table className="saas-table">
+        {/* Mobile cards — View/Update always visible */}
+        <div className="md:hidden divide-y divide-portal-border">
+          {loading && products.length === 0 ? (
+            <div className="p-4">
+              <SkeletonTableRows rows={4} />
+            </div>
+          ) : products.length === 0 ? (
+            <div className="py-16 text-center text-portal-muted text-sm px-4">{emptyMessage}</div>
+          ) : (
+            products.map((p) => (
+              <div key={p.id} className="px-4 py-3 space-y-2.5">
+                <div className="min-w-0 space-y-1.5">
+                  <div className="font-medium text-portal-text text-sm">{p.name}</div>
+                  {p.description ? (
+                    <div className="text-xs text-portal-muted line-clamp-2">
+                      {stripHtmlTags(p.description)}
+                    </div>
+                  ) : null}
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-portal-muted">
+                    <span>{p.category?.name || 'Unassigned'}</span>
+                    <span className="type-metric text-portal-text">
+                      ₹{p.supplier_price?.toLocaleString('en-IN')}
+                    </span>
+                    <span>{(p.suggested_moq ?? p.moq) || '—'} Units MOQ</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <span
+                      className={
+                        p.approval_status === 'approved' ? 'saas-badge-success' : 'saas-badge-gold'
+                      }
+                    >
+                      {(p.approval_status || 'pending').replace(/_/g, ' ').toUpperCase()}
+                    </span>
+                    <span
+                      className={
+                        p.publication_status === 'published' ? 'saas-badge-cyan' : 'saas-badge-neutral'
+                      }
+                    >
+                      {(p.publication_status || 'draft').toUpperCase()}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => openEditPanel(p)}
+                  className="saas-btn-secondary text-xs py-1.5 px-3.5 inline-flex items-center gap-1.5"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>View / Update</span>
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Desktop table */}
+        <table className="saas-table hidden md:table">
           <thead>
             <tr>
               <th>Product name</th>
@@ -172,7 +299,7 @@ export default function SupplierProductsPage() {
             ) : products.length === 0 ? (
               <tr>
                 <td colSpan={7} className="py-16 text-center text-portal-muted text-sm">
-                  No products listed yet. Click &quot;Add Product&quot; to submit a new product for review.
+                  {emptyMessage}
                 </td>
               </tr>
             ) : (
@@ -185,7 +312,9 @@ export default function SupplierProductsPage() {
                   <td>
                     <div className="font-medium text-portal-text text-sm">{p.name}</div>
                     {p.description && (
-                      <div className="text-xs text-portal-muted truncate max-w-xs mt-0.5">{p.description}</div>
+                      <div className="text-xs text-portal-muted truncate max-w-xs mt-0.5">
+                        {stripHtmlTags(p.description)}
+                      </div>
                     )}
                   </td>
                   <td>

@@ -4,6 +4,12 @@ type SendMailInput = {
   html: string;
 };
 
+export type EmailProvider = 'resend' | 'brevo';
+
+export type SendMailResult =
+  | { ok: true; provider: EmailProvider }
+  | { ok: false; code: 'NOT_CONFIGURED' | 'ALL_FAILED' };
+
 function parseFrom(from: string): { name: string; email: string } {
   const match = from.match(/^(.*)<([^>]+)>$/);
   if (match) {
@@ -26,8 +32,16 @@ async function fetchWithTimeout(
   }
 }
 
+/** Returns providers that have credentials present (does not validate keys). */
+export function getConfiguredEmailProviders(): EmailProvider[] {
+  const providers: EmailProvider[] = [];
+  if (process.env.RESEND_API_KEY?.trim()) providers.push('resend');
+  if (process.env.BREVO_API_KEY?.trim()) providers.push('brevo');
+  return providers;
+}
+
 async function sendWithResend(input: SendMailInput): Promise<void> {
-  const apiKey = process.env.RESEND_API_KEY;
+  const apiKey = process.env.RESEND_API_KEY?.trim();
   if (!apiKey) throw new Error('RESEND_API_KEY is not configured');
 
   const from = process.env.EMAIL_FROM || 'MITFAST <onboarding@resend.dev>';
@@ -51,12 +65,12 @@ async function sendWithResend(input: SendMailInput): Promise<void> {
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`Resend failed: ${response.status} ${body}`);
+    throw new Error(`Resend failed: ${response.status} ${body.slice(0, 200)}`);
   }
 }
 
 async function sendWithBrevo(input: SendMailInput): Promise<void> {
-  const apiKey = process.env.BREVO_API_KEY;
+  const apiKey = process.env.BREVO_API_KEY?.trim();
   if (!apiKey) throw new Error('BREVO_API_KEY is not configured');
 
   const from = process.env.EMAIL_FROM || 'MITFAST <onboarding@resend.dev>';
@@ -83,29 +97,36 @@ async function sendWithBrevo(input: SendMailInput): Promise<void> {
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`Brevo failed: ${response.status} ${body}`);
+    throw new Error(`Brevo failed: ${response.status} ${body.slice(0, 200)}`);
   }
 }
 
-/** Primary Resend, fallback Brevo. */
-export async function sendTransactionalEmail(
-  input: SendMailInput
-): Promise<{ provider: 'resend' | 'brevo' } | null> {
-  if (!process.env.RESEND_API_KEY && !process.env.BREVO_API_KEY) {
-    return null;
+/**
+ * Primary Resend → fallback Brevo.
+ * Skips providers whose credentials are absent. Never returns success without a send.
+ */
+export async function sendTransactionalEmail(input: SendMailInput): Promise<SendMailResult> {
+  const providers = getConfiguredEmailProviders();
+  if (providers.length === 0) {
+    console.error('[sendTransactionalEmail] No email providers configured (RESEND_API_KEY / BREVO_API_KEY)');
+    return { ok: false, code: 'NOT_CONFIGURED' };
   }
 
-  try {
-    await sendWithResend(input);
-    return { provider: 'resend' };
-  } catch (primaryError) {
-    console.error('[sendTransactionalEmail] Resend failed, trying Brevo:', primaryError);
+  for (const provider of providers) {
     try {
-      await sendWithBrevo(input);
-      return { provider: 'brevo' };
-    } catch (fallbackError) {
-      console.error('[sendTransactionalEmail] Brevo failed:', fallbackError);
-      return null;
+      if (provider === 'resend') {
+        await sendWithResend(input);
+      } else {
+        await sendWithBrevo(input);
+      }
+      return { ok: true, provider };
+    } catch (err) {
+      console.error(`[sendTransactionalEmail] ${provider} failed:`, err instanceof Error ? err.message : err);
     }
   }
+
+  console.error('[sendTransactionalEmail] All configured providers failed', {
+    tried: providers,
+  });
+  return { ok: false, code: 'ALL_FAILED' };
 }

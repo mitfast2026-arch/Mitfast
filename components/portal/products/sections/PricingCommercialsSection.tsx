@@ -2,7 +2,7 @@
 
 import React from 'react';
 import ProductFormSection, { FormField, FormGrid } from '../ProductFormSection';
-import { computeCustomerPrice, computeListPrice } from '@/app/admin/products/types';
+import { computeCustomerPrice, computeListPriceFromProfit } from '@/app/admin/products/types';
 import type { ProductFormMode, ProductFormProduct, ProductFormValues } from '../product-form.types';
 
 type PricingCommercialsSectionProps = {
@@ -46,9 +46,40 @@ export default function PricingCommercialsSection({
   const proposedPrice = proposed?.supplier_price;
   const proposedSuggestedMoq = proposed?.suggested_moq;
 
-  const listPrice = computeListPrice(values.supplierPrice, values.profit);
+  const listPrice = computeListPriceFromProfit(
+    values.supplierPrice,
+    values.profitType,
+    values.profit
+  );
   const effectiveDiscount = values.discountEnabled ? values.discount : 0;
   const sellingPrice = computeCustomerPrice(listPrice, effectiveDiscount);
+
+  const liveProfitType = product?.profit_type === 'fixed' ? 'fixed' : 'percentage';
+  const liveProfitValue = product?.profit_value ?? values.profit;
+  const marginSummary =
+    liveProfitType === 'fixed'
+      ? `₹${liveProfitValue.toLocaleString('en-IN')}`
+      : `${liveProfitValue}%`;
+
+  function handleProfitTypeChange(nextType: 'percentage' | 'fixed') {
+    if (nextType === values.profitType) return;
+    const base = Math.max(0, values.supplierPrice);
+    const current = Math.max(0, values.profit);
+    let converted = current;
+    if (nextType === 'fixed') {
+      converted = Math.round(base * (current / 100) * 100) / 100;
+    } else if (base > 0) {
+      converted = Math.round((current / base) * 10000) / 100;
+    } else {
+      converted = 0;
+    }
+    onChange({ profitType: nextType, profit: converted });
+  }
+
+  const marginPreviewLabel =
+    values.profitType === 'percentage'
+      ? `List price (+${values.profit}% margin)`
+      : `List price (+₹${values.profit.toLocaleString('en-IN')} margin)`;
 
   const supplierFieldsDisabled = readOnly || (isAdmin && hasPendingUpdate && !isSupplier);
 
@@ -97,7 +128,7 @@ export default function PricingCommercialsSection({
             <div className="text-portal-muted">Catalog MOQ</div>
             <div className="text-portal-text text-right">{(product.moq ?? values.moq).toLocaleString('en-IN')}</div>
             <div className="text-portal-muted">Margin</div>
-            <div className="text-portal-text text-right">{product.profit_value ?? values.profit}%</div>
+            <div className="text-portal-text text-right">{marginSummary}</div>
             <div className="text-portal-muted">Discount / unit</div>
             <div className="text-portal-text text-right">
               ₹{(product.discount ?? 0).toLocaleString('en-IN')}
@@ -116,7 +147,7 @@ export default function PricingCommercialsSection({
 
       {isSupplier && (
         <FormGrid>
-          <FormField label="Your factory price (₹)" required error={errors.supplierPrice}>
+          <FormField label="Your factory price (₹)" required error={errors.supplierPrice} fieldKey="supplierPrice">
             <input
               type="number"
               min={0}
@@ -127,7 +158,7 @@ export default function PricingCommercialsSection({
               className="saas-input type-metric text-xs"
             />
           </FormField>
-          <FormField label="Suggested MOQ" required error={errors.suggestedMoq}>
+          <FormField label="Suggested MOQ" required error={errors.suggestedMoq} fieldKey="suggestedMoq">
             <input
               type="number"
               min={1}
@@ -146,7 +177,7 @@ export default function PricingCommercialsSection({
       {isAdmin && (
         <>
           <FormGrid>
-            <FormField label="Factory / base price (₹)" required error={errors.supplierPrice}>
+            <FormField label="Factory / base price (₹)" required error={errors.supplierPrice} fieldKey="supplierPrice">
               <input
                 type="number"
                 min={0}
@@ -166,7 +197,7 @@ export default function PricingCommercialsSection({
                 className="saas-input type-metric text-xs bg-portal-inset cursor-default"
               />
             </FormField>
-            <FormField label="Catalog MOQ" required error={errors.moq}>
+            <FormField label="Catalog MOQ" required error={errors.moq} fieldKey="moq">
               <input
                 type="number"
                 min={1}
@@ -176,17 +207,55 @@ export default function PricingCommercialsSection({
                 className="saas-input type-metric text-xs"
               />
             </FormField>
-            <FormField label="Margin / profit (%)" required error={errors.profit}>
-              <input
-                type="number"
-                min={0}
-                disabled={readOnly}
-                value={values.profit}
-                onChange={(e) => onChange({ profit: parseFloat(e.target.value) || 0 })}
-                className="saas-input type-metric text-xs"
-              />
+            <FormField
+              label={
+                values.profitType === 'percentage'
+                  ? 'Margin / profit (%)'
+                  : 'Margin / profit (₹)'
+              }
+              required
+              error={errors.profit}
+              fieldKey="profit"
+            >
+              <div className="flex gap-2">
+                <div className="flex shrink-0 rounded-md border border-portal-border overflow-hidden">
+                  <button
+                    type="button"
+                    disabled={readOnly}
+                    onClick={() => handleProfitTypeChange('percentage')}
+                    className={`px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                      values.profitType === 'percentage'
+                        ? 'bg-portal-accent text-white'
+                        : 'bg-portal-panel text-portal-muted hover:text-portal-text'
+                    }`}
+                  >
+                    %
+                  </button>
+                  <button
+                    type="button"
+                    disabled={readOnly}
+                    onClick={() => handleProfitTypeChange('fixed')}
+                    className={`px-2.5 py-1.5 text-xs font-medium transition-colors border-l border-portal-border ${
+                      values.profitType === 'fixed'
+                        ? 'bg-portal-accent text-white'
+                        : 'bg-portal-panel text-portal-muted hover:text-portal-text'
+                    }`}
+                  >
+                    ₹
+                  </button>
+                </div>
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  disabled={readOnly}
+                  value={values.profit}
+                  onChange={(e) => onChange({ profit: parseFloat(e.target.value) || 0 })}
+                  className="saas-input type-metric text-xs flex-1 min-w-0"
+                />
+              </div>
             </FormField>
-            <FormField label="GST rate (%)" optional error={errors.gst}>
+            <FormField label="GST rate (%)" optional error={errors.gst} fieldKey="gst">
               <input
                 type="number"
                 min={0}
@@ -226,7 +295,7 @@ export default function PricingCommercialsSection({
           </label>
 
           {values.discountEnabled && (
-            <FormField label="Discount (₹ / unit)" optional error={errors.discount}>
+            <FormField label="Discount (₹ / unit)" optional error={errors.discount} fieldKey="discount">
               <input
                 type="number"
                 min={0}
@@ -255,7 +324,7 @@ export default function PricingCommercialsSection({
               <span className="text-portal-text">₹{values.supplierPrice.toLocaleString('en-IN')}</span>
             </div>
             <div className="flex justify-between">
-              <span>List price (+{values.profit}% margin)</span>
+              <span>{marginPreviewLabel}</span>
               <span className="text-portal-text">₹{listPrice.toLocaleString('en-IN')}</span>
             </div>
             {values.discountEnabled && (

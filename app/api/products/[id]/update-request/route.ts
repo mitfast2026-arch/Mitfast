@@ -3,17 +3,46 @@ import { submitProductUpdateBySupplier } from '@/lib/server/products/product-ser
 import { requireSupplier } from '@/lib/server/auth/get-session';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { deferRevalidateProduct } from '@/lib/server/products/revalidate-product-paths';
+import { withIdempotency } from '@/lib/server/db/idempotency';
+import { assertRateLimit, rateLimitedResponse } from '@/lib/server/db/rate-limit';
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+function statusForError(code?: string): number {
+  switch (code) {
+    case 'RATE_LIMITED':
+      return 429;
+    case 'IDEMPOTENCY_IN_PROGRESS':
+    case 'CONCURRENT_UPDATE':
+      return 409;
+    case 'NOT_FOUND':
+      return 404;
+    case 'DATABASE_MISCONFIGURED':
+      return 503;
+    default:
+      return 400;
+  }
+}
+
+export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const auth = await requireSupplier();
     if (!auth.ok) return auth.response;
 
     const body = await request.json();
     const supplierId = auth.session.supplier!.id;
+
+    const limited = await assertRateLimit({
+      scope: 'supplier_product_update',
+      key: `supplier:${supplierId}`,
+      windowSeconds: 60,
+      maxHits: 60,
+    });
+    if (!limited.ok) {
+      return NextResponse.json(rateLimitedResponse('Too many product updates'), {
+        status: 429,
+        headers: { 'Retry-After': '60' },
+      });
+    }
 
     const { data: existing } = await createAdminClient()
       .from('products')
@@ -62,10 +91,13 @@ export async function POST(
       payload.imageUrls = imageUrls;
     }
 
-    const result = await submitProductUpdateBySupplier(supplierId, payload);
+    const idempotencyKey = request.headers.get('Idempotency-Key');
+    const result = await withIdempotency('submit_supplier_product_update', idempotencyKey, () =>
+      submitProductUpdateBySupplier(supplierId, payload)
+    );
 
     if (!result.success) {
-      return NextResponse.json(result, { status: 400 });
+      return NextResponse.json(result, { status: statusForError(result.error?.code) });
     }
 
     deferRevalidateProduct(params.id);

@@ -39,16 +39,6 @@ export const SERVICES: ServiceItem[] = [
     ctaText: 'Learn More',
     ctaHref: '/products',
   },
-  {
-    id: 'quote-dispatch',
-    number: '04',
-    tag: 'DELIVERY & SHIPPING',
-    title: 'Delivery Quote',
-    description:
-      'Get delivery schedules and shipping quotes for confirmed bulk orders and export deliveries.',
-    ctaText: 'Learn More',
-    ctaHref: '/enquiry?type=dispatch',
-  },
 ];
 
 export interface TestimonialItem {

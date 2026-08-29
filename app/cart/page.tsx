@@ -38,6 +38,13 @@ import { RemoteImage } from "@/components/ui/RemoteImage";
 import AuthOrGuestGate from "@/components/commerce/AuthOrGuestGate";
 import { getSettings } from "@/lib/client/settings-cache";
 import { mergeGuestStateOnce } from "@/lib/client/guest-merge";
+import {
+  computeOptimisticLineTotal,
+  computeOptimisticSubtotal,
+  gstLabelFromItems,
+  sumCartQuantities,
+} from "@/lib/client/cart-totals";
+import { requiredContactSchema } from "@/lib/validation/auth.schema";
 import "./cart.css";
 
 interface SampleProduct {
@@ -101,11 +108,30 @@ function CartRFQPageInner() {
     isEnquiry: boolean;
   }>({ open: false, isEnquiry: true });
 
-  const notifyCartUpdated = () => {
+  const notifyCartUpdated = (exactCount?: number) => {
     if (typeof window !== "undefined") {
-      window.dispatchEvent(new Event("cart-updated"));
+      window.dispatchEvent(
+        new CustomEvent("cart-updated", {
+          detail: exactCount != null ? { exactCount } : undefined,
+        })
+      );
     }
   };
+
+  async function refreshCart() {
+    try {
+      const res = await fetch("/api/cart");
+      const json = await res.json();
+      if (res.ok && json.success) {
+        setCart(json.data);
+        notifyCartUpdated(json.data?.itemCount ?? 0);
+        return json.data;
+      }
+    } catch {
+      /* caller handles rollback */
+    }
+    return null;
+  }
 
   const showToast = (msg: string) => {
     setSuccessToast(msg);
@@ -234,7 +260,9 @@ function CartRFQPageInner() {
 
   const items = cart?.items || [];
   const cartTotal = cart?.subtotal ?? cart?.cart_total ?? 0;
-  
+  const cartTotalGst = cart?.totalGst ?? 0;
+  const cartGrandTotal = cart?.grandTotal ?? cartTotal + cartTotalGst;
+  const gstSummaryLabel = useMemo(() => gstLabelFromItems(items), [items]);
   const itemsBelowMoq = useMemo(() => {
     return items.filter((item: any) => (item.quantity || 0) < (item.product?.moq || 1));
   }, [items]);
@@ -290,63 +318,51 @@ function CartRFQPageInner() {
     newQty: number,
     moq: number = 1,
   ) {
-    if (newQty < 1 || !cart?.items) return;
+    const clampedQty = Math.max(moq, newQty);
+    if (clampedQty < 1 || !cart?.items) return;
     setErrorMsg("");
 
     const prevCart = cart;
 
-    // 1. Optimistic instant in-memory update
     const updatedItems = cart.items.map((it: any) => {
       if (it.id === cartItemId) {
-        const unitPrice =
-          it.product?.actualUnitPrice ??
-          it.product?.sellingPrice ??
-          it.unit_price ??
-          0;
-        const itemTotal = unitPrice * newQty;
-        return { ...it, quantity: newQty, itemTotal };
+        const itemTotal = computeOptimisticLineTotal(it, clampedQty);
+        return { ...it, quantity: clampedQty, itemTotal };
       }
       return it;
     });
 
-    const newSubtotal = updatedItems.reduce(
-      (acc: number, it: any) => acc + (it.itemTotal || 0),
-      0
-    );
+    const newSubtotal = computeOptimisticSubtotal(updatedItems);
+    const newItemCount = sumCartQuantities(updatedItems);
 
     setCart({
       ...cart,
       items: updatedItems,
       subtotal: newSubtotal,
-      itemCount: updatedItems.length,
+      itemCount: newItemCount,
     });
 
-    // Synchronously notify listeners
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(
-        new CustomEvent("cart-updated", {
-          detail: { exactCount: updatedItems.length },
-        })
-      );
-    }
+    notifyCartUpdated(newItemCount);
 
-    // 2. Background API sync
     try {
       const res = await fetch("/api/cart", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cartItemId, quantity: newQty }),
+        body: JSON.stringify({ cartItemId, quantity: clampedQty }),
       });
       const json = await res.json();
       if (!res.ok || !json.success) {
-        // Rollback
         setCart(prevCart);
+        notifyCartUpdated(prevCart?.itemCount ?? 0);
         const errMsg = json.error?.message || "Could not update quantity.";
         setErrorMsg(errMsg);
         toast.error(errMsg);
+      } else {
+        await refreshCart();
       }
     } catch (err: any) {
       setCart(prevCart);
+      notifyCartUpdated(prevCart?.itemCount ?? 0);
       const errMsg = err.message || "Failed to update quantity";
       setErrorMsg(errMsg);
       toast.error(errMsg);
@@ -359,25 +375,17 @@ function CartRFQPageInner() {
 
     // 1. Optimistic removal
     const updatedItems = cart.items.filter((it: any) => it.id !== cartItemId);
-    const newSubtotal = updatedItems.reduce(
-      (acc: number, it: any) => acc + (it.itemTotal || 0),
-      0
-    );
+    const newSubtotal = computeOptimisticSubtotal(updatedItems);
+    const newItemCount = sumCartQuantities(updatedItems);
 
     setCart({
       ...cart,
       items: updatedItems,
       subtotal: newSubtotal,
-      itemCount: updatedItems.length,
+      itemCount: newItemCount,
     });
 
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(
-        new CustomEvent("cart-updated", {
-          detail: { exactCount: updatedItems.length, delta: -1 },
-        })
-      );
-    }
+    notifyCartUpdated(newItemCount);
 
     const toastMsg = productName
       ? `Removed "${productName}"`
@@ -392,10 +400,14 @@ function CartRFQPageInner() {
       const json = await res.json();
       if (!res.ok || !json.success) {
         setCart(prevCart);
+        notifyCartUpdated(prevCart?.itemCount ?? 0);
         toast.error(json.error?.message || "Failed to remove item");
+      } else {
+        await refreshCart();
       }
     } catch (err) {
       setCart(prevCart);
+      notifyCartUpdated(prevCart?.itemCount ?? 0);
       toast.error("Network error removing item");
     }
   }
@@ -405,12 +417,8 @@ function CartRFQPageInner() {
     const prevCart = cart;
 
     // 1. Optimistic clear
-    setCart({ items: [], subtotal: 0, itemCount: 0 });
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(
-        new CustomEvent("cart-updated", { detail: { exactCount: 0 } })
-      );
-    }
+    setCart({ items: [], subtotal: 0, itemCount: 0, totalGst: 0, grandTotal: 0 });
+    notifyCartUpdated(0);
     toast.success("Cart cleared", { duration: 2500 });
 
     // 2. Background sync
@@ -493,12 +501,22 @@ function CartRFQPageInner() {
     const trimmedEmail = contactEmail.trim();
     const trimmedPhone = contactPhone.trim();
 
-    if (
-      trimmedName.length < 2 ||
-      !trimmedEmail.includes("@") ||
-      trimmedPhone.length < 7
-    ) {
-      setErrorMsg("Please provide your full name, work email, and phone number.");
+    const contactResult = requiredContactSchema.safeParse({
+      fullName: trimmedName,
+      email: trimmedEmail,
+      phone: trimmedPhone,
+    });
+    if (!contactResult.success) {
+      const firstIssue = contactResult.error.issues[0]?.message;
+      setErrorMsg(firstIssue || "Please provide your full name, work email, and phone number.");
+      return;
+    }
+
+    const availableItems = items.filter(
+      (i: any) => i.product?.isAvailable !== false
+    );
+    if (availableItems.length === 0) {
+      setErrorMsg("No available products in your cart. Remove unavailable items to continue.");
       return;
     }
 
@@ -549,10 +567,16 @@ function CartRFQPageInner() {
       };
     }
 
-    /* ── PATHWAY 1: Official Factory RFQ (>= ₹5,00,000 & MOQ met) ── */
+    /* ── PATHWAY 1: Official Factory RFQ (>= threshold & MOQ met) ── */
     if (meetsRfqThreshold) {
       if (!customer?.id) {
         setGateOpen(true);
+        setSubmitting(false);
+        return;
+      }
+
+      if (!deliveryAddress) {
+        setErrorMsg("Please add a delivery address before submitting an official RFQ.");
         setSubmitting(false);
         return;
       }
@@ -588,9 +612,9 @@ function CartRFQPageInner() {
           notifyCartUpdated();
           if (count > 1) {
             // Multi-supplier cart → one RFQ per supplier
-            router.push(`/customer/rfqs?created=${count}`);
+            router.push(`/customer/quotes?tab=rfqs&created=${count}`);
           } else {
-            router.push("/customer/rfqs");
+            router.push("/customer/quotes?tab=rfqs");
           }
         }
       } catch (err: any) {
@@ -600,9 +624,9 @@ function CartRFQPageInner() {
       return;
     }
 
-    /* ── PATHWAY 2: Commercial / Small-Batch Enquiry (< ₹5,00,000 or below MOQ) ── */
+    /* ── PATHWAY 2: Commercial / Small-Batch Enquiry (< threshold or below MOQ) ── */
     try {
-      const lineItemsPayload = items.map((i: any) => ({
+      const lineItemsPayload = availableItems.map((i: any) => ({
         productId: i.productId,
         name: i.product?.name || "Product",
         quantity: i.quantity,
@@ -647,14 +671,14 @@ function CartRFQPageInner() {
       }
       setCart((prev: any) =>
         prev
-          ? { ...prev, items: [], itemCount: 0, subtotal: 0 }
-          : { cartId: "guest", items: [], itemCount: 0, subtotal: 0 }
+          ? { ...prev, items: [], itemCount: 0, subtotal: 0, totalGst: 0, grandTotal: 0 }
+          : { cartId: "guest", items: [], itemCount: 0, subtotal: 0, totalGst: 0, grandTotal: 0 }
       );
-      notifyCartUpdated();
+      notifyCartUpdated(0);
 
       const trackingToken = enquiryJson.data?.trackingToken || enquiryJson.data?.enquiryId;
       if (customer?.id) {
-        router.push(`/customer/enquiries?submitted=true`);
+        router.push(`/customer/quotes?tab=enquiries&submitted=true`);
       } else {
         setEnquirySuccessModal({
           open: true,
@@ -673,7 +697,7 @@ function CartRFQPageInner() {
     return (
       <div className="b2b-cart-container min-h-[60vh] space-y-6">
         <div className="h-7 w-56 bg-[#F0F2F5] rounded animate-pulse" />
-        <div className="h-12 w-96 bg-[#F0F2F5] rounded animate-pulse" />
+        <div className="h-12 w-full max-w-md bg-[#F0F2F5] rounded animate-pulse" />
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_440px] gap-8">
           <div className="h-96 bg-white rounded-2xl border border-[#E2E4E8] animate-pulse" />
           <div className="h-96 bg-white rounded-2xl border border-[#E2E4E8] animate-pulse" />
@@ -686,7 +710,7 @@ function CartRFQPageInner() {
     <div ref={containerRef} className="b2b-cart-container">
       {/* Toast Notification */}
       {successToast && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3.5 bg-[#111315] text-white rounded-xl shadow-2xl text-sm font-semibold animate-in fade-in slide-in-from-bottom-2">
+        <div className="fixed bottom-6 left-4 right-4 sm:left-auto sm:right-6 sm:max-w-sm z-50 flex items-center gap-3 px-5 py-3.5 bg-[#111315] text-white rounded-xl shadow-2xl text-sm font-semibold animate-in fade-in slide-in-from-bottom-2">
           <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
           <span>{successToast}</span>
         </div>
@@ -867,7 +891,7 @@ function CartRFQPageInner() {
                       ? `${selectedAddress.address_line_1}, ${selectedAddress.city}, ${selectedAddress.state}`
                       : customAddress.addressLine1
                       ? `${customAddress.addressLine1}, ${customAddress.city}, ${customAddress.state}`
-                      : "Set consignee delivery address for accurate freight & tax calculation"}
+                      : "Set consignee address for accurate tax calculation"}
                   </div>
                 </div>
               </div>
@@ -1064,14 +1088,15 @@ function CartRFQPageInner() {
                           <div className="b2b-stepper-control">
                             <button
                               type="button"
-                              onClick={() =>
+                              onClick={() => {
+                                const step = minQty >= 50 ? 50 : 10;
                                 handleUpdateQuantity(
                                   item.id,
-                                  Math.max(1, item.quantity - (minQty >= 50 ? 50 : 10)),
-                                  1,
-                                )
-                              }
-                              disabled={isUpdating || item.quantity <= 1}
+                                  Math.max(minQty, item.quantity - step),
+                                  minQty,
+                                );
+                              }}
+                              disabled={isUpdating || item.quantity <= minQty}
                               className="b2b-stepper-btn"
                               aria-label="Decrease quantity"
                             >
@@ -1080,12 +1105,12 @@ function CartRFQPageInner() {
 
                             <input
                               type="number"
-                              min={1}
+                              min={minQty}
                               value={item.quantity}
                               onChange={(e) => {
                                 const val = parseInt(e.target.value, 10);
-                                if (!isNaN(val) && val > 0) {
-                                  handleUpdateQuantity(item.id, val, 1);
+                                if (!isNaN(val) && val >= minQty) {
+                                  handleUpdateQuantity(item.id, val, minQty);
                                 }
                               }}
                               className="b2b-stepper-input"
@@ -1098,7 +1123,7 @@ function CartRFQPageInner() {
                                 handleUpdateQuantity(
                                   item.id,
                                   item.quantity + (minQty >= 50 ? 50 : 10),
-                                  1,
+                                  minQty,
                                 )
                               }
                               disabled={isUpdating}
@@ -1142,7 +1167,7 @@ function CartRFQPageInner() {
               </label>
               <textarea
                 rows={2}
-                placeholder="Specify delivery timeline, custom surface coating, tolerance notes, or inspection requests..."
+                placeholder="Specify custom surface coating, tolerance notes, or inspection requests..."
                 value={customerNotes}
                 onChange={(e) => setCustomerNotes(e.target.value)}
                 className="w-full p-3.5 text-base text-[#111315] bg-[#F7F7F8] border border-[#E2E4E8] rounded-xl outline-none focus:bg-white focus:border-[#111315] transition-colors resize-none"
@@ -1172,18 +1197,13 @@ function CartRFQPageInner() {
                 </div>
 
                 <div className="b2b-summary-line">
-                  <span>Estimated GST (18% B2B)</span>
-                  <span>₹{Math.round(cartTotal * 0.18).toLocaleString("en-IN")}</span>
-                </div>
-
-                <div className="b2b-summary-line">
-                  <span>Delivery Charges</span>
-                  <span className="text-emerald-700 font-semibold">Calculated on Quote</span>
+                  <span>{gstSummaryLabel}</span>
+                  <span>₹{Math.round(cartTotalGst).toLocaleString("en-IN")}</span>
                 </div>
 
                 <div className="b2b-summary-grand-total">
                   <span>Total Amount</span>
-                  <span>₹{Math.round(cartTotal * 1.18).toLocaleString("en-IN")}</span>
+                  <span>₹{Math.round(cartGrandTotal).toLocaleString("en-IN")}</span>
                 </div>
 
                 {/* Submission Pathway Explanation Notice */}
@@ -1191,7 +1211,7 @@ function CartRFQPageInner() {
                   <div className="p-3 bg-amber-50/80 border border-amber-200/80 rounded-xl text-xs text-amber-900 leading-relaxed flex items-start gap-2">
                     <Info className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
                     <div>
-                      <strong>Commercial Enquiry:</strong> Cart total is under the ₹5,00,000 threshold. You can submit this as an inquiry to our sales team for custom pricing and stock confirmation.
+                      <strong>Commercial Enquiry:</strong> Cart total is under the ₹{minimumRfqValue.toLocaleString("en-IN")} threshold. You can submit this as an inquiry to our sales team for custom pricing and stock confirmation.
                     </div>
                   </div>
                 ) : (
@@ -1421,7 +1441,7 @@ function CartRFQPageInner() {
                     })
                   }
                 />
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <input
                     className="b2b-input"
                     placeholder="City *"
@@ -1445,7 +1465,7 @@ function CartRFQPageInner() {
                     }
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <input
                     className="b2b-input"
                     placeholder="PIN Code *"

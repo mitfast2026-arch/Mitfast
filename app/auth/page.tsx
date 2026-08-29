@@ -3,9 +3,10 @@ import AuthPageClient, { type AuthSearchParams } from './AuthPageClient';
 export const dynamic = 'force-dynamic';
 
 type AuthPageProps = {
-  searchParams?: AuthSearchParams;
+  searchParams?: Promise<AuthSearchParams>;
 };
 
-export default function AuthPage({ searchParams = {} }: AuthPageProps) {
+export default async function AuthPage(props: AuthPageProps) {
+  const searchParams = (await props.searchParams) ?? {};
   return <AuthPageClient searchParams={searchParams} />;
 }

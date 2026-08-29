@@ -48,7 +48,7 @@ export default function CustomerProfilePage() {
           return;
         }
 
-        const res = await fetch(`/api/customer/profile?userId=${user.id}`);
+        const res = await fetch('/api/customer/profile');
         const json = await res.json();
 
         if (json.success && json.data) {

@@ -1178,6 +1178,7 @@
 
   html {
     overflow-x: hidden;
+    width: 100%;
     font-family: var(--font-inter);
   }
 
@@ -1196,6 +1197,8 @@
 
   /* Body / paragraphs: Inter regular */
   body {
+    width: 100%;
+    min-width: 0;
     background-color: var(--background);
     color: var(--foreground);
     font-family: var(--font-inter);
@@ -1228,6 +1231,13 @@
   }
 
   /* Footer seam brand — outside @layer so it always wins */
+  .site-footer__grid-bg {
+    background-color: #111315;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
 }
 
 @layer base {
@@ -1513,7 +1523,9 @@
     color: #ffffff;
   }
 
-  /* Primary desktop nav — one flex group, identical items, shared underline geometry */
+  /* Primary desktop nav — one flex group, identical items, shared underline geometry.
+     Display is controlled by Tailwind `hidden md:flex` on the element; do not set
+     display here or it overrides `hidden` below the md breakpoint. */
   .nav-primary {
     align-items: center;
     justify-content: center;

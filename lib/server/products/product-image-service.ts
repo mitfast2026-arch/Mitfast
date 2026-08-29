@@ -20,13 +20,9 @@ type ProductRow = {
 };
 
 async function getMaxProductImages(): Promise<number> {
-  const adminClient = createAdminClient();
-  const { data: settings } = await adminClient
-    .from('business_settings')
-    .select('max_product_images')
-    .limit(1)
-    .maybeSingle();
-  return settings?.max_product_images ?? 8;
+  const { getBusinessSettings } = await import('@/lib/server/settings/settings-service');
+  const settingsRes = await getBusinessSettings();
+  return settingsRes.success && settingsRes.data ? settingsRes.data.maxProductImages : 8;
 }
 
 async function verifyProductAccess(
@@ -53,14 +49,23 @@ async function verifyProductAccess(
       return { success: false, error: { message: 'Forbidden', code: 'FORBIDDEN' } };
     }
     if (product.publication_status === 'published') {
-      return {
-        success: false,
-        error: {
-          message:
-            'Image changes on published products require an admin-approved update. Submit a product update request first.',
-          code: 'PUBLISHED_PRODUCT_LOCKED',
-        },
-      };
+      const { data: openRequest } = await adminClient
+        .from('product_approval_requests')
+        .select('id')
+        .eq('product_id', productId)
+        .eq('status', 'update_pending')
+        .maybeSingle();
+
+      if (!openRequest) {
+        return {
+          success: false,
+          error: {
+            message:
+              'Image changes on published products require an admin-approved update. Submit a product update request first.',
+            code: 'PUBLISHED_PRODUCT_LOCKED',
+          },
+        };
+      }
     }
     return { success: true, data: { product } };
   }
@@ -95,6 +100,60 @@ async function promoteNextPrimary(productId: string): Promise<void> {
   }
 }
 
+async function reserveImageSlot(
+  productId: string,
+  maxImages: number
+): Promise<ServerResult<{ imageId: string | null; sortOrder: number }>> {
+  const adminClient = createAdminClient();
+  const { data, error } = await (adminClient as any).rpc('reserve_product_image_slot', {
+    p_product_id: productId,
+    p_max: maxImages,
+  });
+
+  // RETURNS TABLE → array of { image_id, sort_order }
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!error && row && (row.image_id || row.sort_order !== undefined)) {
+    return {
+      success: true,
+      data: {
+        imageId: (row.image_id as string) || null,
+        sortOrder: Number(row.sort_order ?? 0),
+      },
+    };
+  }
+
+  const { isRpcMissing, allowUnsafeDbFallback, databaseMisconfiguredError } = await import(
+    '@/lib/server/db/production-guards'
+  );
+  const { mapRpcError } = await import('@/lib/server/db/rpc-errors');
+
+  if (error && !isRpcMissing(error, 'reserve_product_image_slot')) {
+    return { success: false, error: mapRpcError(error) };
+  }
+
+  if (!allowUnsafeDbFallback()) {
+    return databaseMisconfiguredError('Product image upload');
+  }
+
+  const { count: existingCount, error: countError } = await adminClient
+    .from('product_images')
+    .select('id', { count: 'exact', head: true })
+    .eq('product_id', productId);
+
+  if (countError) {
+    return { success: false, error: { message: countError.message, code: 'DATABASE_ERROR' } };
+  }
+
+  if ((existingCount ?? 0) >= maxImages) {
+    return {
+      success: false,
+      error: { message: `Maximum ${maxImages} images allowed per product`, code: 'MAX_IMAGES' },
+    };
+  }
+
+  return { success: true, data: { imageId: null, sortOrder: existingCount ?? 0 } };
+}
+
 export async function addProductImage(
   productId: string,
   input: {
@@ -106,6 +165,7 @@ export async function addProductImage(
   },
   actor: ProductImageActor
 ): Promise<ServerResult<{ imageId: string; imageUrl: string; storagePath: string }>> {
+  let reservedImageId: string | null = null;
   try {
     const access = await verifyProductAccess(productId, actor);
     if (!access.success) return access;
@@ -114,21 +174,9 @@ export async function addProductImage(
     const adminClient = createAdminClient();
     const maxImages = await getMaxProductImages();
 
-    const { count: existingCount, error: countError } = await adminClient
-      .from('product_images')
-      .select('id', { count: 'exact', head: true })
-      .eq('product_id', productId);
-
-    if (countError) {
-      return { success: false, error: { message: countError.message, code: 'DATABASE_ERROR' } };
-    }
-
-    if ((existingCount ?? 0) >= maxImages) {
-      return {
-        success: false,
-        error: { message: `Maximum ${maxImages} images allowed per product`, code: 'MAX_IMAGES' },
-      };
-    }
+    const slot = await reserveImageSlot(productId, maxImages);
+    if (!slot.success) return slot;
+    reservedImageId = slot.data.imageId;
 
     const rawBuffer = Buffer.isBuffer(input.buffer) ? input.buffer : Buffer.from(input.buffer);
     const processed = await processImageForUpload(
@@ -137,7 +185,12 @@ export async function addProductImage(
       input.contentType,
       'product'
     );
-    if (!processed.success) return processed;
+    if (!processed.success) {
+      if (reservedImageId) {
+        await adminClient.from('product_images').delete().eq('id', reservedImageId);
+      }
+      return processed;
+    }
 
     const uploadResult = await uploadProductImage(
       product.supplier_id ?? 'internal',
@@ -147,14 +200,76 @@ export async function addProductImage(
       processed.data.contentType
     );
 
-    if (!uploadResult.success) return uploadResult;
+    if (!uploadResult.success) {
+      if (reservedImageId) {
+        await adminClient.from('product_images').delete().eq('id', reservedImageId);
+      }
+      return uploadResult;
+    }
 
     const { publicUrl, storagePath } = uploadResult.data;
-    const sortOrder = input.sortOrder ?? (existingCount ?? 0);
-    const makePrimary = input.isPrimary ?? (existingCount ?? 0) === 0;
+    const sortOrder = input.sortOrder ?? slot.data.sortOrder;
+    // Only claim primary when this is the first slot — avoids concurrent unique-index fights
+    const makePrimary = (input.isPrimary ?? slot.data.sortOrder === 0) && slot.data.sortOrder === 0;
 
-    if (makePrimary) {
-      await clearPrimaryFlags(productId);
+    if (reservedImageId) {
+      // Finalize reserved row without primary first (safe under concurrency)
+      const { data: image, error: updateError } = await adminClient
+        .from('product_images')
+        .update({
+          image_url: publicUrl,
+          storage_path: storagePath,
+          sort_order: sortOrder,
+          is_primary: false,
+        })
+        .eq('id', reservedImageId)
+        .select('id')
+        .single();
+
+      if (updateError || !image) {
+        await deleteProductImageFromStorage(storagePath);
+        await adminClient.from('product_images').delete().eq('id', reservedImageId);
+        return {
+          success: false,
+          error: {
+            message: updateError?.message || 'Failed to save image record',
+            code: 'DATABASE_ERROR',
+          },
+        };
+      }
+
+      if (makePrimary) {
+        await clearPrimaryFlags(productId);
+        const { error: primaryError } = await adminClient
+          .from('product_images')
+          .update({ is_primary: true })
+          .eq('id', image.id);
+        // Unique partial index race: another upload may have claimed primary — non-fatal
+        if (primaryError) {
+          const { isUniqueViolation } = await import('@/lib/server/db/rpc-errors');
+          if (!isUniqueViolation(primaryError)) {
+            console.warn('[addProductImage] primary flag update:', primaryError.message);
+          }
+        }
+      } else {
+        // Promote if no primary exists yet (first successful finalize after failed primary attempts)
+        const { count } = await adminClient
+          .from('product_images')
+          .select('id', { count: 'exact', head: true })
+          .eq('product_id', productId)
+          .eq('is_primary', true);
+        if ((count ?? 0) === 0) {
+          await adminClient
+            .from('product_images')
+            .update({ is_primary: true })
+            .eq('id', image.id);
+        }
+      }
+
+      return {
+        success: true,
+        data: { imageId: image.id, imageUrl: publicUrl, storagePath },
+      };
     }
 
     const { data: image, error: insertError } = await adminClient
@@ -164,7 +279,7 @@ export async function addProductImage(
         image_url: publicUrl,
         storage_path: storagePath,
         sort_order: sortOrder,
-        is_primary: makePrimary,
+        is_primary: false,
       })
       .select('id')
       .single();
@@ -177,12 +292,42 @@ export async function addProductImage(
       };
     }
 
+    if (makePrimary) {
+      await clearPrimaryFlags(productId);
+      const { error: primaryError } = await adminClient
+        .from('product_images')
+        .update({ is_primary: true })
+        .eq('id', image.id);
+      if (primaryError) {
+        const { isUniqueViolation } = await import('@/lib/server/db/rpc-errors');
+        if (!isUniqueViolation(primaryError)) {
+          console.warn('[addProductImage] primary flag update:', primaryError.message);
+        }
+      }
+    } else {
+      const { count } = await adminClient
+        .from('product_images')
+        .select('id', { count: 'exact', head: true })
+        .eq('product_id', productId)
+        .eq('is_primary', true);
+      if ((count ?? 0) === 0) {
+        await adminClient.from('product_images').update({ is_primary: true }).eq('id', image.id);
+      }
+    }
+
     return {
       success: true,
       data: { imageId: image.id, imageUrl: publicUrl, storagePath },
     };
   } catch (error) {
     console.error('[addProductImage] Error:', error);
+    if (reservedImageId) {
+      try {
+        await createAdminClient().from('product_images').delete().eq('id', reservedImageId);
+      } catch {
+        /* best-effort */
+      }
+    }
     return { success: false, error: { message: 'Failed to add product image', code: 'INTERNAL_ERROR' } };
   }
 }
@@ -243,6 +388,31 @@ export async function reorderProductImages(
     if (!access.success) return access;
 
     const adminClient = createAdminClient();
+    const { data: ok, error: rpcError } = await (adminClient as any).rpc(
+      'reorder_product_images_atomic',
+      {
+        p_product_id: productId,
+        p_ordered_ids: orderedImageIds,
+      }
+    );
+
+    if (!rpcError && ok) {
+      return { success: true, data: { reordered: true } };
+    }
+
+    const { isRpcMissing, allowUnsafeDbFallback, databaseMisconfiguredError } = await import(
+      '@/lib/server/db/production-guards'
+    );
+    const { mapRpcError } = await import('@/lib/server/db/rpc-errors');
+
+    if (rpcError && !isRpcMissing(rpcError, 'reorder_product_images_atomic')) {
+      return { success: false, error: mapRpcError(rpcError) };
+    }
+
+    if (!allowUnsafeDbFallback()) {
+      return databaseMisconfiguredError('Product image reorder');
+    }
+
     const { data: existingImages, error: fetchError } = await adminClient
       .from('product_images')
       .select('id')
@@ -257,7 +427,10 @@ export async function reorderProductImages(
     if (orderedImageIds.length !== existingIds.size) {
       return {
         success: false,
-        error: { message: 'orderedImageIds must include every image for this product', code: 'VALIDATION_ERROR' },
+        error: {
+          message: 'orderedImageIds must include every image for this product',
+          code: 'VALIDATION_ERROR',
+        },
       };
     }
 
@@ -265,12 +438,14 @@ export async function reorderProductImages(
       if (!existingIds.has(id)) {
         return {
           success: false,
-          error: { message: 'One or more image IDs do not belong to this product', code: 'VALIDATION_ERROR' },
+          error: {
+            message: 'One or more image IDs do not belong to this product',
+            code: 'VALIDATION_ERROR',
+          },
         };
       }
     }
 
-    // Clear primary first to avoid violating product_images_primary_idx when swapping primary.
     await clearPrimaryFlags(productId);
 
     for (let idx = 0; idx < orderedImageIds.length; idx++) {

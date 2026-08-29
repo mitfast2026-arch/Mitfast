@@ -3,10 +3,8 @@ import { adminAcceptRfq } from '@/lib/server/rfq/rfq-service';
 import { requireAdmin } from '@/lib/server/auth/get-session';
 
 /** Accept RFQ header — admin only (prevents cross-supplier control). */
-export async function POST(
-  _request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(_request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const auth = await requireAdmin();
     if (!auth.ok) return auth.response;

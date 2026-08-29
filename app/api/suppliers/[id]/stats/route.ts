@@ -2,10 +2,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getSupplierProductStats } from '@/lib/server/suppliers/supplier-service';
 import { getServerSession, unauthorizedResponse, forbiddenResponse } from '@/lib/server/auth/get-session';
 
-export async function GET(
-  _request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(_request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await getServerSession();
     if (!session) return unauthorizedResponse();

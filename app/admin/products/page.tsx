@@ -33,6 +33,7 @@ function AdminProductsPageContent() {
   const [total, setTotal] = useState(0);
   const [categories, setCategories] = useState<any[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [defaultGstRate, setDefaultGstRate] = useState(18);
   const [rowError, setRowError] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelMode, setPanelMode] = useState<ProductFormMode>('create-admin');
@@ -46,12 +47,16 @@ function AdminProductsPageContent() {
 
   async function loadLookups() {
     try {
-      const [catsRes, supsRes] = await Promise.all([
+      const [catsRes, supsRes, settingsRes] = await Promise.all([
         cachedApiGet<{ categories: any[] }>('/api/categories?mode=admin&status=active'),
         cachedApiGet<{ suppliers: any[] }>('/api/suppliers?status=active&limit=100'),
+        cachedApiGet<{ defaultGstRate?: number }>('/api/settings'),
       ]);
       if (catsRes.ok) setCategories(catsRes.data.categories || []);
       if (supsRes.ok) setSuppliers(supsRes.data.suppliers || []);
+      if (settingsRes.ok && settingsRes.data?.defaultGstRate != null) {
+        setDefaultGstRate(Number(settingsRes.data.defaultGstRate) || 18);
+      }
     } catch (err) {
       console.error('Failed to load lookups:', err);
     }
@@ -112,6 +117,40 @@ function AdminProductsPageContent() {
   useEffect(() => {
     loadProducts();
   }, [loadProducts]);
+
+  const reviewId = searchParams.get('review');
+  const reviewOpenedRef = React.useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!reviewId || reviewOpenedRef.current === reviewId) return;
+    reviewOpenedRef.current = reviewId;
+    const prod = products.find((p) => p.id === reviewId);
+    if (prod) {
+      void openEditPanel(prod, true);
+      return;
+    }
+    void (async () => {
+      setPanelOpen(true);
+      setPanelMode('review-admin');
+      setDetailLoading(true);
+      try {
+        const detail = await loadProductForPanel(reviewId);
+        if (detail) {
+          setPanelProduct(detail);
+        } else {
+          toast.error('Product not found');
+          setPanelOpen(false);
+          reviewOpenedRef.current = null;
+        }
+      } catch {
+        toast.error('Failed to load product for review');
+        setPanelOpen(false);
+        reviewOpenedRef.current = null;
+      } finally {
+        setDetailLoading(false);
+      }
+    })();
+  }, [reviewId, products]);
 
   function patchProduct(productId: string, patch: Record<string, unknown>) {
     setProducts((prev) =>
@@ -361,6 +400,7 @@ function AdminProductsPageContent() {
         categories={categories}
         suppliers={suppliers}
         supplierName={supplierName}
+        defaultGstRate={defaultGstRate}
         detailLoading={detailLoading}
         onClose={closePanel}
         onSuccess={() => {

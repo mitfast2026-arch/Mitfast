@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
+import { cachedApiGet } from '@/lib/client/portal-data-cache';
 import { CustomerPageShell, CustomerPageSkeleton } from '@/components/customer/CustomerPageShell';
 
 export default function CustomerAddressesPage() {
@@ -36,44 +37,34 @@ export default function CustomerAddressesPage() {
   async function loadAddress() {
     setLoading(true);
     try {
-      const { createBrowserClient } = await import('@/lib/supabase/client');
-      const supabase = createBrowserClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const [profileRes, addrRes] = await Promise.all([
+        cachedApiGet<{ profile: any }>('/api/customer/profile'),
+        cachedApiGet<{ addresses: any[] }>('/api/customer/addresses'),
+      ]);
 
-      if (!user) {
+      if (!profileRes.ok) {
         router.push('/auth?role=buyer&mode=signin');
         return;
       }
 
-      const { data: prof } = await supabase
-        .from('profiles')
-        .select('id, full_name, email, phone')
-        .eq('user_id', user.id)
-        .single();
-
+      const prof = profileRes.data?.profile;
       if (prof) {
         setProfile(prof);
-        const { data: addr } = await supabase
-          .from('customer_addresses')
-          .select('*')
-          .eq('customer_id', prof.id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+      }
 
-        if (addr) {
-          setAddress(addr);
-          setAddressLine1(addr.address_line_1 || '');
-          setAddressLine2(addr.address_line_2 || '');
-          setCity(addr.city || '');
-          setStateName(addr.state || '');
-          setPostalCode(addr.postal_code || '');
-          setCountry(addr.country || 'India');
-        } else {
-          setIsEditing(true);
-        }
+      const addresses = addrRes.ok ? addrRes.data?.addresses || [] : [];
+      const addr = addresses[0];
+
+      if (addr) {
+        setAddress(addr);
+        setAddressLine1(addr.address_line_1 || '');
+        setAddressLine2(addr.address_line_2 || '');
+        setCity(addr.city || '');
+        setStateName(addr.state || '');
+        setPostalCode(addr.postal_code || '');
+        setCountry(addr.country || 'India');
+      } else {
+        setIsEditing(true);
       }
     } catch (err) {
       console.error('Failed to load address:', err);

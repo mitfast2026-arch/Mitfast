@@ -70,7 +70,7 @@ export default function PortalShell({
 }: PortalShellProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [localSearch, setLocalSearch] = useState('');

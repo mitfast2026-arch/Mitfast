@@ -8,6 +8,8 @@ import {
 } from '@/lib/server/products/product-service';
 import { getServerSession, requireAdmin, unauthorizedResponse, forbiddenResponse } from '@/lib/server/auth/get-session';
 import { deferRevalidateProduct } from '@/lib/server/products/revalidate-product-paths';
+import { withIdempotency } from '@/lib/server/db/idempotency';
+import { assertRateLimit, rateLimitedResponse } from '@/lib/server/db/rate-limit';
 
 function normalizeProductPayload(body: any) {
   return {
@@ -38,6 +40,25 @@ function normalizeProductPayload(body: any) {
     profitValue: body.profitValue !== undefined ? Number(body.profitValue) : undefined,
     ribbonLabel: body.ribbonLabel,
   };
+}
+
+function statusForError(code?: string): number {
+  switch (code) {
+    case 'RATE_LIMITED':
+      return 429;
+    case 'IDEMPOTENCY_IN_PROGRESS':
+    case 'CONCURRENT_UPDATE':
+      return 409;
+    case 'UNAUTHORIZED_SUPPLIER':
+    case 'FORBIDDEN':
+      return 403;
+    case 'NOT_FOUND':
+      return 404;
+    case 'DATABASE_MISCONFIGURED':
+      return 503;
+    default:
+      return 400;
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -131,8 +152,27 @@ export async function POST(request: NextRequest) {
       }
 
       const supplierId = session.supplier.id;
-      const result = await createProductBySupplier(supplierId, productPayload);
-      if (!result.success) return NextResponse.json(result, { status: 400 });
+      const limited = await assertRateLimit({
+        scope: 'supplier_product_create',
+        key: `supplier:${supplierId}`,
+        windowSeconds: 60,
+        maxHits: 30,
+      });
+      if (!limited.ok) {
+        return NextResponse.json(rateLimitedResponse('Too many product creates'), {
+          status: 429,
+          headers: { 'Retry-After': '60' },
+        });
+      }
+
+      const idempotencyKey = request.headers.get('Idempotency-Key');
+      const result = await withIdempotency('create_supplier_product', idempotencyKey, () =>
+        createProductBySupplier(supplierId, productPayload)
+      );
+
+      if (!result.success) {
+        return NextResponse.json(result, { status: statusForError(result.error?.code) });
+      }
       deferRevalidateProduct(result.data.productId);
       return NextResponse.json(result, { status: 201 });
     }

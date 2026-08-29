@@ -72,6 +72,52 @@ k6 run -e TEST_BASE_URL=http://localhost:3000 -e MAX_VUS=25 scripts/k6-supplier-
 
 **Note:** Suppliers create + submit update-requests; hard delete is admin-only (unpublished). The script mirrors that model.
 
+### Phase 3c — Supplier HTTP write path (localhost / staging)
+
+Exercises the **Next.js API** (idempotency, rate limits, atomic RPCs) — not raw PostgREST.
+
+Script: `scripts/supplier-http-load-test.ts`
+
+```powershell
+# Dev server must be running (npm run dev)
+$env:LOAD_TEST_CONFIRM=1
+$env:TEST_BASE_URL='http://localhost:3000'
+$env:MAX_CONCURRENCY=15
+$env:TARGET_OPS=60
+$env:SUPPLIER_COUNT=3
+npm run test:supplier-http-load
+```
+
+| Scenario | Expectation |
+|----------|-------------|
+| Concurrent `POST /api/products` | Error rate < 5% |
+| Duplicate create with same `Idempotency-Key` | Exactly 1 product row |
+| Concurrent `POST .../update-request` | Success or `CONCURRENT_UPDATE` (409), never 500 |
+| Concurrent image reorder PATCH | Serialized via advisory lock; all succeed |
+
+**Local result (2026-08-29):** create 60/60 ok (p95≈1.7s); idempotent create → 1 product; update-request 20/20 ok (p95≈1.7s).
+
+### Phase 3d — Concurrent image uploads
+
+Script: `scripts/supplier-image-load-test.ts` (Sharp + Tigris through `POST /api/products/{id}/images`).
+
+```powershell
+$env:LOAD_TEST_CONFIRM=1
+$env:TEST_BASE_URL='http://localhost:3000'
+$env:MAX_CONCURRENCY=10
+$env:SUPPLIER_COUNT=3
+$env:IMAGES_PER_PRODUCT=4
+npm run test:supplier-image-load
+```
+
+| Guard | Value |
+|-------|--------|
+| Abort | upload error rate > 15% |
+| Orphans | `pending://reserve` placeholders must be 0 after run |
+| Pass | error rate < 5%, p95 single-image upload < 4s |
+
+**Local result (2026-08-29):** 12/12 uploads ok (err=0%), p95≈3.9s, 0 pending placeholders. Primary-flag race fixed (finalize without primary, then claim); product WebP encode `effort=2` for spike latency.
+
 ### Phase 4 — Concurrent writes
 
 | Scenario | VUs | Expected |

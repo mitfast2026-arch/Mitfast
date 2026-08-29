@@ -17,6 +17,29 @@ function roleAllowsPath(role: string | undefined, path: string): boolean {
   return true;
 }
 
+/**
+ * Onboarding intent only — never used as final authorization.
+ * Final access uses profiles.role + suppliers.status on the server.
+ */
+function onboardingWantsSupplier(next: string | null | undefined): boolean {
+  if (!next || !isSafeInternalPath(next)) return false;
+  if (next.includes('role=supplier')) return true;
+  if (next.startsWith('/supplier')) return true;
+  if (next.startsWith('/auth/supplier')) return true;
+  try {
+    const parsed = new URL(next, 'http://local.invalid');
+    if (
+      parsed.pathname.startsWith('/auth/complete-profile') &&
+      parsed.searchParams.get('role') === 'supplier'
+    ) {
+      return true;
+    }
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get('code');
@@ -61,12 +84,11 @@ export async function GET(request: NextRequest) {
 
   // Ensure profile row exists for OAuth users (trigger should create; upsert as safety)
   if (!profile) {
+    // user_metadata.role is onboarding hint only; next path also carries supplier intent
     const intended =
-      typeof next === 'string' && next.includes('role=supplier')
+      onboardingWantsSupplier(next) || user.user_metadata?.role === 'supplier'
         ? 'supplier'
-        : user.user_metadata?.role === 'supplier'
-          ? 'supplier'
-          : 'customer';
+        : 'customer';
     await admin.from('profiles').upsert(
       {
         user_id: user.id,
@@ -88,12 +110,14 @@ export async function GET(request: NextRequest) {
   const role = profile?.role as string | undefined;
 
   if (!isProfileIdentityComplete(profile)) {
+    // Prefer existing profiles.role; otherwise onboarding intent from next (not authz)
     const roleQs =
-      role === 'supplier' || (typeof next === 'string' && next.includes('role=supplier'))
-        ? 'supplier'
-        : 'buyer';
+      role === 'supplier' || onboardingWantsSupplier(next) ? 'supplier' : 'buyer';
     const redirectQs =
-      next && isSafeInternalPath(next) && !next.startsWith('/auth')
+      next &&
+      isSafeInternalPath(next) &&
+      !next.startsWith('/auth') &&
+      !next.startsWith('/auth/')
         ? `&redirect=${encodeURIComponent(next)}`
         : '';
     return NextResponse.redirect(`${origin}/auth/complete-profile?role=${roleQs}${redirectQs}`);

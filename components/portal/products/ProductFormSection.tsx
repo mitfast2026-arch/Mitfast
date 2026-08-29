@@ -48,6 +48,7 @@ export function FormField({
   required,
   optional,
   error,
+  fieldKey,
   children,
   className = '',
 }: {
@@ -55,11 +56,13 @@ export function FormField({
   required?: boolean;
   optional?: boolean;
   error?: string;
+  /** Maps to data-field for validation scroll/focus */
+  fieldKey?: string;
   children: React.ReactNode;
   className?: string;
 }) {
   return (
-    <div className={className}>
+    <div className={className} data-field={fieldKey}>
       <label className="saas-label flex items-center gap-1">
         {label}
         {required && <span className="text-portal-danger">*</span>}

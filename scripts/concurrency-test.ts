@@ -9,8 +9,9 @@
 
 import { config } from 'dotenv';
 import { resolve } from 'path';
-config({ path: resolve(process.cwd(), '.env.local') });
-config();
+config({ path: resolve(process.cwd(), '.env') });
+config({ path: resolve(process.cwd(), '.env.local'), override: true });
+config({ path: resolve(process.cwd(), '.env.development.local'), override: true });
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -63,7 +64,8 @@ async function testCartIncrementRace() {
         p_cart_id: cart!.id,
         p_product_id: productId,
         p_delta: d,
-      })
+        p_moq: 1,
+      } as any)
     )
   );
 

@@ -11,19 +11,22 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 
-const MAX_VUS = Number(__ENV.MAX_VUS || 40);
+const MAX_VUS = Math.min(25, Number(__ENV.MAX_VUS || 25));
 const BASE = __ENV.TEST_BASE_URL || 'http://localhost:3000';
 
-if (/mitfast-b2b.*vercel\.app/i.test(BASE) && __ENV.ALLOW_PROD_LOAD !== '1') {
+if (
+  (/mitfast-b2b.*vercel\.app/i.test(BASE) || (/vercel\.app/i.test(BASE) && !/staging/i.test(BASE))) &&
+  __ENV.ALLOW_PROD_LOAD !== '1'
+) {
   throw new Error('Refusing production Vercel URL. Set ALLOW_PROD_LOAD=1 only with explicit approval.');
 }
 
 export const options = {
   stages: [
-    { duration: '30s', target: Math.min(10, MAX_VUS) },
-    { duration: '1m', target: Math.min(25, MAX_VUS) },
-    { duration: '1m', target: Math.min(MAX_VUS, 40) },
-    { duration: '30s', target: 0 },
+    { duration: '20s', target: Math.min(8, MAX_VUS) },
+    { duration: '40s', target: Math.min(15, MAX_VUS) },
+    { duration: '40s', target: MAX_VUS },
+    { duration: '20s', target: 0 },
   ],
   thresholds: {
     http_req_failed: ['rate<0.05'],

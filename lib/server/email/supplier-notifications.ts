@@ -38,6 +38,7 @@ async function notifySupplier(
   `;
 
   await sendTransactionalEmail({ to: supplier.email, subject, html });
+  // Delivery failures are logged inside sendTransactionalEmail; notifications are best-effort.
 }
 
 export async function notifySuppliersForRfq(rfqId: string): Promise<void> {

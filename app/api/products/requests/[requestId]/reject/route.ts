@@ -1,10 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 /** @deprecated Prefer POST /api/products/[id]/reject — accepts product or request id. */
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { requestId: string } }
-) {
+export async function POST(request: NextRequest, props: { params: Promise<{ requestId: string }> }) {
+  const params = await props.params;
   try {
     const origin = request.nextUrl.origin;
     const cookie = request.headers.get('cookie') || '';

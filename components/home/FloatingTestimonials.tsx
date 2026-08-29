@@ -270,7 +270,7 @@ export default function FloatingTestimonials({
       aria-label="Buyer testimonials"
     >
       {/* Full-width — only 40–60px side padding */}
-      <div className="w-full px-10 sm:px-12 lg:px-[60px]">
+      <div className="w-full px-5 sm:px-10 lg:px-[60px]">
         <header className="mx-auto max-w-3xl text-center">
           <h2 className="text-3xl font-semibold tracking-tight text-[#111315] sm:text-4xl lg:text-[2.75rem] lg:leading-[1.12]">
             {heading[0]}

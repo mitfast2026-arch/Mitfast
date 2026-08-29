@@ -41,8 +41,10 @@ next-env.d.ts
 supabase/.temp/
 
 # Local QA / agent artifacts
-scripts/tmp-qa-sessions.json
-scripts/tmp-qa-*.json
+scripts/tmp-qa-*
+perf-baseline-raw.json
+perf-baseline/
+perf-after/
 reference/
 references/
 IMAGE/
@@ -57,6 +59,4 @@ cart_*_fixed.png
 .gemini/
 .cursor/
 
-perf-baseline/
-perf-after/
 

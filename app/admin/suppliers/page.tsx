@@ -641,10 +641,124 @@ function AdminSuppliersPageContent() {
         </div>
       </AdminToolbar>
 
-      {/* List panel — guaranteed height so rows never crush; only rows scroll */}
-      <div className="saas-panel p-0 min-w-0 flex flex-col overflow-hidden bg-portal-panel h-[min(42rem,calc(100dvh-13rem))] min-h-[32rem]">
-        <div className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden">
-          <table className="saas-table w-full table-fixed min-w-0 [&_th]:!px-5 [&_td]:!px-5 [&_th]:!py-3.5 [&_td]:!py-4">
+      {/* List panel — mobile cards (<lg); desktop table (lg+) unchanged */}
+      <div className="saas-panel p-0 min-w-0 flex flex-col overflow-hidden bg-portal-panel h-[min(42rem,calc(100dvh-13rem))] min-h-[28rem] lg:min-h-[32rem]">
+        {/* Mobile cards — actions always visible */}
+        <div className="lg:hidden flex-1 min-h-0 min-w-0 overflow-y-auto divide-y divide-portal-border">
+          {loading ? (
+            Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="animate-pulse p-4 space-y-3">
+                <div className="h-4 bg-portal-inset rounded w-2/3" />
+                <div className="h-3 bg-portal-inset rounded w-1/2" />
+                <div className="h-8 bg-portal-inset rounded w-full" />
+              </div>
+            ))
+          ) : suppliers.length === 0 ? (
+            <div className="py-16 px-4 text-center">
+              <div className="flex flex-col items-center gap-3 text-portal-muted">
+                <Building2 className="w-8 h-8 opacity-40" />
+                <div>
+                  <p className="text-sm font-medium text-portal-text">No suppliers found</p>
+                  <p className="text-xs mt-0.5">
+                    {debouncedSearch || statusFilter !== 'all' || countryFilter
+                      ? 'Try adjusting your search or filters.'
+                      : 'Add your first manufacturing partner to get started.'}
+                  </p>
+                </div>
+                {!debouncedSearch && statusFilter === 'all' && !countryFilter && (
+                  <button
+                    onClick={() => setCreateModalOpen(true)}
+                    className="saas-btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add supplier
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            suppliers.map((s) => (
+              <div key={s.id} className="p-4 space-y-3">
+                <div className="flex items-start gap-3 min-w-0">
+                  <div className="mt-0.5 h-10 w-10 rounded-xl bg-portal-inset border border-portal-border text-portal-muted flex items-center justify-center shrink-0">
+                    <Building2 className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-semibold text-sm text-portal-text truncate" title={s.company_name}>
+                          {s.company_name}
+                        </div>
+                        <div className="text-xs text-portal-muted truncate">{s.contact_person}</div>
+                      </div>
+                      <StatusBadge status={s.status} />
+                    </div>
+                    <div className="flex items-center gap-1.5 text-xs text-portal-muted min-w-0">
+                      <MapPin className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">{s.country}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <MetricStat icon={Package} value={s.metrics.productCount} label="Products" />
+                      <MetricStat icon={Eye} value={s.metrics.totalViews} label="Views" />
+                      <MetricStat icon={ShoppingCart} value={s.metrics.totalOrders} label="Orders" />
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    href={`/admin/suppliers/${s.id}`}
+                    className="saas-btn-secondary text-xs py-1.5 px-2.5 inline-flex items-center gap-1.5"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    View
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => handleViewStats(s)}
+                    className="saas-btn-secondary text-xs py-1.5 px-2.5 inline-flex items-center gap-1.5"
+                  >
+                    <TrendingUp className="w-3.5 h-3.5 text-portal-accent" />
+                    Stats
+                  </button>
+                  {s.status === 'archived' ? (
+                    <button
+                      type="button"
+                      onClick={() => openRestoreModal(s)}
+                      disabled={isPending(mutationKey(s.id, 'restore'))}
+                      className="saas-btn-secondary text-xs py-1.5 px-2.5 inline-flex items-center gap-1.5 text-portal-success"
+                    >
+                      {isPending(mutationKey(s.id, 'restore')) ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      )}
+                      Restore
+                    </button>
+                  ) : s.status !== 'rejected' ? (
+                    <button
+                      type="button"
+                      onClick={() => setArchiveTarget(s)}
+                      disabled={isPending(mutationKey(s.id, 'archive'))}
+                      className="saas-btn-secondary text-xs py-1.5 px-2.5 inline-flex items-center gap-1.5 text-portal-danger"
+                    >
+                      {isPending(mutationKey(s.id, 'archive')) ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Archive className="w-3.5 h-3.5" />
+                      )}
+                      Archive
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Desktop table */}
+        <div className="hidden lg:flex flex-1 min-h-0 min-w-0 flex-col">
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-auto">
+          <table className="saas-table w-full table-fixed min-w-[56rem] [&_th]:!px-5 [&_td]:!px-5 [&_th]:!py-3.5 [&_td]:!py-4">
             <colgroup>
               <col className="w-[36%]" />
               <col className="w-[16%]" />
@@ -806,6 +920,7 @@ function AdminSuppliersPageContent() {
               )}
             </tbody>
           </table>
+          </div>
         </div>
 
         {!loading && total > limit && (

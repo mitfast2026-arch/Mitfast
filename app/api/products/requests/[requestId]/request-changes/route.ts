@@ -4,10 +4,8 @@ import { requireAdmin } from '@/lib/server/auth/get-session';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { deferRevalidateProduct } from '@/lib/server/products/revalidate-product-paths';
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { requestId: string } }
-) {
+export async function POST(request: NextRequest, props: { params: Promise<{ requestId: string }> }) {
+  const params = await props.params;
   try {
     const auth = await requireAdmin();
     if (!auth.ok) return auth.response;

@@ -2,10 +2,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createRfqFromEnquiry } from '@/lib/server/rfq/rfq-service';
 import { requireAdmin } from '@/lib/server/auth/get-session';
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const auth = await requireAdmin();
     if (!auth.ok) return auth.response;

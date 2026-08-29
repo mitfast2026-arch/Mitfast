@@ -3,10 +3,8 @@ import { convertRfqToOrder } from '@/lib/server/orders/order-service';
 import { getServerSession, unauthorizedResponse, forbiddenResponse } from '@/lib/server/auth/get-session';
 import { createAdminClient } from '@/lib/supabase/admin';
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await getServerSession();
     if (!session) return unauthorizedResponse();

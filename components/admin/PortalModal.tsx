@@ -87,13 +87,13 @@ export default function PortalModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 max-md:p-0 bg-black/70"
       onClick={onClose}
       role="presentation"
     >
       <div
         ref={panelRef}
-        className={`saas-panel w-full ${maxWidthClass[maxWidth]} flex flex-col max-h-[90vh] shadow-lg outline-none`}
+        className={`saas-panel w-full ${maxWidthClass[maxWidth]} flex flex-col max-h-[90vh] max-md:h-dvh max-md:max-h-dvh max-md:rounded-none shadow-lg outline-none`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -112,7 +112,7 @@ export default function PortalModal({
         ) : null}
         <div className="px-5 py-4 overflow-y-auto flex-1">{children}</div>
         {footer ? (
-          <div className="px-5 py-4 border-t border-portal-border shrink-0 flex justify-end gap-2">
+          <div className="px-5 py-4 border-t border-portal-border shrink-0 flex flex-wrap justify-end gap-2">
             {footer}
           </div>
         ) : null}

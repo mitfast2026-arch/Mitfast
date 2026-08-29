@@ -32,13 +32,26 @@ export type AuthSearchParams = {
 };
 
 type RegisterStep = 'email' | 'password' | 'otp';
-type AuthMode = 'signin' | 'register';
+type AuthMode = 'signin' | 'register' | 'forgot';
 
 const REGISTER_STEPS: { id: RegisterStep; label: string }[] = [
   { id: 'email', label: 'Account' },
   { id: 'password', label: 'Password' },
   { id: 'otp', label: 'Verify' },
 ];
+
+const OTP_RESEND_COOLDOWN_SEC = 60;
+const OTP_MAX_VERIFY_ATTEMPTS = 5;
+const OTP_VERIFY_LOCKOUT_SEC = 60;
+
+function formatWait(seconds: number): string {
+  const s = Math.max(0, Math.ceil(seconds));
+  const mins = Math.floor(s / 60);
+  const secs = s % 60;
+  if (mins <= 0) return `${secs}s`;
+  if (secs === 0) return `${mins} min`;
+  return `${mins} min ${secs}s`;
+}
 
 function redirectHard(path: string) {
   window.location.assign(path);
@@ -52,7 +65,7 @@ function buildAuthHref(
 ) {
   const params = new URLSearchParams();
   params.set('role', role);
-  params.set('mode', mode);
+  params.set('mode', mode === 'forgot' ? 'forgot' : mode);
   if (redirectPath) params.set('redirect', redirectPath);
   if (extras?.intent) params.set('intent', extras.intent);
   if (extras?.guestEnquiry) params.set('guestEnquiry', extras.guestEnquiry);
@@ -269,7 +282,11 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
 
   const [activeRole, setActiveRole] = useState<'buyer' | 'supplier'>(initialRole);
   const [authMode, setAuthMode] = useState<AuthMode>(
-    searchParams.mode === 'register' ? 'register' : 'signin'
+    searchParams.mode === 'register'
+      ? 'register'
+      : searchParams.mode === 'forgot'
+        ? 'forgot'
+        : 'signin'
   );
   const [registerStep, setRegisterStep] = useState<RegisterStep>('email');
   const [email, setEmail] = useState('');
@@ -282,11 +299,19 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
   const [successMsg, setSuccessMsg] = useState('');
   const [googleEnabled, setGoogleEnabled] = useState(true);
   const [cooldown, setCooldown] = useState(0);
+  const [otpFailCount, setOtpFailCount] = useState(0);
+  const submitLockRef = useRef(false);
 
   useEffect(() => {
     const r = searchParams.role;
     if (r === 'buyer' || r === 'supplier') setActiveRole(r);
-    setAuthMode(searchParams.mode === 'register' ? 'register' : 'signin');
+    setAuthMode(
+      searchParams.mode === 'register'
+        ? 'register'
+        : searchParams.mode === 'forgot'
+          ? 'forgot'
+          : 'signin'
+    );
     const err = searchParams.error;
     if (err && err !== 'missing_code') {
       setErrorMsg(decodeURIComponent(err));
@@ -315,6 +340,7 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
     setPassword('');
     setConfirmPassword('');
     setOtp('');
+    setOtpFailCount(0);
     setErrorMsg('');
     setSuccessMsg('');
   }
@@ -344,17 +370,29 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
   }
 
   async function handleGoogle() {
+    if (submitLockRef.current || loading) return;
     setErrorMsg('');
     setLoading(true);
+    submitLockRef.current = true;
     try {
       const supabase = createBrowserClient();
       const origin = window.location.origin;
+      // Supplier Google onboarding intent via next= only — never authorize from metadata alone
       const defaultNext =
-        activeRole === 'supplier' ? '/supplier/dashboard' : '/customer/dashboard';
-      const nextTarget =
-        redirectPath && redirectPath.startsWith('/') && !redirectPath.startsWith('//')
-          ? redirectPath
-          : defaultNext;
+        activeRole === 'supplier'
+          ? '/auth/complete-profile?role=supplier'
+          : '/customer/dashboard';
+      let nextTarget = defaultNext;
+      if (redirectPath && redirectPath.startsWith('/') && !redirectPath.startsWith('//')) {
+        if (activeRole === 'supplier') {
+          // Keep supplier onboarding intent even when a deep-link redirect is present
+          nextTarget = redirectPath.includes('role=supplier') || redirectPath.startsWith('/supplier')
+            ? redirectPath
+            : `/auth/complete-profile?role=supplier&redirect=${encodeURIComponent(redirectPath)}`;
+        } else {
+          nextTarget = redirectPath;
+        }
+      }
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -366,6 +404,7 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'Google sign-in failed');
       setLoading(false);
+      submitLockRef.current = false;
     }
   }
 
@@ -378,30 +417,40 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
         role: activeRole === 'supplier' ? 'supplier' : 'customer',
       }),
     });
-    const json = await res.json();
+    const json = await res.json().catch(() => ({}));
     if (!res.ok || !json.success) {
-      throw new Error(json.error?.message || 'Could not send code');
+      const retryAfter = Number(json?.error?.retryAfterSeconds);
+      if (res.status === 429 && Number.isFinite(retryAfter) && retryAfter > 0) {
+        setCooldown(retryAfter);
+        setRegisterStep('otp');
+      }
+      throw new Error(json?.error?.message || 'Could not send verification code');
     }
     setRegisterStep('otp');
-    setCooldown(60);
+    setCooldown(OTP_RESEND_COOLDOWN_SEC);
+    setOtpFailCount(0);
     setSuccessMsg('Verification code sent. Check your inbox (and spam).');
   }
 
   async function sendOtp() {
+    if (submitLockRef.current || loading || cooldown > 0) return;
     setErrorMsg('');
     setSuccessMsg('');
     setLoading(true);
+    submitLockRef.current = true;
     try {
       await deliverOtp();
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'Could not send code');
     } finally {
       setLoading(false);
+      submitLockRef.current = false;
     }
   }
 
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
+    if (submitLockRef.current || loading) return;
     setErrorMsg('');
     setSuccessMsg('');
 
@@ -415,6 +464,7 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
     }
 
     setLoading(true);
+    submitLockRef.current = true;
     toast.loading('Signing in...', { id: 'auth-toast' });
     try {
       const supabase = createBrowserClient();
@@ -431,9 +481,16 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
         if (msg.includes('email not confirmed') || msg.includes('not confirmed')) {
           setAuthMode('register');
           setRegisterStep('otp');
-          await deliverOtp();
-          toast.info('Verify your email to continue signing in.', { id: 'auth-toast' });
-          setSuccessMsg('Verify your email to continue signing in.');
+          try {
+            await deliverOtp();
+            toast.info('Verify your email to continue signing in.', { id: 'auth-toast' });
+            setSuccessMsg('Verify your email to continue signing in.');
+          } catch (otpErr: unknown) {
+            const otpMsg =
+              otpErr instanceof Error ? otpErr.message : 'Could not send verification code';
+            setErrorMsg(otpMsg);
+            toast.error(otpMsg, { id: 'auth-toast' });
+          }
           return;
         }
         throw error;
@@ -444,8 +501,15 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
       if (!data.session) {
         setAuthMode('register');
         setRegisterStep('otp');
-        await deliverOtp();
-        toast.info('Enter verification code sent to your email.', { id: 'auth-toast' });
+        try {
+          await deliverOtp();
+          toast.info('Enter verification code sent to your email.', { id: 'auth-toast' });
+        } catch (otpErr: unknown) {
+          const otpMsg =
+            otpErr instanceof Error ? otpErr.message : 'Could not send verification code';
+          setErrorMsg(otpMsg);
+          toast.error(otpMsg, { id: 'auth-toast' });
+        }
         return;
       }
 
@@ -469,6 +533,7 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
       toast.error(msg, { id: 'auth-toast' });
     } finally {
       setLoading(false);
+      submitLockRef.current = false;
     }
   }
 
@@ -490,6 +555,7 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
 
   async function handleRegisterPassword(e: React.FormEvent) {
     e.preventDefault();
+    if (submitLockRef.current || loading) return;
     setErrorMsg('');
     setSuccessMsg('');
 
@@ -503,6 +569,7 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
     }
 
     setLoading(true);
+    submitLockRef.current = true;
     toast.loading('Creating account...', { id: 'auth-toast' });
     try {
       const supabase = createBrowserClient();
@@ -521,6 +588,12 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
         throw error;
       }
 
+      // Supabase may return a user without identities when email already exists (no error)
+      const identities = (data.user as { identities?: unknown[] } | null)?.identities;
+      if (data.user && Array.isArray(identities) && identities.length === 0) {
+        throw new Error('This email is already registered. Sign in instead.');
+      }
+
       if (!data.user) throw new Error('Registration failed. Please try again.');
 
       await deliverOtp();
@@ -529,13 +602,18 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
       const msg = err instanceof Error ? err.message : 'Could not create account';
       setErrorMsg(msg);
       toast.error(msg, { id: 'auth-toast' });
+      if (msg.toLowerCase().includes('already registered')) {
+        // Stay on password step; user can switch to Sign in via footer / mode tabs
+      }
     } finally {
       setLoading(false);
+      submitLockRef.current = false;
     }
   }
 
   async function verifyOtp(e: React.FormEvent) {
     e.preventDefault();
+    if (submitLockRef.current || loading) return;
     setErrorMsg('');
     setSuccessMsg('');
 
@@ -544,7 +622,13 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
       return;
     }
 
+    if (otpFailCount >= OTP_MAX_VERIFY_ATTEMPTS && cooldown > 0) {
+      setErrorMsg(`Too many incorrect codes. Wait ${formatWait(cooldown)} before trying again.`);
+      return;
+    }
+
     setLoading(true);
+    submitLockRef.current = true;
     toast.loading('Verifying code...', { id: 'auth-toast' });
     try {
       const supabase = createBrowserClient();
@@ -566,7 +650,8 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
       if (result.error) throw result.error;
       if (!result.data.user) throw new Error('Verification failed');
 
-      toast.success('Verified! Redirecting to dashboard...', { id: 'auth-toast' });
+      setOtpFailCount(0);
+      toast.success('Verified! Redirecting…', { id: 'auth-toast' });
 
       try {
         await mergeGuestStateOnce();
@@ -581,25 +666,78 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
       });
       redirectHard(target);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Invalid or expired code';
-      setErrorMsg(msg);
-      toast.error(msg, { id: 'auth-toast' });
+      const nextFails = otpFailCount + 1;
+      setOtpFailCount(nextFails);
+      setOtp('');
+      if (nextFails >= OTP_MAX_VERIFY_ATTEMPTS) {
+        setCooldown(Math.max(cooldown, OTP_VERIFY_LOCKOUT_SEC));
+        const msg = `Too many incorrect codes. Wait ${formatWait(OTP_VERIFY_LOCKOUT_SEC)} before trying again.`;
+        setErrorMsg(msg);
+        toast.error(msg, { id: 'auth-toast' });
+      } else {
+        const remaining = OTP_MAX_VERIFY_ATTEMPTS - nextFails;
+        const msg =
+          err instanceof Error
+            ? `${err.message} (${remaining} attempt${remaining === 1 ? '' : 's'} left)`
+            : `Invalid or expired code (${remaining} attempts left)`;
+        setErrorMsg(msg);
+        toast.error(msg, { id: 'auth-toast' });
+      }
       setLoading(false);
+      submitLockRef.current = false;
+    }
+  }
+
+  async function handleForgotPassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (submitLockRef.current || loading) return;
+    setErrorMsg('');
+    setSuccessMsg('');
+    const trimmed = email.trim().toLowerCase();
+    if (!trimmed || !trimmed.includes('@')) {
+      setErrorMsg('Enter a valid email address');
+      return;
+    }
+    setLoading(true);
+    submitLockRef.current = true;
+    try {
+      const supabase = createBrowserClient();
+      const origin = window.location.origin;
+      // Generic response either way — avoid account enumeration
+      const { error } = await supabase.auth.resetPasswordForEmail(trimmed, {
+        redirectTo: `${origin}/auth/callback?next=${encodeURIComponent('/auth/reset-password')}`,
+      });
+      if (error) {
+        console.error('[forgot-password]', error.message);
+      }
+      setSuccessMsg(
+        'If an account exists for that email, a password reset link has been sent. Check inbox and spam.'
+      );
+      setCooldown(OTP_RESEND_COOLDOWN_SEC);
+    } catch {
+      setSuccessMsg(
+        'If an account exists for that email, a password reset link has been sent. Check inbox and spam.'
+      );
+    } finally {
+      setLoading(false);
+      submitLockRef.current = false;
     }
   }
 
   async function handleAdminPassword(e: React.FormEvent) {
     e.preventDefault();
+    if (submitLockRef.current || loading) return;
     setErrorMsg('');
     setSuccessMsg('');
     setLoading(true);
+    submitLockRef.current = true;
     try {
       const supabase = createBrowserClient();
       const { data, error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
       });
-      if (error) throw error;
+      if (error) throw new Error('Invalid email or password');
       if (!data.user) throw new Error('Sign in failed');
       const target = await resolvePostAuthPath(supabase, data.user.id, {
         isAdminAuth: true,
@@ -609,32 +747,37 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
       redirectHard(target);
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'Invalid email or password');
-    } finally {
       setLoading(false);
+      submitLockRef.current = false;
     }
   }
 
   const heading = isAdminAuth
     ? { title: 'Staff sign in', subtitle: 'Admin dashboard access' }
-    : authMode === 'signin'
+    : authMode === 'forgot'
       ? {
-          title: 'Sign in',
-          subtitle:
-            activeRole === 'buyer'
-              ? 'Sign in to your buyer account'
-              : 'Sign in to your supplier account',
+          title: 'Reset password',
+          subtitle: 'We will email a secure link to set a new password',
         }
-      : registerStep === 'otp'
-        ? { title: 'Verify your email', subtitle: `Enter the code sent to ${email}` }
-        : registerStep === 'password'
-          ? { title: 'Create a password', subtitle: 'Use at least 6 characters for your account' }
-          : {
-              title: 'Create account',
-              subtitle:
-                activeRole === 'buyer'
-                  ? 'Register as a buyer on MITFAST B2B'
-                  : 'Register as a supplier — admin approval required',
-            };
+      : authMode === 'signin'
+        ? {
+            title: 'Sign in',
+            subtitle:
+              activeRole === 'buyer'
+                ? 'Sign in to your buyer account'
+                : 'Sign in to your supplier account',
+          }
+        : registerStep === 'otp'
+          ? { title: 'Verify your email', subtitle: `Enter the code sent to ${email}` }
+          : registerStep === 'password'
+            ? { title: 'Create a password', subtitle: 'Use at least 6 characters for your account' }
+            : {
+                title: 'Create account',
+                subtitle:
+                  activeRole === 'buyer'
+                    ? 'Register as a buyer on MITFAST B2B'
+                    : 'Register as a supplier — admin approval required',
+              };
 
   return (
     <div className="auth-page saas-canvas-bg">
@@ -643,7 +786,7 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
           MITFAST B2B
         </Link>
 
-        {!isAdminAuth && registerStep === 'email' && (
+        {!isAdminAuth && (authMode === 'forgot' || registerStep === 'email') && (
           <>
             <div className="auth-mode-tabs" role="tablist" aria-label="Authentication mode">
               <button
@@ -764,6 +907,44 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
               {!loading && <ArrowRight className="w-4 h-4" />}
             </button>
           </form>
+        ) : authMode === 'forgot' ? (
+          <form onSubmit={handleForgotPassword} className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="saas-label" htmlFor="forgot-email">
+                Work email
+              </label>
+              <div className="auth-field-icon">
+                <Mail />
+                <input
+                  id="forgot-email"
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="name@company.com"
+                  className="saas-input"
+                  autoComplete="email"
+                />
+              </div>
+            </div>
+            <button
+              type="submit"
+              disabled={loading || cooldown > 0 || !email.trim()}
+              className="saas-btn-primary w-full py-2.5"
+            >
+              {loading
+                ? 'Sending…'
+                : cooldown > 0
+                  ? `Resend available in ${formatWait(cooldown)}`
+                  : 'Send reset link'}
+              {!loading && cooldown <= 0 && <ArrowRight className="w-4 h-4" />}
+            </button>
+            <div className="auth-back-row">
+              <button type="button" onClick={() => switchAuthMode('signin')}>
+                ← Back to sign in
+              </button>
+            </div>
+          </form>
         ) : authMode === 'signin' ? (
           <div className="space-y-4">
             {googleEnabled && (
@@ -775,7 +956,9 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
                   className="auth-google-btn"
                 >
                   <GoogleGlyph />
-                  Continue with Google
+                  {activeRole === 'supplier'
+                    ? 'Continue with Google as supplier'
+                    : 'Continue with Google'}
                 </button>
                 <div className="auth-divider">
                   <span>or</span>
@@ -803,9 +986,18 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
                 </div>
               </div>
               <div className="space-y-1.5">
-                <label className="saas-label" htmlFor="signin-password">
-                  Password
-                </label>
+                <div className="flex items-center justify-between gap-2">
+                  <label className="saas-label" htmlFor="signin-password">
+                    Password
+                  </label>
+                  <button
+                    type="button"
+                    className="text-[11px] text-[#6B7280] hover:text-[#111315]"
+                    onClick={() => switchAuthMode('forgot')}
+                  >
+                    Forgot password?
+                  </button>
+                </div>
                 <div className="auth-field-icon">
                   <Lock />
                   <input
@@ -838,6 +1030,12 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
                 {!loading && <ArrowRight className="w-4 h-4" />}
               </button>
             </form>
+            {activeRole === 'supplier' && (
+              <p className="auth-hint">
+                New suppliers: Google or email signup still requires company application and admin
+                approval before portal access.
+              </p>
+            )}
           </div>
         ) : registerStep === 'email' ? (
           <div className="space-y-4">
@@ -1033,6 +1231,17 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
             </button>
           </p>
         )}
+
+        {!isAdminAuth &&
+          authMode === 'register' &&
+          registerStep === 'password' &&
+          errorMsg.toLowerCase().includes('already registered') && (
+            <p className="auth-footer-link">
+              <button type="button" onClick={() => switchAuthMode('signin')}>
+                Sign in with this email
+              </button>
+            </p>
+          )}
 
         {showGuestContinue && activeRole === 'buyer' && authMode === 'signin' && (
           <div className="auth-guest-block">

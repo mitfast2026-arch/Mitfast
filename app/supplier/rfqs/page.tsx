@@ -1,22 +1,29 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { 
-  Search, 
-  RefreshCw, 
+import {
+  Search,
+  RefreshCw,
   Calendar,
   Check,
   MessageSquare,
-  AlertCircle
+  AlertCircle,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { apiGet, apiPost } from '@/lib/client/api-client';
 import { useMutation, mutationKey } from '@/lib/client/use-mutation';
+import { SUPPLIER_PORTAL_LIST_LIMIT } from '@/lib/client/portal-nav-prefetch';
 
 export default function SupplierRfqsPage() {
   const [rfqs, setRfqs] = useState<any[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [selectedRfqId, setSelectedRfqId] = useState<string | null>(null);
   const [selectedRfq, setSelectedRfq] = useState<any>(null);
 
   const [negotiatedQtys, setNegotiatedQtys] = useState<Record<string, number>>({});
@@ -29,6 +36,10 @@ export default function SupplierRfqsPage() {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch]);
+
   function initNegotiationQtys(rfq: any) {
     const map: Record<string, number> = {};
     if (rfq?.items) {
@@ -39,28 +50,43 @@ export default function SupplierRfqsPage() {
     setNegotiatedQtys(map);
   }
 
-  async function loadRfqs() {
+  async function loadRfqDetail(rfqId: string) {
+    setDetailLoading(true);
+    try {
+      const json = await apiGet<{ rfq: any }>(`/api/supplier/rfqs/${rfqId}`);
+      if (json.ok && json.data?.rfq) {
+        setSelectedRfq(json.data.rfq);
+        initNegotiationQtys(json.data.rfq);
+      }
+    } catch (err) {
+      console.error('Failed to load RFQ detail:', err);
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  async function loadRfqs(selectId?: string | null) {
     setLoading(true);
     try {
-      const res = await fetch(`/api/supplier/rfqs?search=${encodeURIComponent(debouncedSearch)}`);
-      const json = await res.json();
-      if (json.success) {
+      const url = `/api/supplier/rfqs?page=${page}&limit=${SUPPLIER_PORTAL_LIST_LIMIT}&search=${encodeURIComponent(debouncedSearch)}`;
+      const json = await apiGet<{ rfqs: any[]; total: number }>(url);
+      if (json.ok) {
         const list = json.data.rfqs || [];
         setRfqs(list);
-        setSelectedRfq((prev: any) => {
-          if (prev) {
-            const updated = list.find((r: any) => r.id === prev.id);
-            if (updated) {
-              initNegotiationQtys(updated);
-              return updated;
-            }
-          }
-          if (list[0]) {
-            initNegotiationQtys(list[0]);
-            return list[0];
-          }
-          return null;
-        });
+        setTotal(json.data.total || 0);
+
+        const targetId = selectId ?? selectedRfqId;
+        const stillVisible = targetId && list.some((r: any) => r.id === targetId);
+        if (stillVisible && targetId) {
+          setSelectedRfqId(targetId);
+          await loadRfqDetail(targetId);
+        } else if (list[0]) {
+          setSelectedRfqId(list[0].id);
+          await loadRfqDetail(list[0].id);
+        } else {
+          setSelectedRfqId(null);
+          setSelectedRfq(null);
+        }
       }
     } catch (err) {
       console.error('Failed to load supplier RFQs:', err);
@@ -72,13 +98,13 @@ export default function SupplierRfqsPage() {
   useEffect(() => {
     loadRfqs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch]);
+  }, [debouncedSearch, page]);
 
-  function handleSelectRfq(rfq: any) {
-    setSelectedRfq(rfq);
-    initNegotiationQtys(rfq);
+  async function handleSelectRfq(rfq: any) {
+    setSelectedRfqId(rfq.id);
     setActionError('');
     setActionSuccess('');
+    await loadRfqDetail(rfq.id);
   }
 
   function patchRfq(rfqId: string, patch: Record<string, unknown>) {
@@ -101,7 +127,7 @@ export default function SupplierRfqsPage() {
         onSuccess: () => {
           setActionSuccess('Negotiation saved. Quantities updated.');
           patchRfq(selectedRfq.id, { status: 'under_review' });
-          void loadRfqs();
+          void loadRfqDetail(selectedRfq.id);
         },
         onError: (msg) => setActionError(msg),
       }
@@ -116,21 +142,20 @@ export default function SupplierRfqsPage() {
     selectedRfq &&
     (selectedRfq.status === 'submitted' || selectedRfq.status === 'under_review');
 
+  const totalPages = Math.max(1, Math.ceil(total / SUPPLIER_PORTAL_LIST_LIMIT));
+
   return (
     <div className="space-y-6 w-full">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="type-page">
-            Volume RFQs
-          </h1>
+          <h1 className="type-page">Volume RFQs</h1>
           <p className="type-subtitle">
             Quotation requests matching your listed products.
           </p>
         </div>
 
-        <button 
-          onClick={() => loadRfqs()} 
+        <button
+          onClick={() => loadRfqs()}
           className="saas-neu-button text-xs py-2 px-3.5 flex items-center gap-2 self-start sm:self-auto"
         >
           <RefreshCw className={`w-3.5 h-3.5 text-portal-muted ${loading ? 'animate-spin' : ''}`} />
@@ -139,11 +164,10 @@ export default function SupplierRfqsPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* RFQ List (5 cols) */}
         <div className="lg:col-span-5 space-y-3">
           <div className="saas-panel p-3">
             <div className="relative">
-              <input 
+              <input
                 type="text"
                 placeholder="Search RFQs by number..."
                 value={searchTerm}
@@ -165,38 +189,38 @@ export default function SupplierRfqsPage() {
               </div>
             ) : (
               rfqs.map((r) => {
-                const isSelected = selectedRfq?.id === r.id;
+                const isSelected = selectedRfqId === r.id;
                 return (
                   <div
                     key={r.id}
                     onClick={() => handleSelectRfq(r)}
                     className={`saas-panel p-4 cursor-pointer transition-all space-y-2 ${
-                      isSelected 
-                        ? 'ring-2 ring-amber-500 shadow-md' 
-                        : 'hover:bg-portal-hover'
+                      isSelected ? 'ring-2 ring-amber-500 shadow-md' : 'hover:bg-portal-hover'
                     }`}
                   >
                     <div className="flex items-center justify-between">
                       <span className="type-id text-portal-text">{r.rfq_number}</span>
-                      <span className={
-                        r.status === 'accepted' 
-                          ? 'saas-badge-success' 
-                          : r.status === 'converted_to_order' 
-                          ? 'saas-badge-cyan' 
-                          : r.status === 'rejected'
-                          ? 'saas-badge-danger'
-                          : 'saas-badge-gold'
-                      }>
+                      <span
+                        className={
+                          r.status === 'accepted'
+                            ? 'saas-badge-success'
+                            : r.status === 'converted_to_order'
+                              ? 'saas-badge-cyan'
+                              : r.status === 'rejected'
+                                ? 'saas-badge-danger'
+                                : 'saas-badge-gold'
+                        }
+                      >
                         {r.status.toUpperCase()}
                       </span>
                     </div>
 
                     <div className="text-xs text-portal-muted">
-                      Demand lines for your SKUs
+                      Demand lines for your products
                     </div>
 
                     <div className="flex items-center justify-between text-xs pt-2 border-t border-portal-border">
-                      <span className="text-portal-muted">{r.items?.length || 0} product line(s)</span>
+                      <span className="text-portal-muted">{r.item_count || 0} product line(s)</span>
                       <span className="text-portal-muted flex items-center gap-1">
                         <Calendar className="w-3 h-3 text-portal-muted" />
                         <span>{new Date(r.created_at).toLocaleDateString()}</span>
@@ -207,18 +231,45 @@ export default function SupplierRfqsPage() {
               })
             )}
           </div>
+
+          {total > SUPPLIER_PORTAL_LIST_LIMIT && (
+            <div className="flex items-center justify-between pt-2">
+              <button
+                type="button"
+                disabled={page <= 1 || loading}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="saas-btn-secondary text-xs py-1.5 px-2.5 flex items-center gap-1"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                Prev
+              </button>
+              <span className="text-xs text-portal-muted">
+                Page {page} of {totalPages}
+              </span>
+              <button
+                type="button"
+                disabled={page >= totalPages || loading}
+                onClick={() => setPage((p) => p + 1)}
+                className="saas-btn-secondary text-xs py-1.5 px-2.5 flex items-center gap-1"
+              >
+                Next
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Selected RFQ Detail (7 cols) */}
         <div className="lg:col-span-7">
-          {selectedRfq ? (
+          {detailLoading ? (
+            <div className="saas-panel p-16 text-center text-xs text-portal-muted">
+              Loading RFQ details…
+            </div>
+          ) : selectedRfq ? (
             <div className="saas-panel p-6 space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-portal-border pb-4">
                 <div>
                   <div className="flex items-center gap-3">
-                    <h2 className="type-section type-id">
-                      {selectedRfq.rfq_number}
-                    </h2>
+                    <h2 className="type-section type-id">{selectedRfq.rfq_number}</h2>
                     <span className="saas-badge-gold">{selectedRfq.status.toUpperCase()}</span>
                   </div>
                   <div className="text-xs text-portal-muted mt-1">
@@ -264,7 +315,6 @@ export default function SupplierRfqsPage() {
                 </p>
               )}
 
-              {/* Items Table */}
               <div className="space-y-2">
                 <div className="type-section text-portal-muted">
                   Your products in this quotation request
@@ -280,41 +330,40 @@ export default function SupplierRfqsPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {selectedRfq.items?.map((item: any) => {
-                        return (
-                          <tr key={item.id}>
-                            <td className="font-medium text-portal-text text-xs">
-                              {item.product_name_snapshot}
-                              {item.sku ? <span className="block text-portal-muted font-normal">SKU {item.sku}</span> : null}
+                      {selectedRfq.items?.map((item: any) => (
+                        <tr key={item.id}>
+                          <td className="font-medium text-portal-text text-xs">
+                            {item.product_name_snapshot}
+                          </td>
+                          <td className="text-right text-portal-text type-metric">
+                            {item.original_quantity} Units
+                          </td>
+                          {canAct && (
+                            <td className="text-right">
+                              <input
+                                type="number"
+                                min={1}
+                                value={negotiatedQtys[item.id] ?? item.original_quantity}
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value, 10);
+                                  setNegotiatedQtys((prev) => ({
+                                    ...prev,
+                                    [item.id]: Number.isFinite(val) && val >= 1 ? val : 1,
+                                  }));
+                                }}
+                                className="saas-input text-xs type-metric w-24 ml-auto text-right"
+                              />
                             </td>
-                            <td className="text-right text-portal-text type-metric">{item.original_quantity} Units</td>
-                            {canAct && (
-                              <td className="text-right">
-                                <input
-                                  type="number"
-                                  min={1}
-                                  value={negotiatedQtys[item.id] ?? item.original_quantity}
-                                  onChange={(e) => {
-                                    const val = parseInt(e.target.value, 10);
-                                    setNegotiatedQtys((prev) => ({
-                                      ...prev,
-                                      [item.id]: Number.isFinite(val) && val >= 1 ? val : 1,
-                                    }));
-                                  }}
-                                  className="saas-input text-xs type-metric w-24 ml-auto text-right"
-                                />
-                              </td>
-                            )}
-                          </tr>
-                        );
-                      })}
+                          )}
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
               </div>
 
               <p className="text-xs text-portal-muted">
-                Buyer identity, destination address, and selling prices are withheld. Fulfill from SKU demand only.
+                Buyer identity, destination address, and selling prices are withheld. Fulfill from product demand only.
                 {canAct ? ' Use Negotiate to propose quantity changes; MITFAST admin accepts or rejects.' : ''}
               </p>
             </div>

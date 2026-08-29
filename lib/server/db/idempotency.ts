@@ -11,7 +11,10 @@ export type IdempotencyScope =
   | 'create_rfq_from_enquiry'
   | 'submit_rfq_from_cart'
   | 'create_enquiry'
-  | 'create_manual_order';
+  | 'create_manual_order'
+  | 'create_supplier_product'
+  | 'submit_supplier_product_update'
+  | 'upload_product_image';
 
 type HandlerResult<T> =
   | { success: true; data: T }

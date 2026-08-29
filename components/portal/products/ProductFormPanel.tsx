@@ -12,11 +12,12 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { apiGet, apiPost } from '@/lib/client/api-client';
+import { createIdempotencyKey } from '@/lib/client/idempotency-key';
+import { useMutation, mutationKey as mk } from '@/lib/client/use-mutation';
 import { resolveLocationCountry } from '@/app/admin/products/ProductSupplierSection';
 import ProductInfoSection from './sections/ProductInfoSection';
 import SupplierOwnershipSection from './sections/SupplierOwnershipSection';
 import PricingCommercialsSection from './sections/PricingCommercialsSection';
-import InventorySection from './sections/InventorySection';
 import MediaSection from './sections/MediaSection';
 import SpecificationsSection from './sections/SpecificationsSection';
 import {
@@ -33,6 +34,10 @@ import {
   validateFormValues,
 } from './product-form.utils';
 import { uploadPendingFilesForProduct } from './ProductImageManager';
+import {
+  focusFirstFormError,
+  formatValidationSummary,
+} from '@/lib/client/focus-first-error';
 
 export type ProductFormPanelProps = {
   open: boolean;
@@ -83,6 +88,26 @@ function modeSubtitle(mode: ProductFormMode): string {
   }
 }
 
+function getOrCreateFormIdempotencyKey(storageKey: string): string {
+  try {
+    const existing = sessionStorage.getItem(storageKey);
+    if (existing) return existing;
+    const next = createIdempotencyKey();
+    sessionStorage.setItem(storageKey, next);
+    return next;
+  } catch {
+    return createIdempotencyKey();
+  }
+}
+
+function clearFormIdempotencyKey(storageKey: string) {
+  try {
+    sessionStorage.removeItem(storageKey);
+  } catch {
+    /* ignore */
+  }
+}
+
 export default function ProductFormPanel({
   open,
   mode,
@@ -104,15 +129,20 @@ export default function ProductFormPanel({
   const [initialSnapshot, setInitialSnapshot] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState('');
-  const [submitting, setSubmitting] = useState(false);
   const [copied, setCopied] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [changesOpen, setChangesOpen] = useState(false);
   const [changesNote, setChangesNote] = useState('');
   const [mounted, setMounted] = useState(false);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
+  const [maxProductImages, setMaxProductImages] = useState(8);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const formSessionRef = useRef(createIdempotencyKey());
+  const { run: runMutation, isAnyPending } = useMutation();
 
+  const submitting = isAnyPending || actionBusy || (uploadProgress != null && uploadProgress.total > 0);
   const isDirty = initialSnapshot !== '' && JSON.stringify(values) !== initialSnapshot;
 
   const resetForm = useCallback(
@@ -128,6 +158,8 @@ export default function ProductFormPanel({
       }
       setErrors({});
       setFormError('');
+      setUploadProgress(null);
+      formSessionRef.current = createIdempotencyKey();
     },
     [defaultGstRate]
   );
@@ -135,6 +167,19 @@ export default function ProductFormPanel({
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    apiGet<{ maxProductImages?: number }>('/api/settings')
+      .then((res) => {
+        if (res.ok && res.data?.maxProductImages) {
+          setMaxProductImages(res.data.maxProductImages);
+        }
+      })
+      .catch(() => {
+        /* keep default */
+      });
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -146,9 +191,10 @@ export default function ProductFormPanel({
   }, [open, product, resetForm]);
 
   const handleCloseAttempt = useCallback(() => {
+    if (submitting) return;
     if (isDirty && !window.confirm('Discard unsaved changes?')) return;
     onClose();
-  }, [isDirty, onClose]);
+  }, [isDirty, onClose, submitting]);
 
   useEffect(() => {
     if (!open) return;
@@ -189,12 +235,18 @@ export default function ProductFormPanel({
   }
 
   async function uploadImages(productId: string) {
-    if (values.pendingImageFiles.length > 0) {
+    if (values.pendingImageFiles.length === 0) return;
+    setUploadProgress({ done: 0, total: values.pendingImageFiles.length });
+    try {
       await uploadPendingFilesForProduct(
         productId,
         values.pendingImageFiles,
-        values.images.length === 0
+        values.images.length === 0,
+        (done, total) => setUploadProgress({ done, total })
       );
+      setValues((v) => ({ ...v, pendingImageFiles: [] }));
+    } finally {
+      setUploadProgress(null);
     }
   }
 
@@ -226,128 +278,192 @@ export default function ProductFormPanel({
     const fieldErrors = validateFormValues(values, mode, { draft });
     if (Object.keys(fieldErrors).length) {
       setErrors(fieldErrors);
+      focusFirstFormError(fieldErrors, scrollRef.current);
       return false;
     }
     setErrors({});
-    setSubmitting(true);
 
-    try {
-      const isSupplier = mode.includes('supplier');
-      const payload = buildPayload(values, categories, { isSupplier });
+    const submitKey = mk(product?.id || formSessionRef.current, `submit:${mode}`);
+    const idemStorageKey = `mitfast:product-idem:${mode}:${product?.id || formSessionRef.current}`;
 
-      if (mode === 'create-admin') {
-        const res = await fetch('/api/products', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...payload, isDraft: draft }),
-        });
-        const json = await res.json();
-        if (!res.ok || !json.success) {
-          setFormError(json.error?.message || 'Failed to create product');
-          return false;
-        }
-        const id = json.data?.productId;
-        if (id) {
-          await uploadImages(id);
-          if (!(await saveSupplierCountry())) {
-            setFormError('Product saved but supplier country update failed');
-            return false;
+    const result = await runMutation(
+      async () => {
+        const isSupplier = mode.includes('supplier');
+        const payload = buildPayload(values, categories, { isSupplier });
+        const idempotencyKey = getOrCreateFormIdempotencyKey(idemStorageKey);
+
+        if (mode === 'create-admin') {
+          const res = await fetch('/api/products', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...payload, isDraft: draft }),
+          });
+          const json = await res.json();
+          if (!res.ok || !json.success) {
+            return {
+              ok: false as const,
+              kind: 'server' as const,
+              message: json.error?.message || 'Failed to create product',
+            };
           }
+          const id = json.data?.productId;
+          if (id) {
+            try {
+              await uploadImages(id);
+            } catch (err) {
+              return {
+                ok: false as const,
+                kind: 'server' as const,
+                message: err instanceof Error ? err.message : 'Product saved but image upload failed',
+              };
+            }
+            if (!(await saveSupplierCountry())) {
+              return {
+                ok: false as const,
+                kind: 'server' as const,
+                message: 'Product saved but supplier country update failed',
+              };
+            }
+          }
+          clearFormIdempotencyKey(idemStorageKey);
+          return { ok: true as const, data: { done: true } };
         }
-        onSuccess();
-        onClose();
-        return true;
-      }
 
-      if (mode === 'create-supplier') {
-        const res = await fetch('/api/products', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        const json = await res.json();
-        if (!res.ok || !json.success) {
-          setFormError(json.error?.message || 'Failed to submit product');
-          return false;
+        if (mode === 'create-supplier') {
+          const res = await fetch('/api/products', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Idempotency-Key': idempotencyKey,
+            },
+            body: JSON.stringify(payload),
+          });
+          const json = await res.json();
+          if (!res.ok || !json.success) {
+            return {
+              ok: false as const,
+              kind: res.status === 409 ? ('conflict' as const) : ('server' as const),
+              message: json.error?.message || 'Failed to submit product',
+            };
+          }
+          const id = json.data?.productId;
+          if (id) {
+            try {
+              await uploadImages(id);
+            } catch (err) {
+              return {
+                ok: false as const,
+                kind: 'server' as const,
+                message:
+                  err instanceof Error
+                    ? err.message
+                    : 'Product submitted but image upload failed. Retry uploading images.',
+              };
+            }
+          }
+          if (!(await saveSupplierCountry())) {
+            return {
+              ok: false as const,
+              kind: 'server' as const,
+              message: 'Product saved but supplier country update failed',
+            };
+          }
+          clearFormIdempotencyKey(idemStorageKey);
+          return { ok: true as const, data: { done: true } };
         }
-        const id = json.data?.productId;
-        if (id) await uploadImages(id);
-        if (!(await saveSupplierCountry())) {
-          setFormError('Product saved but supplier country update failed');
-          return false;
-        }
-        onSuccess();
-        onClose();
-        return true;
-      }
 
-      if (!product) return false;
+        if (!product) {
+          return { ok: false as const, kind: 'server' as const, message: 'Product not loaded' };
+        }
 
-      if (mode === 'edit-supplier') {
-        const res = await fetch(`/api/products/${product.id}/update-request`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ productId: product.id, ...payload }),
-        });
-        const json = await res.json();
-        if (!res.ok || !json.success) {
-          setFormError(json.error?.message || 'Failed to submit update');
-          return false;
-        }
-        try {
-          await uploadImages(product.id);
-        } catch (err) {
-          setFormError(
-            err instanceof Error
-              ? err.message
-              : 'Update submitted but image upload failed. Retry uploading images.'
-          );
-          return false;
-        }
-        if (!(await saveSupplierCountry())) {
-          setFormError('Update submitted but supplier country update failed');
-          return false;
-        }
-        onSuccess();
-        onClose();
-        return true;
-      }
-
-      if (mode === 'edit-admin' || mode === 'review-admin') {
-        const res = await fetch(`/api/products/${product.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ productId: product.id, ...payload, isDraft: false }),
-        });
-        const json = await res.json();
-        if (!res.ok || !json.success) {
-          setFormError(json.error?.message || 'Failed to save product');
-          return false;
-        }
-        if (!(await saveSupplierCountry())) {
-          setFormError('Product saved but supplier country update failed');
-          return false;
-        }
-        if (mode === 'edit-admin') {
+        if (mode === 'edit-supplier') {
+          const res = await fetch(`/api/products/${product.id}/update-request`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Idempotency-Key': idempotencyKey,
+            },
+            body: JSON.stringify({ productId: product.id, ...payload }),
+          });
+          const json = await res.json();
+          if (!res.ok || !json.success) {
+            return {
+              ok: false as const,
+              kind: res.status === 409 ? ('conflict' as const) : ('server' as const),
+              message: json.error?.message || 'Failed to submit update',
+            };
+          }
           try {
             await uploadImages(product.id);
           } catch (err) {
-            setFormError(err instanceof Error ? err.message : 'Product saved but image upload failed');
-            return false;
+            return {
+              ok: false as const,
+              kind: 'server' as const,
+              message:
+                err instanceof Error
+                  ? err.message
+                  : 'Update submitted but image upload failed. Retry uploading images.',
+            };
           }
+          if (!(await saveSupplierCountry())) {
+            return {
+              ok: false as const,
+              kind: 'server' as const,
+              message: 'Update submitted but supplier country update failed',
+            };
+          }
+          clearFormIdempotencyKey(idemStorageKey);
+          return { ok: true as const, data: { done: true } };
+        }
+
+        if (mode === 'edit-admin' || mode === 'review-admin') {
+          const res = await fetch(`/api/products/${product.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ productId: product.id, ...payload, isDraft: false }),
+          });
+          const json = await res.json();
+          if (!res.ok || !json.success) {
+            return {
+              ok: false as const,
+              kind: 'server' as const,
+              message: json.error?.message || 'Failed to save product',
+            };
+          }
+          if (!(await saveSupplierCountry())) {
+            return {
+              ok: false as const,
+              kind: 'server' as const,
+              message: 'Product saved but supplier country update failed',
+            };
+          }
+          if (mode === 'edit-admin') {
+            try {
+              await uploadImages(product.id);
+            } catch (err) {
+              return {
+                ok: false as const,
+                kind: 'server' as const,
+                message: err instanceof Error ? err.message : 'Product saved but image upload failed',
+              };
+            }
+          }
+          return { ok: true as const, data: { done: true } };
+        }
+
+        return { ok: false as const, kind: 'server' as const, message: 'Unsupported mode' };
+      },
+      {
+        key: submitKey,
+        onSuccess: () => {
           onSuccess();
           onClose();
-        }
-        return true;
+        },
+        onError: (message) => setFormError(message),
       }
+    );
 
-      return false;
-    } catch {
-      setFormError('Something went wrong. Please try again.');
-      return false;
-    } finally {
-      setSubmitting(false);
-    }
+    return result.ok;
   }
 
   async function handleSaveDraft() {
@@ -355,28 +471,36 @@ export default function ProductFormPanel({
     const fieldErrors = validateFormValues(values, mode, { draft: true });
     if (fieldErrors.name) {
       setErrors(fieldErrors);
+      focusFirstFormError(fieldErrors, scrollRef.current);
       return;
     }
-    setSubmitting(true);
-    try {
-      const payload = buildPayload(values, categories);
-      const res = await fetch('/api/products', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, isDraft: true }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.success) {
-        setFormError(json.error?.message || 'Failed to save draft');
-        return;
+    await runMutation(
+      async () => {
+        const payload = buildPayload(values, categories);
+        const res = await fetch('/api/products', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...payload, isDraft: true }),
+        });
+        const json = await res.json();
+        if (!res.ok || !json.success) {
+          return {
+            ok: false as const,
+            kind: 'server' as const,
+            message: json.error?.message || 'Failed to save draft',
+          };
+        }
+        return { ok: true as const, data: { done: true } };
+      },
+      {
+        key: mk('draft', 'save'),
+        onSuccess: () => {
+          onSuccess();
+          onClose();
+        },
+        onError: (message) => setFormError(message),
       }
-      onSuccess();
-      onClose();
-    } catch {
-      setFormError('Failed to save draft');
-    } finally {
-      setSubmitting(false);
-    }
+    );
   }
 
   async function handleApprovalAction(action: 'approve' | 'reject' | 'changes') {
@@ -390,7 +514,7 @@ export default function ProductFormPanel({
       return;
     }
 
-    setSubmitting(true);
+    setActionBusy(true);
     setFormError('');
     try {
       if (action === 'approve') {
@@ -445,7 +569,7 @@ export default function ProductFormPanel({
     } catch {
       setFormError('Action failed');
     } finally {
-      setSubmitting(false);
+      setActionBusy(false);
     }
   }
 
@@ -460,7 +584,7 @@ export default function ProductFormPanel({
   const pid = product?.id;
 
   return createPortal(
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 max-md:p-0">
       <button
         type="button"
         aria-label="Close"
@@ -471,7 +595,7 @@ export default function ProductFormPanel({
       <div
         role="dialog"
         aria-modal="true"
-        className="relative w-full max-w-3xl max-h-[85vh] bg-portal-panel rounded-xl shadow-2xl flex flex-col overflow-hidden border border-portal-border"
+        className="relative w-full max-w-4xl max-h-[85vh] max-md:h-dvh max-md:max-h-dvh max-md:rounded-none bg-portal-panel rounded-xl shadow-2xl flex flex-col overflow-hidden border border-portal-border"
       >
         {/* Sticky header */}
         <div className="shrink-0 px-5 py-4 border-b border-portal-border bg-portal-panel">
@@ -552,6 +676,15 @@ export default function ProductFormPanel({
           </div>
         )}
 
+        {Object.keys(errors).length > 0 && (
+          <div
+            className="mx-5 mt-3 text-xs text-portal-danger bg-portal-danger-soft rounded-lg p-2.5 shrink-0"
+            role="alert"
+          >
+            {formatValidationSummary(errors)}
+          </div>
+        )}
+
         {/* Scroll body */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4 space-y-3 bg-portal-inset">
           {detailLoading ? (
@@ -585,18 +718,17 @@ export default function ProductFormPanel({
                 mode={mode}
                 onChange={patch}
               />
-              <InventorySection
-                values={values}
-                errors={errors}
-                categories={categories}
-                mode={mode}
-                onChange={patch}
-              />
               <MediaSection
                 productId={product?.id}
                 values={values}
                 mode={mode}
                 publicationStatus={product?.publication_status}
+                hasOpenUpdateRequest={
+                  product?.pendingRequest?.status === 'update_pending' ||
+                  product?.approval_status === 'update_pending'
+                }
+                maxImages={maxProductImages}
+                uploadProgress={uploadProgress}
                 onChange={patch}
                 onUploadError={(message) => setFormError(message)}
               />
@@ -657,12 +789,12 @@ export default function ProductFormPanel({
         )}
 
         {/* Sticky footer */}
-        <div className="shrink-0 flex items-center justify-end gap-2 px-5 py-3.5 border-t border-portal-border bg-portal-panel">
+        <div className="shrink-0 flex flex-wrap flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 px-5 py-3.5 border-t border-portal-border bg-portal-panel">
           <button
             type="button"
             onClick={handleCloseAttempt}
             disabled={submitting}
-            className="saas-btn-secondary text-xs py-2 px-3"
+            className="saas-btn-secondary text-xs py-2 px-3 w-full sm:w-auto"
           >
             Cancel
           </button>
@@ -673,7 +805,7 @@ export default function ProductFormPanel({
                 type="button"
                 onClick={handleSaveDraft}
                 disabled={submitting || detailLoading}
-                className="saas-btn-secondary text-xs py-2 px-3"
+                className="saas-btn-secondary text-xs py-2 px-3 w-full sm:w-auto"
               >
                 Save Draft
               </button>
@@ -681,7 +813,7 @@ export default function ProductFormPanel({
                 type="button"
                 onClick={() => handleSubmit(true)}
                 disabled={submitting || detailLoading}
-                className="saas-btn-primary text-xs py-2 px-4"
+                className="saas-btn-primary text-xs py-2 px-4 w-full sm:w-auto"
               >
                 {submitting ? 'Creating…' : 'Create Product'}
               </button>
@@ -693,7 +825,7 @@ export default function ProductFormPanel({
               type="button"
               onClick={() => handleSubmit(true)}
               disabled={submitting || detailLoading}
-              className="saas-btn-primary text-xs py-2 px-4"
+              className="saas-btn-primary text-xs py-2 px-4 w-full sm:w-auto"
             >
               {submitting ? 'Submitting…' : 'Submit for Approval'}
             </button>
@@ -704,7 +836,7 @@ export default function ProductFormPanel({
               type="button"
               onClick={() => handleSubmit(true)}
               disabled={submitting || detailLoading}
-              className="saas-btn-primary text-xs py-2 px-4"
+              className="saas-btn-primary text-xs py-2 px-4 w-full sm:w-auto"
             >
               {submitting ? 'Saving…' : 'Save Changes'}
             </button>
@@ -716,7 +848,7 @@ export default function ProductFormPanel({
                 type="button"
                 onClick={() => setRejectOpen(true)}
                 disabled={submitting}
-                className="saas-btn-secondary text-xs py-2 px-3 text-portal-danger"
+                className="saas-btn-secondary text-xs py-2 px-3 text-portal-danger w-full sm:w-auto"
               >
                 Reject
               </button>
@@ -724,7 +856,7 @@ export default function ProductFormPanel({
                 type="button"
                 onClick={() => setChangesOpen(true)}
                 disabled={submitting}
-                className="saas-btn-secondary text-xs py-2 px-3"
+                className="saas-btn-secondary text-xs py-2 px-3 w-full sm:w-auto"
               >
                 Request Changes
               </button>
@@ -732,7 +864,7 @@ export default function ProductFormPanel({
                 type="button"
                 onClick={() => handleApprovalAction('approve')}
                 disabled={submitting}
-                className="saas-btn-primary text-xs py-2 px-4"
+                className="saas-btn-primary text-xs py-2 px-4 w-full sm:w-auto"
               >
                 Approve
               </button>

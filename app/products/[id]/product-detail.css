@@ -641,6 +641,14 @@
   min-width: 0;
 }
 
+/* Sticky buy box only at the ≥900px multi-column layout */
+@media (max-width: 899px) {
+  .pdp-buy {
+    position: static;
+    top: auto;
+  }
+}
+
 .pdp-buy__price-row {
   display: flex;
   align-items: flex-start;
@@ -830,6 +838,12 @@
   gap: 10px;
 }
 
+@media (max-width: 380px) {
+  .pdp-btn-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .pdp-btn-secondary,
 .pdp-btn-ghost {
   height: 42px;
@@ -949,6 +963,13 @@
   letter-spacing: -0.02em;
 }
 
+.pdp-full__table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .pdp-full__table {
   width: 100%;
   border-collapse: collapse;
@@ -973,6 +994,47 @@
 .pdp-full__table td {
   color: var(--pdp-text);
   font-weight: 600;
+}
+
+/* Stack specs like a definition list below ~560px */
+@media (max-width: 559px) {
+  .pdp-full {
+    padding: 22px 18px;
+  }
+
+  .pdp-full__table-wrap {
+    overflow-x: visible;
+  }
+
+  .pdp-full__table,
+  .pdp-full__table tbody,
+  .pdp-full__table tr,
+  .pdp-full__table th,
+  .pdp-full__table td {
+    display: block;
+    width: 100%;
+  }
+
+  .pdp-full__table tr {
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(17, 19, 21, 0.06);
+  }
+
+  .pdp-full__table tr:last-child {
+    border-bottom: none;
+  }
+
+  .pdp-full__table th {
+    width: auto;
+    padding: 0 0 4px;
+    border-bottom: none;
+    font-size: 12px;
+  }
+
+  .pdp-full__table td {
+    padding: 0;
+    border-bottom: none;
+  }
 }
 
 /* ── Related / recent (full-width, below specs) ─────────── */

@@ -1,26 +1,36 @@
 /**
- * Staging-only catalog smoke (k6).
+ * Staging/localhost catalog smoke (k6) — free-tier safe defaults.
  *
- *   k6 run -e TEST_BASE_URL=https://YOUR-STAGING.vercel.app scripts/k6-catalog-smoke.js
+ * Prefer scripts/k6-free-tier-public.js for constant-arrival-rate control.
  *
- * Do NOT point at production without explicit approval.
+ *   k6 run -e TEST_BASE_URL=http://localhost:3000 -e MAX_VUS=25 scripts/k6-catalog-smoke.js
+ *
+ * Do NOT point at production without explicit approval (ALLOW_PROD_LOAD=1).
  */
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 
+const BASE = __ENV.TEST_BASE_URL || 'http://localhost:3000';
+const MAX_VUS = Math.min(25, Number(__ENV.MAX_VUS || 25));
+
+if (
+  (/mitfast-b2b(\.|-)/i.test(BASE) || (/vercel\.app/i.test(BASE) && !/staging/i.test(BASE))) &&
+  __ENV.ALLOW_PROD_LOAD !== '1'
+) {
+  throw new Error('Refusing production-like URL. Use localhost or staging.');
+}
+
 export const options = {
   stages: [
-    { duration: '1m', target: 50 },
-    { duration: '2m', target: 200 },
-    { duration: '1m', target: 0 },
+    { duration: '30s', target: Math.min(10, MAX_VUS) },
+    { duration: '60s', target: MAX_VUS },
+    { duration: '30s', target: 0 },
   ],
   thresholds: {
-    http_req_failed: ['rate<0.01'],
-    http_req_duration: ['p(95)<2000'],
+    http_req_failed: ['rate<0.05'],
+    http_req_duration: ['p(95)<3000'],
   },
 };
-
-const BASE = __ENV.TEST_BASE_URL || 'http://localhost:3000';
 
 export default function () {
   const home = http.get(`${BASE}/`);

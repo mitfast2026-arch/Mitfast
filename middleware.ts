@@ -298,7 +298,8 @@ export async function middleware(request: NextRequest) {
     !pathname.includes('/callback') &&
     !pathname.includes('/signout') &&
     !pathname.includes('/complete-profile') &&
-    !pathname.includes('/supplier/apply')
+    !pathname.includes('/supplier/apply') &&
+    !pathname.includes('/reset-password')
   ) {
     const cached = parsePortalGate(request.cookies.get(PORTAL_GATE_COOKIE)?.value);
     if (cached?.userId === user.id) {

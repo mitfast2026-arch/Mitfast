@@ -12,7 +12,8 @@ import { RemoteImage } from '@/components/ui/RemoteImage';
 import type { CurvedProduct } from './productData';
 import './curved-products.css';
 
-const CONFIG = {
+/** Desktop (≥ md / 768px) — unchanged from original CONFIG */
+const DESKTOP_CONFIG = {
   radius: 820,
   cardWidth: 285,
   cardHeight: 410,
@@ -22,7 +23,29 @@ const CONFIG = {
   fogStrength: 0.90,
   autoDrift: true,
   driftSpeed: 0.0035,
-};
+} as const;
+
+/** Below md — matches curved-products.css mobile card / stage sizing */
+const MOBILE_CONFIG = {
+  radius: 520,
+  cardWidth: 200,
+  cardHeight: 288,
+  cardGap: 16,
+  perspective: 900,
+  damping: 0.93,
+  fogStrength: 0.90,
+  autoDrift: true,
+  driftSpeed: 0.0035,
+} as const;
+
+type CarouselConfig = typeof DESKTOP_CONFIG | typeof MOBILE_CONFIG;
+
+const MD_MQ = '(min-width: 768px)';
+
+function getCarouselConfig(): CarouselConfig {
+  if (typeof window === 'undefined') return DESKTOP_CONFIG;
+  return window.matchMedia(MD_MQ).matches ? DESKTOP_CONFIG : MOBILE_CONFIG;
+}
 
 type CurvedProductCarouselProps = {
   products: CurvedProduct[];
@@ -31,11 +54,13 @@ type CurvedProductCarouselProps = {
 export default function CurvedProductCarousel({ products }: CurvedProductCarouselProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
+  const [config, setConfig] = useState<CarouselConfig>(DESKTOP_CONFIG);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
   const fogRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const configRef = useRef<CarouselConfig>(DESKTOP_CONFIG);
 
   const scrollOffsetRef = useRef<number>(0);
   const velocityRef = useRef<number>(0);
@@ -52,15 +77,29 @@ export default function CurvedProductCarousel({ products }: CurvedProductCarouse
 
   const productList = products;
   const totalItems = productList.length;
-  const arcStepRad = totalItems > 0 ? (CONFIG.cardWidth + CONFIG.cardGap) / CONFIG.radius : 0;
-  const angleStepDeg = arcStepRad * (180 / Math.PI);
   const halfTotal = totalItems / 2;
+
+  useEffect(() => {
+    const apply = () => {
+      const next = getCarouselConfig();
+      configRef.current = next;
+      setConfig(next);
+    };
+    apply();
+    const mql = window.matchMedia(MD_MQ);
+    const onChange = () => apply();
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
+  }, []);
 
   const updateFanTransform = useCallback(() => {
     if (totalItems === 0) return;
 
+    const cfg = configRef.current;
+    const arcStepRad = (cfg.cardWidth + cfg.cardGap) / cfg.radius;
+    const angleStepDeg = arcStepRad * (180 / Math.PI);
     const offset = scrollOffsetRef.current;
-    const { radius, fogStrength } = CONFIG;
+    const { radius, fogStrength } = cfg;
     const v = velocityRef.current;
     const stretch = 1 + Math.min(0.03, Math.abs(v) * 0.08);
     const lean = Math.max(-1.5, Math.min(1.5, -v * 5.0));
@@ -100,7 +139,7 @@ export default function CurvedProductCarousel({ products }: CurvedProductCarouse
         fogEl.style.opacity = String(Math.max(0, Math.min(0.92, fog)));
       }
     }
-  }, [totalItems, angleStepDeg, halfTotal]);
+  }, [totalItems, halfTotal]);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -119,6 +158,11 @@ export default function CurvedProductCarousel({ products }: CurvedProductCarouse
 
   useEffect(() => {
     if (totalItems === 0) return;
+    updateFanTransform();
+  }, [totalItems, updateFanTransform, config]);
+
+  useEffect(() => {
+    if (totalItems === 0) return;
 
     let prevTime = performance.now();
 
@@ -132,12 +176,12 @@ export default function CurvedProductCarousel({ products }: CurvedProductCarouse
           if (Math.abs(velocityRef.current) > 0.0001) {
             scrollOffsetRef.current =
               (scrollOffsetRef.current + velocityRef.current * dtFactor + totalItems * 100) % totalItems;
-            velocityRef.current *= Math.pow(CONFIG.damping, dtFactor);
+            velocityRef.current *= Math.pow(configRef.current.damping, dtFactor);
           } else {
             velocityRef.current = 0;
-            if (CONFIG.autoDrift && !isHoveredRef.current) {
+            if (configRef.current.autoDrift && !isHoveredRef.current) {
               scrollOffsetRef.current =
-                (scrollOffsetRef.current + CONFIG.driftSpeed * dtFactor + totalItems * 100) % totalItems;
+                (scrollOffsetRef.current + configRef.current.driftSpeed * dtFactor + totalItems * 100) % totalItems;
             }
           }
         }
@@ -202,7 +246,7 @@ export default function CurvedProductCarousel({ products }: CurvedProductCarouse
     lastTimestampRef.current = now;
     totalDragDistanceRef.current += Math.abs(dx);
 
-    const cardStepPixels = (CONFIG.cardWidth + CONFIG.cardGap) * 0.95;
+    const cardStepPixels = (configRef.current.cardWidth + configRef.current.cardGap) * 0.95;
     const deltaIndex = -(dx / cardStepPixels);
 
     scrollOffsetRef.current =
@@ -285,8 +329,8 @@ export default function CurvedProductCarousel({ products }: CurvedProductCarouse
           ref={stageRef}
           className={`arc-fan-stage ${isDragging ? 'is-dragging' : ''}`}
           style={{
-            perspective: `${CONFIG.perspective}px`,
-            WebkitPerspective: `${CONFIG.perspective}px`,
+            perspective: `${config.perspective}px`,
+            WebkitPerspective: `${config.perspective}px`,
           }}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}

@@ -1,6 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { ServerResult } from '@/lib/server/auth/get-session';
-import { calculatePricing } from '@/lib/server/pricing/calculate-price';
+import { aggregateCartTotals, priceCartLine } from '@/lib/server/cart/cart-line-pricing';
 
 export interface CartItemWithProduct {
   id: string;
@@ -24,6 +24,7 @@ export interface CartItemWithProduct {
     primaryImage: string | null;
   };
   itemTotal: number;
+  subtotalPerUnit: number;
 }
 
 export interface CustomerCartData {
@@ -31,6 +32,8 @@ export interface CustomerCartData {
   items: CartItemWithProduct[];
   itemCount: number;
   subtotal: number;
+  totalGst: number;
+  grandTotal: number;
 }
 
 /**
@@ -104,8 +107,13 @@ export async function getCustomerCart(customerId: string): Promise<ServerResult<
       return { success: false, error: { message: itemsError.message, code: 'DATABASE_ERROR' } };
     }
 
-    let subtotal = 0;
     const formattedItems: CartItemWithProduct[] = [];
+    const aggregateLines: {
+      itemTotal: number;
+      lineGst: number;
+      lineGrandTotal: number;
+      isAvailable: boolean;
+    }[] = [];
 
     for (const item of (cartItems || [])) {
       const p = item.product as any;
@@ -116,20 +124,23 @@ export async function getCustomerCart(customerId: string): Promise<ServerResult<
         p.archive_status === 'active' &&
         p.approval_status === 'approved';
 
-      const priced = calculatePricing({
-        supplier_price: p.selling_price || 0,
-        profit_type: 'fixed',
-        profit_value: 0,
-        discount: p.discount || 0,
-        gst_rate: p.gst_rate || 0,
-        gst_included: p.gst_included || false,
-        quantity: item.quantity,
+      const priced = priceCartLine(
+        {
+          selling_price: p.selling_price || 0,
+          discount: p.discount || 0,
+          gst_rate: p.gst_rate || 0,
+          gst_included: p.gst_included || false,
+        },
+        item.quantity
+      );
+      const unitPrice = priced.actualUnitPrice;
+      const itemTotal = priced.itemTotal;
+      aggregateLines.push({
+        itemTotal,
+        lineGst: priced.lineGst,
+        lineGrandTotal: priced.lineGrandTotal,
+        isAvailable,
       });
-      const unitPrice = priced.discounted_unit_price;
-      const itemTotal = priced.subtotal;
-      if (isAvailable) {
-        subtotal += itemTotal;
-      }
 
       const sortedImages = [...(p.images || [])].sort(
         (a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
@@ -161,8 +172,11 @@ export async function getCustomerCart(customerId: string): Promise<ServerResult<
           primaryImage: primaryImg,
         },
         itemTotal,
+        subtotalPerUnit: priced.subtotalPerUnit,
       });
     }
+
+    const totals = aggregateCartTotals(aggregateLines);
 
     return {
       success: true,
@@ -170,7 +184,9 @@ export async function getCustomerCart(customerId: string): Promise<ServerResult<
         cartId: cart.id,
         items: formattedItems,
         itemCount: formattedItems.reduce((acc, curr) => acc + curr.quantity, 0),
-        subtotal: Math.round(subtotal * 100) / 100,
+        subtotal: totals.subtotal,
+        totalGst: totals.totalGst,
+        grandTotal: totals.grandTotal,
       },
     };
   } catch (error) {

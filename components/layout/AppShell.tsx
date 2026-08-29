@@ -20,16 +20,22 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const isAbout = pathname === '/about';
 
   if (isPortalOrAuth) {
+    const isAuthOnly = pathname.startsWith('/auth');
     const portalTheme = pathname.startsWith('/admin')
       ? 'portal-theme-admin'
       : pathname.startsWith('/supplier')
         ? 'portal-theme-supplier'
         : '';
 
+    // Auth forms need vertical scroll on small screens; portal dashboards keep overflow-hidden.
+    const shellOverflow = isAuthOnly
+      ? 'min-h-dvh w-full overflow-x-hidden overflow-y-auto'
+      : 'h-dvh max-h-dvh w-full overflow-hidden';
+
     return (
       <PortalColorModeProvider>
         <PortalUiRoot
-          className={`portal-ui h-dvh max-h-dvh w-full overflow-hidden saas-canvas-bg text-portal-text ${portalTheme}`.trim()}
+          className={`portal-ui ${shellOverflow} saas-canvas-bg text-portal-text ${portalTheme}`.trim()}
         >
           <Toaster
             position="top-right"
@@ -63,7 +69,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <SmoothScroll>
-      <div className={`min-h-screen flex flex-col text-[#111315] ${shellBg}`}>
+      <div className={`flex min-h-screen w-full min-w-0 flex-col text-[#111315] ${shellBg}`}>
         <Toaster
           position="top-right"
           richColors
@@ -72,7 +78,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         />
         <Navbar />
         {/* Match Navbar h-16 so non-home pages align with scrolled homepage chrome */}
-        <main className={`flex-1 w-full relative z-0 isolate ${isHome || isAbout ? 'pt-0' : 'pt-16'}`}>
+        <main
+          className={`relative z-0 w-full min-w-0 flex-1 shrink-0 isolate ${isHome || isAbout ? 'pt-0' : 'pt-16'}`}
+        >
           {children}
         </main>
         <Footer />

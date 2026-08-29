@@ -126,10 +126,12 @@ function dimensionsWithinLimits(
 
 async function encodeWebp(
   pipeline: ReturnType<typeof sharp>,
-  quality: number
+  quality: number,
+  /** Lower effort = faster encode under concurrency spikes (product uploads). */
+  effort = 2
 ): Promise<{ buffer: Buffer; width: number; height: number }> {
   const { data, info } = await pipeline
-    .webp({ quality, effort: 4 })
+    .webp({ quality, effort })
     .toBuffer({ resolveWithObject: true });
   return { buffer: data, width: info.width, height: info.height };
 }
@@ -217,7 +219,8 @@ export async function processImageForUpload(
       });
     }
 
-    let encoded = await encodeWebp(pipeline, config.quality);
+    const encodeEffort = profile === 'product' ? 2 : 4;
+    let encoded = await encodeWebp(pipeline, config.quality, encodeEffort);
 
     if (encoded.buffer.byteLength > config.maxStoredBytes) {
       encoded = await encodeWebp(
@@ -225,7 +228,8 @@ export async function processImageForUpload(
           fit: 'inside',
           withoutEnlargement: true,
         }),
-        Math.max(60, config.quality - 15)
+        Math.max(60, config.quality - 15),
+        encodeEffort
       );
     }
 

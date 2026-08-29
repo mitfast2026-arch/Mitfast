@@ -2,10 +2,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireSupplier } from '@/lib/server/auth/get-session';
 import { createAdminClient } from '@/lib/supabase/admin';
 
-export async function GET(
-  _request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(_request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const auth = await requireSupplier();
     if (!auth.ok) return auth.response;

@@ -9,6 +9,7 @@ import {
   ExternalLink,
   Trash2,
   ArrowRight,
+  ChevronLeft,
 } from 'lucide-react';
 import { apiPut, apiPost, apiDelete } from '@/lib/client/api-client';
 import {
@@ -427,6 +428,7 @@ export default function AdminEnquiriesPage() {
         scrollable
         listCols={5}
         detailCols={7}
+        mobileDetailOpen={!!selectedEnquiry}
         list={
           loadError && enquiries.length === 0 ? (
             <div className="saas-panel p-10 text-center text-sm text-portal-muted">
@@ -466,6 +468,14 @@ export default function AdminEnquiriesPage() {
         detail={
           selectedEnquiry ? (
             <div className="saas-panel p-5 space-y-4">
+              <button
+                type="button"
+                onClick={() => setSelectedEnquiry(null)}
+                className="lg:hidden saas-btn-ghost text-xs py-1.5 px-2 -ml-1 inline-flex items-center gap-1"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Back to list
+              </button>
               <div className="flex flex-wrap items-start justify-between gap-3 border-b border-portal-border pb-3">
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">

@@ -13,6 +13,7 @@ import {
   Mail,
   MapPin,
   Loader2,
+  Eye,
 } from 'lucide-react';
 import { apiPost } from '@/lib/client/api-client';
 import {
@@ -28,6 +29,8 @@ import AdminPageHeader from '@/components/admin/AdminPageHeader';
 import PortalModal from '@/components/admin/PortalModal';
 import { StatusPill, SkeletonCard } from '@/components/portal/ds';
 import { toast } from 'sonner';
+import ProductFormPanel, { loadProductForPanel } from '@/components/portal/products/ProductFormPanel';
+import type { ProductFormMode, ProductFormProduct } from '@/components/portal/products/product-form.types';
 
 type Tab = 'suppliers' | 'new' | 'updates';
 
@@ -45,6 +48,13 @@ export default function AdminApprovalsPage() {
   const [rejectionTarget, setRejectionTarget] = useState<{ type: 'supplier' | 'product'; id: string; name: string } | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [supplierOptions, setSupplierOptions] = useState<any[]>([]);
+  const [defaultGstRate, setDefaultGstRate] = useState(18);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [panelMode, setPanelMode] = useState<ProductFormMode>('review-admin');
+  const [panelProduct, setPanelProduct] = useState<ProductFormProduct | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const { isPending, run } = useMutation();
 
   const loadApprovals = useCallback(async (showLoading = true, opts?: { force?: boolean }) => {
@@ -73,6 +83,18 @@ export default function AdminApprovalsPage() {
 
   useEffect(() => {
     loadApprovals();
+    void (async () => {
+      const [catsRes, supsRes, settingsRes] = await Promise.all([
+        cachedApiGet<{ categories: any[] }>('/api/categories?mode=admin&status=active'),
+        cachedApiGet<{ suppliers: any[] }>('/api/suppliers?status=active&limit=100'),
+        cachedApiGet<{ defaultGstRate?: number }>('/api/settings'),
+      ]);
+      if (catsRes.ok) setCategories(catsRes.data.categories || []);
+      if (supsRes.ok) setSupplierOptions(supsRes.data.suppliers || []);
+      if (settingsRes.ok && settingsRes.data?.defaultGstRate != null) {
+        setDefaultGstRate(Number(settingsRes.data.defaultGstRate) || 18);
+      }
+    })();
   }, [loadApprovals]);
 
   function patchApprovals(updater: (prev: ApprovalsPayload | null) => ApprovalsPayload | null) {
@@ -81,6 +103,32 @@ export default function AdminApprovalsPage() {
       if (next) setPortalCache('/api/admin/approvals', next);
       return next;
     });
+  }
+
+  async function openReviewPanel(productId: string) {
+    setPanelOpen(true);
+    setPanelMode('review-admin');
+    setPanelProduct({ id: productId } as ProductFormProduct);
+    setDetailLoading(true);
+    try {
+      const detail = await loadProductForPanel(productId);
+      if (detail) setPanelProduct(detail);
+      else {
+        toast.error('Failed to load product details');
+        setPanelOpen(false);
+      }
+    } catch {
+      toast.error('Failed to load product details');
+      setPanelOpen(false);
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  function closeReviewPanel() {
+    setPanelOpen(false);
+    setPanelProduct(null);
+    setDetailLoading(false);
   }
 
   async function handleApproveSupplier(supplierId: string) {
@@ -232,7 +280,17 @@ export default function AdminApprovalsPage() {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-3 w-full lg:w-auto shrink-0">
+        <div className="flex items-center gap-3 w-full lg:w-auto shrink-0 flex-wrap">
+          {liveProd?.id && (
+            <button
+              type="button"
+              onClick={() => openReviewPanel(liveProd.id)}
+              className="saas-btn-secondary flex-1 lg:flex-initial gap-1.5"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              Review
+            </button>
+          )}
           <button
             onClick={() => handleApproveProduct(req.id)}
             disabled={isPending(mutationKey(req.id, 'approve-product'))}
@@ -422,6 +480,32 @@ export default function AdminApprovalsPage() {
           </>
         )}
       </PortalModal>
+
+      <ProductFormPanel
+        open={panelOpen}
+        mode={panelMode}
+        product={panelProduct}
+        categories={categories}
+        suppliers={supplierOptions}
+        defaultGstRate={defaultGstRate}
+        detailLoading={detailLoading}
+        onClose={closeReviewPanel}
+        onSuccess={() => {
+          loadApprovals(true, { force: true });
+          notifyApprovalsChanged();
+          invalidateProductPortalCaches();
+        }}
+        onApprove={
+          panelProduct
+            ? () => {
+                const requestId = panelProduct.pendingRequest?.id;
+                if (requestId) void handleApproveProduct(requestId);
+              }
+            : undefined
+        }
+        isPending={isPending}
+        mutationKey={mutationKey}
+      />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { revalidatePath, revalidateTag } from 'next/cache';
 
 export function revalidateHomepageCaches() {
-  revalidateTag('homepage');
+  revalidateTag('homepage', { expire: 0 });
   revalidatePath('/');
 }
 

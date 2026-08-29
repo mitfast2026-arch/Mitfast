@@ -1,0 +1,74 @@
+-- Drop legacy 3-argument cart increment overloads left behind when migration
+-- 20260827000041 added MOQ-aware 4-argument signatures via CREATE OR REPLACE
+-- with a different arity (Postgres keeps both overloads).
+--
+-- SAFE: Application code and load tests call only the 4-arg form with p_moq
+-- (lib/server/cart/cart-service.ts, lib/server/guest/guest-cart.ts).
+-- Live audit: zero pg_depend dependents on the 3-arg overloads.
+--
+-- DOES NOT modify:
+--   public.increment_cart_item_quantity(uuid, uuid, integer, integer)
+--   public.increment_guest_cart_item_quantity(uuid, uuid, integer, integer)
+--
+-- ROLLBACK / reverse (recreate legacy 3-arg bodies from 20260827000031):
+--   See comment block at bottom of this file.
+
+DROP FUNCTION IF EXISTS public.increment_cart_item_quantity(UUID, UUID, INTEGER);
+DROP FUNCTION IF EXISTS public.increment_guest_cart_item_quantity(UUID, UUID, INTEGER);
+
+-- ---------------------------------------------------------------------------
+-- ROLLBACK (do not execute as part of forward migration):
+--
+-- CREATE OR REPLACE FUNCTION public.increment_cart_item_quantity(
+--   p_cart_id    UUID,
+--   p_product_id UUID,
+--   p_delta      INTEGER
+-- )
+-- RETURNS INTEGER
+-- LANGUAGE plpgsql
+-- SECURITY DEFINER
+-- SET search_path = public
+-- AS $$
+-- DECLARE
+--   v_qty INTEGER;
+-- BEGIN
+--   IF p_delta < 1 THEN
+--     RAISE EXCEPTION 'delta must be at least 1' USING ERRCODE = 'check_violation';
+--   END IF;
+--   INSERT INTO cart_items (cart_id, product_id, quantity)
+--   VALUES (p_cart_id, p_product_id, p_delta)
+--   ON CONFLICT (cart_id, product_id)
+--   DO UPDATE SET quantity = cart_items.quantity + EXCLUDED.quantity
+--   RETURNING quantity INTO v_qty;
+--   RETURN v_qty;
+-- END;
+-- $$;
+--
+-- CREATE OR REPLACE FUNCTION public.increment_guest_cart_item_quantity(
+--   p_guest_session_id UUID,
+--   p_product_id       UUID,
+--   p_delta            INTEGER
+-- )
+-- RETURNS INTEGER
+-- LANGUAGE plpgsql
+-- SECURITY DEFINER
+-- SET search_path = public
+-- AS $$
+-- DECLARE
+--   v_qty INTEGER;
+-- BEGIN
+--   IF p_delta < 1 THEN
+--     RAISE EXCEPTION 'delta must be at least 1' USING ERRCODE = 'check_violation';
+--   END IF;
+--   INSERT INTO guest_cart_items (guest_session_id, product_id, quantity)
+--   VALUES (p_guest_session_id, p_product_id, p_delta)
+--   ON CONFLICT (guest_session_id, product_id)
+--   DO UPDATE SET quantity = guest_cart_items.quantity + EXCLUDED.quantity
+--   RETURNING quantity INTO v_qty;
+--   RETURN v_qty;
+-- END;
+-- $$;
+--
+-- GRANT EXECUTE ON FUNCTION public.increment_cart_item_quantity(UUID, UUID, INTEGER) TO service_role;
+-- GRANT EXECUTE ON FUNCTION public.increment_guest_cart_item_quantity(UUID, UUID, INTEGER) TO service_role;
+-- ---------------------------------------------------------------------------

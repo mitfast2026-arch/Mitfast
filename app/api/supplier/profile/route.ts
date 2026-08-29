@@ -66,10 +66,19 @@ export async function PUT(request: NextRequest) {
       };
     }
 
-    // Resubmission flow: If resubmitting from rejected state
+    // Resubmission flow: If resubmitting from rejected state (service-role only).
+    // Never allow clients to self-activate (pending/rejected → active).
     if (body.resubmit && (supplier as any).status === 'rejected') {
       updatePayload.status = 'pending';
       updatePayload.rejection_reason = null;
+    }
+
+    // Strip any client-supplied status other than the rejected → pending path above
+    if (updatePayload.status && updatePayload.status !== 'pending') {
+      delete updatePayload.status;
+    }
+    if (body.status === 'active' || body.status === 'archived') {
+      // Explicitly ignore privilege-escalation attempts
     }
 
     const { data: updated, error: updateError } = await admin

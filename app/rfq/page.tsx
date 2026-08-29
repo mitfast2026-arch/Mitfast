@@ -21,11 +21,12 @@ function cartRedirectWithPrefill(searchParams: SearchParams): string {
 }
 
 /** RFQ entry: customers go to cart; guests go to cart (submit gated). */
-export default async function RfqPage({
-  searchParams,
-}: {
-  searchParams: SearchParams;
-}) {
+export default async function RfqPage(
+  props: {
+    searchParams: Promise<SearchParams>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const session = await getServerSession();
   const cartTarget = cartRedirectWithPrefill(searchParams);
 

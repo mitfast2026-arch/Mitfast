@@ -3,7 +3,7 @@
 import React, { Suspense, useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Search, RefreshCw, MapPin, ArrowRight, Plus } from 'lucide-react';
+import { Search, RefreshCw, MapPin, ArrowRight, Plus, ChevronLeft } from 'lucide-react';
 import type { OrderStatus, PaymentStatus } from '@/types/database';
 import { apiPut } from '@/lib/client/api-client';
 import {
@@ -252,6 +252,7 @@ function AdminOrdersPageContent() {
       <AdminSplitView
         listCols={5}
         detailCols={7}
+        mobileDetailOpen={!!selectedOrder}
         list={
           orders.length === 0 ? (
             <div className="saas-panel p-10 text-center text-sm text-portal-muted">
@@ -285,6 +286,14 @@ function AdminOrdersPageContent() {
         detail={
           selectedOrder ? (
             <div className="saas-panel p-5 space-y-4">
+              <button
+                type="button"
+                onClick={() => setSelectedOrder(null)}
+                className="lg:hidden saas-btn-ghost text-xs py-1.5 px-2 -ml-1 inline-flex items-center gap-1"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Back to list
+              </button>
               <div className="flex flex-wrap items-start justify-between gap-3 border-b border-portal-border pb-3">
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">

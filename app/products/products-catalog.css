@@ -481,12 +481,15 @@
   flex-wrap: wrap;
   min-height: 48px;
   margin-bottom: 12px;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .pc-toolbar__count {
   font-size: 14px;
   font-weight: 500;
   color: var(--pc-muted);
+  min-width: 0;
 }
 
 .pc-toolbar__right {
@@ -494,6 +497,8 @@
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .pc-filters-mobile {
@@ -554,6 +559,7 @@
 
 .pc-sort {
   height: 40px;
+  max-width: 100%;
   padding: 0 32px 0 14px;
   border: none;
   border-radius: 999px;
@@ -569,6 +575,14 @@
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236B7280' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 12px center;
+}
+
+@media (max-width: 639px) {
+  .pc-sort {
+    font-size: 13px;
+    padding-inline: 12px 28px;
+    max-width: min(100%, 11.5rem);
+  }
 }
 
 /* Category strip fills main width */
@@ -1139,6 +1153,36 @@
   white-space: nowrap;
 }
 
+/* List view: stack meta above full-width actions on small screens */
+@media (max-width: 767px) {
+  .pc-list-row {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr);
+    grid-template-areas:
+      "thumb meta"
+      "actions actions";
+    align-items: start;
+    gap: 12px 14px;
+    min-height: 0;
+  }
+
+  .pc-list-row__thumb {
+    grid-area: thumb;
+  }
+
+  .pc-list-row__meta {
+    grid-area: meta;
+  }
+
+  .pc-list-row__actions {
+    grid-area: actions;
+    width: 100%;
+    max-width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+}
+
 /* Empty / loading */
 .pc-empty {
   text-align: center;
@@ -1249,8 +1293,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-wrap: wrap;
   gap: 6px;
   margin-top: 28px;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .pc-page-btn {
@@ -1323,10 +1370,12 @@
   display: flex;
   flex-direction: column;
   box-shadow: var(--pc-shadow-lg);
+  pointer-events: none;
 }
 
 .pc-drawer.is-open {
   transform: translateX(0);
+  pointer-events: auto;
 }
 
 .pc-drawer__header {

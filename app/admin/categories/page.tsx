@@ -354,7 +354,151 @@ export default function AdminCategoriesPage() {
         )}
 
         <div className={`saas-table-container ${statusFilter === 'active' ? 'lg:col-span-8' : 'lg:col-span-12'}`}>
-          <table className="saas-table text-xs">
+          {/* Mobile cards — Edit/Archive/Delete/Restore always reachable */}
+          <div className="md:hidden divide-y divide-portal-border">
+            {loading ? (
+              <div className="py-12 text-center text-portal-muted text-xs">Loading categories…</div>
+            ) : categories.length === 0 ? (
+              <div className="py-12 text-center text-portal-muted text-xs px-4">
+                {statusFilter === 'active'
+                  ? 'No active categories. Create one using the form.'
+                  : 'No archived categories.'}
+              </div>
+            ) : (
+              categories.map((cat, idx) => {
+                const imageUrl = cat.imageUrl || cat.image_url;
+                const isUploading = uploadingCatId === cat.id;
+
+                return (
+                  <div key={cat.id} className="px-4 py-3 space-y-2.5">
+                    <div className="flex items-start gap-3 min-w-0">
+                      {imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={imageUrl}
+                          alt=""
+                          className="w-10 h-10 rounded-lg object-cover border border-portal-border shrink-0"
+                        />
+                      ) : (
+                        <span className="inline-flex w-10 h-10 rounded-lg bg-portal-inset border border-portal-border items-center justify-center text-[10px] text-portal-muted shrink-0">
+                          —
+                        </span>
+                      )}
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="font-medium text-sm text-portal-text truncate">
+                            <span className="text-portal-muted font-normal mr-1.5">#{idx + 1}</span>
+                            {cat.name}
+                          </div>
+                          <span className="text-xs text-portal-muted shrink-0">{cat.productCount} products</span>
+                        </div>
+                        <div className="text-xs text-portal-muted">{formatDate(cat.created_at)}</div>
+                        {statusFilter === 'active' && (
+                          <div className="flex items-center gap-2 pt-0.5">
+                            <label
+                              className={`saas-btn-secondary inline-flex items-center gap-1.5 !h-7 !px-2.5 !text-[11px] cursor-pointer ${
+                                isUploading ? 'opacity-50 pointer-events-none' : ''
+                              }`}
+                            >
+                              {isUploading ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Upload className="w-3 h-3" />
+                              )}
+                              {isUploading ? 'Uploading…' : imageUrl ? 'Replace' : 'Upload'}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                disabled={isUploading}
+                                className="sr-only"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) handleCategoryImageUpload(cat.id, file);
+                                  e.target.value = '';
+                                }}
+                              />
+                            </label>
+                            {imageUrl && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveImage(cat.id)}
+                                disabled={isUploading}
+                                className="text-[11px] text-portal-muted hover:text-portal-danger disabled:opacity-50"
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {statusFilter === 'active' ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => openEdit(cat)}
+                            className="saas-btn-secondary text-xs py-1.5 px-2.5 inline-flex items-center gap-1.5"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openArchive(cat)}
+                            disabled={isPending(mutationKey(cat.id, 'archive'))}
+                            className="saas-btn-secondary text-xs py-1.5 px-2.5 inline-flex items-center gap-1.5 text-portal-warning disabled:opacity-50"
+                          >
+                            <Archive className="w-3.5 h-3.5" />
+                            Archive
+                          </button>
+                          {cat.productCount === 0 && (
+                            <button
+                              type="button"
+                              onClick={() => openDelete(cat)}
+                              className="saas-btn-secondary text-xs py-1.5 px-2.5 inline-flex items-center gap-1.5 text-portal-danger"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              Delete
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleRestore(cat)}
+                            disabled={isPending(mutationKey(cat.id, 'restore'))}
+                            className="saas-btn-secondary text-xs py-1.5 px-2.5 inline-flex items-center gap-1.5 text-portal-success disabled:opacity-50"
+                          >
+                            {isPending(mutationKey(cat.id, 'restore')) ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <RotateCcw className="w-3.5 h-3.5" />
+                            )}
+                            Restore
+                          </button>
+                          {cat.productCount === 0 && (
+                            <button
+                              type="button"
+                              onClick={() => openDelete(cat)}
+                              className="saas-btn-secondary text-xs py-1.5 px-2.5 inline-flex items-center gap-1.5 text-portal-danger"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              Delete
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Desktop table */}
+          <table className="saas-table text-xs hidden md:table min-w-[40rem]">
             <thead>
               <tr>
                 <th className="w-12">#</th>

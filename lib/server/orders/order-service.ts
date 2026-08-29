@@ -761,3 +761,137 @@ export async function getOrdersForAdmin(params: {
     return { success: false, error: { message: 'Failed to fetch orders for admin', code: 'INTERNAL_ERROR' } };
   }
 }
+
+export async function getSupplierOrders(
+  supplierId: string,
+  params: { page?: number; limit?: number; search?: string }
+): Promise<
+  ServerResult<{
+    orders: Array<{
+      id: string;
+      order_number: string;
+      status: string;
+      created_at: string;
+      updated_at: string;
+      item_count: number;
+    }>;
+    total: number;
+    page: number;
+    limit: number;
+  }>
+> {
+  try {
+    const adminClient = createAdminClient();
+    const page = Math.max(1, params.page || 1);
+    const limit = Math.min(100, Math.max(1, params.limit || 10));
+    const offset = (page - 1) * limit;
+
+    let query = adminClient
+      .from('orders')
+      .select(
+        `
+        id,
+        order_number,
+        status,
+        created_at,
+        updated_at,
+        order_items!inner(id)
+      `,
+        { count: 'exact' }
+      )
+      .eq('order_items.supplier_id', supplierId);
+
+    const search = params.search?.trim();
+    if (search) {
+      const q = sanitizeIlikePattern(search);
+      if (q) {
+        query = query.ilike('order_number', `%${q}%`);
+      }
+    }
+
+    query = query.order('created_at', { ascending: false });
+
+    const { data, count, error } = await query.range(offset, offset + limit - 1);
+
+    if (error) {
+      return { success: false, error: { message: error.message, code: 'DATABASE_ERROR' } };
+    }
+
+    const orders = (data || []).map((row: any) => ({
+      id: row.id,
+      order_number: row.order_number,
+      status: row.status,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      item_count: Array.isArray(row.order_items) ? row.order_items.length : 0,
+    }));
+
+    return { success: true, data: { orders, total: count || 0, page, limit } };
+  } catch (error) {
+    console.error('[getSupplierOrders] Error:', error);
+    return { success: false, error: { message: 'Failed to fetch supplier orders', code: 'INTERNAL_ERROR' } };
+  }
+}
+
+export async function getSupplierOrderDetail(
+  supplierId: string,
+  orderId: string
+): Promise<
+  ServerResult<{
+    id: string;
+    order_number: string;
+    status: string;
+    created_at: string;
+    updated_at: string;
+    items: Array<{
+      id: string;
+      product_id: string;
+      product_name_snapshot: string;
+      quantity: number;
+    }>;
+  }>
+> {
+  try {
+    const adminClient = createAdminClient();
+
+    const { data: order, error: orderError } = await adminClient
+      .from('orders')
+      .select('id, order_number, status, created_at, updated_at')
+      .eq('id', orderId)
+      .maybeSingle();
+
+    if (orderError || !order) {
+      return { success: false, error: { message: 'Order not found', code: 'NOT_FOUND' } };
+    }
+
+    const { data: items, error: itemsError } = await adminClient
+      .from('order_items')
+      .select('id, product_id, product_name_snapshot, quantity')
+      .eq('order_id', orderId)
+      .eq('supplier_id', supplierId);
+
+    if (itemsError) {
+      return { success: false, error: { message: itemsError.message, code: 'DATABASE_ERROR' } };
+    }
+
+    if (!items || items.length === 0) {
+      return { success: false, error: { message: 'Order not found', code: 'NOT_FOUND' } };
+    }
+
+    return {
+      success: true,
+      data: {
+        ...order,
+        items: items.map((item: any) => ({
+          id: item.id,
+          product_id: item.product_id,
+          product_name_snapshot: item.product_name_snapshot,
+          quantity: item.quantity,
+        })),
+      },
+    };
+  } catch (error) {
+    console.error('[getSupplierOrderDetail] Error:', error);
+    return { success: false, error: { message: 'Failed to fetch order detail', code: 'INTERNAL_ERROR' } };
+  }
+}

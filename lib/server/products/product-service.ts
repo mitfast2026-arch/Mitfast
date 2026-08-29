@@ -23,6 +23,7 @@ import {
   rejectProductSchema,
   requestChangesSchema,
 } from '@/lib/validation/product.schema';
+import { sanitizeRichTextHtml } from '@/lib/html/sanitize-rich-text.server';
 import type { ServerResult } from '@/lib/server/auth/get-session';
 import type {
   ProductApprovalStatus,
@@ -53,6 +54,11 @@ function buildImageRows(productId: string, imageUrls: string[], maxImages: numbe
     sort_order: idx,
     is_primary: idx === 0,
   }));
+}
+
+function normalizeDescription(description?: string | null): string | null {
+  if (!description?.trim()) return null;
+  return sanitizeRichTextHtml(description);
 }
 
 type ReplaceImagesResult = { success: true } | { success: false; message: string };
@@ -213,6 +219,7 @@ export async function syncPendingApprovalImageUrls(productId: string): Promise<v
 /**
  * Supplier creates a new product.
  * Starts in approval_status='pending', publication_status='unpublished'.
+ * Prefer atomic RPC so product + specs + approval request commit together.
  */
 export async function createProductBySupplier(
   supplierId: string,
@@ -230,10 +237,9 @@ export async function createProductBySupplier(
     const {
       categoryId,
       name,
-      description,
+      description: rawDescription,
       sku,
       stockQuantity,
-      moq,
       suggestedMoq,
       supplierPrice,
       specifications,
@@ -243,9 +249,80 @@ export async function createProductBySupplier(
       discount,
       minOrderValue,
     } = validated.data;
+    const description = normalizeDescription(rawDescription);
     const adminClient = createAdminClient();
 
-    // Verify supplier is active
+    const settingsRes = await getBusinessSettings();
+    const settings = settingsRes.success ? settingsRes.data : null;
+    const gstRate = payloadGstRate ?? settings?.defaultGstRate ?? 18;
+    const gstInc = gstIncluded ?? false;
+    const discountAmt = discount ?? 0;
+    const maxImages = settings?.maxProductImages ?? 8;
+    const resolvedSuggestedMoq = suggestedMoq ?? 100;
+
+    const initialPricing = calculatePricing({
+      supplier_price: supplierPrice,
+      profit_type: 'percentage',
+      profit_value: 15,
+      discount: discountAmt,
+      gst_rate: gstRate,
+      gst_included: gstInc,
+    });
+
+    const proposedData = {
+      name,
+      description,
+      sku,
+      stock_quantity: stockQuantity ?? 0,
+      suggested_moq: resolvedSuggestedMoq,
+      supplier_price: supplierPrice,
+      category_id: categoryId,
+      specifications,
+      image_urls: imageUrls,
+    };
+
+    const payload = {
+      category_id: categoryId,
+      name,
+      description: description || null,
+      sku: sku ?? null,
+      stock_quantity: stockQuantity ?? 0,
+      suggested_moq: resolvedSuggestedMoq,
+      supplier_price: supplierPrice,
+      selling_price: initialPricing.selling_price,
+      discount: discountAmt,
+      gst_rate: gstRate,
+      gst_included: gstInc,
+      min_order_value: minOrderValue ?? null,
+      specifications: specifications ?? [],
+      // Prefer post-create uploads; still accept URL snapshots if provided
+      image_urls: (imageUrls ?? []).slice(0, maxImages),
+      proposed_data: proposedData,
+    };
+
+    const { data: productId, error: rpcError } = await (adminClient as any).rpc(
+      'create_supplier_product_atomic',
+      { p_supplier_id: supplierId, p_payload: payload }
+    );
+
+    if (!rpcError && productId) {
+      return { success: true, data: { productId: productId as string } };
+    }
+
+    const { isRpcMissing, allowUnsafeDbFallback, databaseMisconfiguredError } = await import(
+      '@/lib/server/db/production-guards'
+    );
+    const { mapRpcError } = await import('@/lib/server/db/rpc-errors');
+
+    if (rpcError && !isRpcMissing(rpcError, 'create_supplier_product_atomic')) {
+      return { success: false, error: mapRpcError(rpcError) };
+    }
+
+    if (!allowUnsafeDbFallback()) {
+      return databaseMisconfiguredError('Supplier product create');
+    }
+
+    // Dev fallback: multi-step (non-atomic) — only outside production
     const { data: supplier, error: supplierError } = await adminClient
       .from('suppliers')
       .select('id, status')
@@ -259,27 +336,6 @@ export async function createProductBySupplier(
       };
     }
 
-    const settingsRes = await getBusinessSettings();
-    const settings = settingsRes.success ? settingsRes.data : null;
-    const gstRate = payloadGstRate ?? settings?.defaultGstRate ?? 18;
-    const gstInc = gstIncluded ?? false;
-    const discountAmt = discount ?? 0;
-    const maxImages = settings?.maxProductImages ?? 8;
-    const resolvedSuggestedMoq = suggestedMoq ?? 100;
-    // Supplier submissions only set suggested MOQ; catalog MOQ mirrors it until admin adjusts.
-    const catalogMoq = resolvedSuggestedMoq;
-
-    // Default profit & pricing computation (default 15% margin)
-    const initialPricing = calculatePricing({
-      supplier_price: supplierPrice,
-      profit_type: 'percentage',
-      profit_value: 15,
-      discount: discountAmt,
-      gst_rate: gstRate,
-      gst_included: gstInc,
-    });
-
-    // 1. Insert product record
     const { data: product, error: prodError } = await adminClient
       .from('products')
       .insert({
@@ -289,7 +345,7 @@ export async function createProductBySupplier(
         description: description || null,
         sku: sku ?? null,
         stock_quantity: stockQuantity ?? 0,
-        moq: catalogMoq,
+        moq: resolvedSuggestedMoq,
         suggested_moq: resolvedSuggestedMoq,
         supplier_price: supplierPrice,
         profit_type: 'percentage',
@@ -314,46 +370,45 @@ export async function createProductBySupplier(
       };
     }
 
-    const productId = product.id;
+    const createdId = product.id;
 
-    // 2. Insert specifications
     if (specifications && specifications.length > 0) {
       const specRows = specifications.map((s, idx) => ({
-        product_id: productId,
+        product_id: createdId,
         spec_name: s.spec_name,
         spec_value: s.spec_value,
         sort_order: s.sort_order ?? idx,
       }));
-      await adminClient.from('product_specifications').insert(specRows);
+      const { error: specError } = await adminClient.from('product_specifications').insert(specRows);
+      if (specError) {
+        await adminClient.from('products').delete().eq('id', createdId);
+        return { success: false, error: { message: specError.message, code: 'DATABASE_ERROR' } };
+      }
     }
 
-    // 3. Insert images
     if (imageUrls && imageUrls.length > 0) {
-      await adminClient.from('product_images').insert(buildImageRows(productId, imageUrls, maxImages));
+      const { error: imgError } = await adminClient
+        .from('product_images')
+        .insert(buildImageRows(createdId, imageUrls, maxImages));
+      if (imgError) {
+        await adminClient.from('products').delete().eq('id', createdId);
+        return { success: false, error: { message: imgError.message, code: 'DATABASE_ERROR' } };
+      }
     }
 
-    // 4. Create approval request log
-    await adminClient.from('product_approval_requests').insert({
-      product_id: productId,
+    const { error: reqError } = await adminClient.from('product_approval_requests').insert({
+      product_id: createdId,
       request_type: 'new_product',
-      proposed_data: {
-        name,
-        description,
-        sku,
-        stock_quantity: stockQuantity ?? 0,
-        suggested_moq: resolvedSuggestedMoq,
-        supplier_price: supplierPrice,
-        category_id: categoryId,
-        specifications,
-        image_urls: imageUrls,
-      },
+      proposed_data: proposedData,
       status: 'pending',
     });
 
-    return {
-      success: true,
-      data: { productId },
-    };
+    if (reqError) {
+      await adminClient.from('products').delete().eq('id', createdId);
+      return { success: false, error: { message: reqError.message, code: 'DATABASE_ERROR' } };
+    }
+
+    return { success: true, data: { productId: createdId } };
   } catch (error) {
     console.error('[createProductBySupplier] Error:', error);
     return {
@@ -408,7 +463,7 @@ async function insertProductRecord(params: {
       supplier_id: params.supplierId,
       category_id: params.categoryId,
       name: params.name,
-      description: params.description || null,
+      description: normalizeDescription(params.description),
       sku: params.sku ?? null,
       stock_quantity: params.stockQuantity ?? 0,
       moq: params.moq,
@@ -661,6 +716,7 @@ export async function saveProductDraft(
 /**
  * Supplier submits an update to an existing product.
  * Queues proposed_data without changing live product approval_status (listing stays visible).
+ * Prefer atomic RPC (FOR UPDATE + supersede + insert) for concurrency safety.
  */
 export async function submitProductUpdateBySupplier(
   supplierId: string,
@@ -675,10 +731,20 @@ export async function submitProductUpdateBySupplier(
       };
     }
 
-    const { productId, name, categoryId, description, sku, suggestedMoq, supplierPrice, specifications, imageUrls } = validated.data;
+    const {
+      productId,
+      name,
+      categoryId,
+      description: rawDescription,
+      sku,
+      suggestedMoq,
+      supplierPrice,
+      specifications,
+      imageUrls,
+    } = validated.data;
+    const description = normalizeDescription(rawDescription);
     const adminClient = createAdminClient();
 
-    // Verify ownership
     const { data: existingProd, error: fetchError } = await adminClient
       .from('products')
       .select('id, supplier_id, publication_status, updated_at')
@@ -689,11 +755,61 @@ export async function submitProductUpdateBySupplier(
     if (fetchError || !existingProd) {
       return {
         success: false,
-        error: { message: 'Product not found or does not belong to this supplier', code: 'NOT_FOUND' },
+        error: {
+          message: 'Product not found or does not belong to this supplier',
+          code: 'NOT_FOUND',
+        },
       };
     }
 
-    // Supersede any open request for this product
+    const proposed = {
+      name,
+      category_id: categoryId,
+      description,
+      sku,
+      suggested_moq: suggestedMoq,
+      supplier_price: supplierPrice,
+      specifications,
+      image_urls: imageUrls,
+    };
+
+    const { data: requestId, error: rpcError } = await (adminClient as any).rpc(
+      'submit_supplier_update_atomic',
+      {
+        p_supplier_id: supplierId,
+        p_product_id: productId,
+        p_proposed: proposed,
+        p_base_updated_at: existingProd.updated_at,
+      }
+    );
+
+    if (!rpcError && requestId) {
+      return { success: true, data: { requestId: requestId as string } };
+    }
+
+    const { isRpcMissing, allowUnsafeDbFallback, databaseMisconfiguredError } = await import(
+      '@/lib/server/db/production-guards'
+    );
+    const { mapRpcError, isUniqueViolation } = await import('@/lib/server/db/rpc-errors');
+
+    if (rpcError && !isRpcMissing(rpcError, 'submit_supplier_update_atomic')) {
+      const mapped = mapRpcError(rpcError);
+      if (isUniqueViolation(rpcError) || mapped.code === 'CONCURRENT_UPDATE') {
+        return {
+          success: false,
+          error: {
+            message: 'An update request is already pending. Retry shortly.',
+            code: 'CONCURRENT_UPDATE',
+          },
+        };
+      }
+      return { success: false, error: mapped };
+    }
+
+    if (!allowUnsafeDbFallback()) {
+      return databaseMisconfiguredError('Supplier product update');
+    }
+
     await adminClient
       .from('product_approval_requests')
       .update({
@@ -704,30 +820,17 @@ export async function submitProductUpdateBySupplier(
       .eq('product_id', productId)
       .in('status', ['pending', 'update_pending']);
 
-    // Keep live product approved/published during review — pending state lives on the request row.
     await adminClient
       .from('products')
-      .update({
-        updated_at: new Date().toISOString(),
-      })
+      .update({ updated_at: new Date().toISOString() })
       .eq('id', productId);
 
-    // Queue the proposed update (supplier cannot change catalog MOQ / margin / discount)
     const { data: request, error: reqError } = await adminClient
       .from('product_approval_requests')
       .insert({
         product_id: productId,
         request_type: 'update',
-        proposed_data: {
-          name,
-          category_id: categoryId,
-          description,
-          sku,
-          suggested_moq: suggestedMoq,
-          supplier_price: supplierPrice,
-          specifications,
-          image_urls: imageUrls,
-        },
+        proposed_data: proposed,
         status: 'update_pending',
         base_product_updated_at: existingProd.updated_at,
       } as any)
@@ -735,16 +838,22 @@ export async function submitProductUpdateBySupplier(
       .single();
 
     if (reqError || !request) {
+      if (isUniqueViolation(reqError)) {
+        return {
+          success: false,
+          error: {
+            message: 'An update request is already pending. Retry shortly.',
+            code: 'CONCURRENT_UPDATE',
+          },
+        };
+      }
       return {
         success: false,
-        error: { message: 'Failed to submit update request', code: 'DATABASE_ERROR' },
+        error: { message: reqError?.message || 'Failed to submit update request', code: 'DATABASE_ERROR' },
       };
     }
 
-    return {
-      success: true,
-      data: { requestId: request.id },
-    };
+    return { success: true, data: { requestId: request.id } };
   } catch (error) {
     console.error('[submitProductUpdateBySupplier] Error:', error);
     return {
@@ -836,7 +945,9 @@ export async function adminDirectUpdateProduct(formData: unknown): Promise<Serve
     if (directFields.supplierId !== undefined) {
       updatePayload.supplier_id = normalizeSupplierId(directFields.supplierId);
     }
-    if (directFields.description !== undefined) updatePayload.description = directFields.description;
+    if (directFields.description !== undefined) {
+      updatePayload.description = normalizeDescription(directFields.description);
+    }
     if (directFields.sku !== undefined) updatePayload.sku = directFields.sku;
     if (directFields.stockQuantity !== undefined) updatePayload.stock_quantity = directFields.stockQuantity;
     if (directFields.moq !== undefined) updatePayload.moq = directFields.moq;

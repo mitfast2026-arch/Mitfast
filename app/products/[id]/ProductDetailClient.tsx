@@ -18,7 +18,6 @@ import {
   Ruler,
   ShieldCheck,
   ShoppingCart,
-  Truck,
   Weight,
   Zap,
 } from "lucide-react";
@@ -47,6 +46,7 @@ type Product = {
   id: string;
   name: string;
   description?: string | null;
+  descriptionHtml?: string;
   moq?: number;
   selling_price?: number;
   discount?: number;
@@ -610,9 +610,16 @@ export default function ProductDetailClient({
               )}
             </div>
 
-            <p className="pdp-desc">
-              {product.description?.trim() || "No description provided."}
-            </p>
+            {product.descriptionHtml?.trim() || product.description?.trim() ? (
+              <div
+                className="pdp-desc"
+                dangerouslySetInnerHTML={{
+                  __html: product.descriptionHtml || product.description || '',
+                }}
+              />
+            ) : (
+              <p className="pdp-desc">No description provided.</p>
+            )}
 
             {keySpecs.length > 0 && (
               <>
@@ -733,20 +740,6 @@ export default function ProductDetailClient({
 
             <ul className="pdp-logistics">
               <li>
-                <Truck aria-hidden />
-                <span>
-                  <strong>Estimated delivery</strong>
-                  3–5 working days
-                </span>
-              </li>
-              <li>
-                <Package aria-hidden />
-                <span>
-                  <strong>Delivery &amp; shipping</strong>
-                  Quoted at RFQ acceptance
-                </span>
-              </li>
-              <li>
                 <FileText aria-hidden />
                 <span>
                   <strong>GST Invoice</strong>
@@ -771,6 +764,7 @@ export default function ProductDetailClient({
           <h2 className="pdp-full__title" id="full-specs-heading">
             Full Specifications
           </h2>
+          <div className="pdp-full__table-wrap">
           <table className="pdp-full__table">
             <tbody>
               <tr>
@@ -829,6 +823,7 @@ export default function ProductDetailClient({
               ))}
             </tbody>
           </table>
+          </div>
         </section>
 
         {/* Recommendations — full width, below specs (Amazon / Flipkart flow) */}

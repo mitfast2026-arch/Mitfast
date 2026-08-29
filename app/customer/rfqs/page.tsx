@@ -1,10 +1,11 @@
 import { redirect } from 'next/navigation';
 
-export default function CustomerRfqsRedirect({
-  searchParams,
-}: {
-  searchParams: Record<string, string | string[] | undefined>;
-}) {
+export default async function CustomerRfqsRedirect(
+  props: {
+    searchParams: Promise<Record<string, string | string[] | undefined>>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const qs = new URLSearchParams();
   qs.set('tab', 'rfqs');
   for (const [key, value] of Object.entries(searchParams)) {

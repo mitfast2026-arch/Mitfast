@@ -3,10 +3,8 @@ import { getStorefrontProductDetail } from '@/lib/server/products/storefront-det
 import { requireAdmin } from '@/lib/server/auth/get-session';
 import { deferRevalidateProduct } from '@/lib/server/products/revalidate-product-paths';
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const productId = params.id;
     const mode = new URL(request.url).searchParams.get('mode');
@@ -41,10 +39,8 @@ export async function GET(
   }
 }
 
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const auth = await requireAdmin();
     if (!auth.ok) return auth.response;
@@ -70,10 +66,8 @@ export async function PUT(
   }
 }
 
-export async function DELETE(
-  _request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(_request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const auth = await requireAdmin();
     if (!auth.ok) return auth.response;

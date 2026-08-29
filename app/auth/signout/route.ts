@@ -24,7 +24,7 @@ async function signOutAndRedirect(request: NextRequest) {
     return response;
   }
 
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
 
   const supabase = createServerClient<Database>(supabaseUrl, supabaseAnonKey, {
     cookies: {

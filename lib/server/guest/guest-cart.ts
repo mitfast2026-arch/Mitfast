@@ -1,6 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { ServerResult } from '@/lib/server/auth/get-session';
-import { calculatePricing } from '@/lib/server/pricing/calculate-price';
+import { aggregateCartTotals, priceCartLine } from '@/lib/server/cart/cart-line-pricing';
 import type { CartItemWithProduct, CustomerCartData } from '@/lib/server/cart/cart-service';
 
 type ProductRow = {
@@ -24,8 +24,13 @@ type ProductRow = {
 function formatGuestItems(
   rows: { id: string; product_id: string; quantity: number; added_at: string; product: ProductRow | null }[]
 ): CustomerCartData {
-  let subtotal = 0;
   const items: CartItemWithProduct[] = [];
+  const aggregateLines: {
+    itemTotal: number;
+    lineGst: number;
+    lineGrandTotal: number;
+    isAvailable: boolean;
+  }[] = [];
 
   for (const item of rows) {
     const p = item.product;
@@ -36,18 +41,23 @@ function formatGuestItems(
       p.archive_status === 'active' &&
       p.approval_status === 'approved';
 
-    const priced = calculatePricing({
-      supplier_price: p.selling_price || 0,
-      profit_type: 'fixed',
-      profit_value: 0,
-      discount: p.discount || 0,
-      gst_rate: p.gst_rate || 0,
-      gst_included: p.gst_included || false,
-      quantity: item.quantity,
+    const priced = priceCartLine(
+      {
+        selling_price: p.selling_price || 0,
+        discount: p.discount || 0,
+        gst_rate: p.gst_rate || 0,
+        gst_included: p.gst_included || false,
+      },
+      item.quantity
+    );
+    const unitPrice = priced.actualUnitPrice;
+    const itemTotal = priced.itemTotal;
+    aggregateLines.push({
+      itemTotal,
+      lineGst: priced.lineGst,
+      lineGrandTotal: priced.lineGrandTotal,
+      isAvailable,
     });
-    const unitPrice = priced.discounted_unit_price;
-    const itemTotal = priced.subtotal;
-    if (isAvailable) subtotal += itemTotal;
 
     const primaryImg =
       p.images?.find((img) => img.is_primary)?.image_url || p.images?.[0]?.image_url || null;
@@ -74,14 +84,19 @@ function formatGuestItems(
         primaryImage: primaryImg,
       },
       itemTotal,
+      subtotalPerUnit: priced.subtotalPerUnit,
     });
   }
+
+  const totals = aggregateCartTotals(aggregateLines);
 
   return {
     cartId: 'guest',
     items,
     itemCount: items.reduce((acc, curr) => acc + curr.quantity, 0),
-    subtotal: Math.round(subtotal * 100) / 100,
+    subtotal: totals.subtotal,
+    totalGst: totals.totalGst,
+    grandTotal: totals.grandTotal,
   };
 }
 
@@ -213,7 +228,7 @@ export async function updateGuestCartItemQuantity(
     const admin = createAdminClient();
     const { data: row, error } = await admin
       .from('guest_cart_items')
-      .select('id, guest_session_id, product:products(moq)')
+      .select('id, guest_session_id, product:products(moq, min_order_value, selling_price, discount)')
       .eq('id', cartItemId)
       .maybeSingle();
 
@@ -221,9 +236,28 @@ export async function updateGuestCartItemQuantity(
       return { success: false, error: { message: 'Cart item not found', code: 'NOT_FOUND' } };
     }
 
-    const moq = (row.product as any)?.moq || 1;
+    const p = row.product as {
+      moq?: number;
+      min_order_value?: number | null;
+      selling_price?: number;
+      discount?: number | null;
+    } | null;
+    const moq = p?.moq || 1;
     if (quantity < moq) {
       return { success: false, error: { message: `Minimum order quantity is ${moq}`, code: 'BELOW_MOQ' } };
+    }
+
+    if (p?.min_order_value) {
+      const unit = Math.max(0, (p.selling_price || 0) - (p.discount || 0));
+      if (unit * quantity < Number(p.min_order_value)) {
+        return {
+          success: false,
+          error: {
+            message: `Minimum order value for this product is ₹${Number(p.min_order_value).toLocaleString('en-IN')}`,
+            code: 'BELOW_MIN_ORDER_VALUE',
+          },
+        };
+      }
     }
 
     const { error: updErr } = await admin

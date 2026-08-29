@@ -53,7 +53,7 @@ export default function SupplierDashboardPage() {
   const showSkeleton = (supplierLoading || loading) && !stats;
 
   const quickLinks = [
-    { href: '/supplier/products', icon: Plus, label: 'Add product' },
+    { href: '/supplier/products?action=create', icon: Plus, label: 'Add product' },
     { href: '/supplier/orders', icon: ShoppingCart, label: 'Orders' },
     { href: '/supplier/rfqs', icon: FileText, label: 'RFQs' },
   ];

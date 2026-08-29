@@ -103,7 +103,7 @@ export default function About() {
               </div>
               <div className="flex items-center gap-3 p-3 rounded-xl bg-black/30 backdrop-blur-md border border-white/10">
                 <Clock className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>Confirmed delivery schedules with order tracking</span>
+                <span>Confirmed production schedules with order tracking</span>
               </div>
             </div>
           </div>

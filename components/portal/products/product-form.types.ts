@@ -74,6 +74,7 @@ export type ProductFormValues = {
   ribbon: string;
   specRows: SpecRow[];
   supplierPrice: number;
+  profitType: 'percentage' | 'fixed';
   profit: number;
   discount: number;
   discountEnabled: boolean;
@@ -100,6 +101,7 @@ export const EMPTY_PRODUCT_FORM: ProductFormValues = {
   ribbon: '',
   specRows: [],
   supplierPrice: 0,
+  profitType: 'percentage',
   profit: 15,
   discount: 0,
   discountEnabled: false,

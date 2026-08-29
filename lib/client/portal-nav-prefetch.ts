@@ -3,6 +3,9 @@ import { prefetchPortalData } from '@/lib/client/portal-data-cache';
 /** Default list page size for portal GETs. */
 export const PORTAL_PAGE_LIMIT = 25;
 
+/** Supplier RFQ / orders list page size. */
+export const SUPPLIER_PORTAL_LIST_LIMIT = 10;
+
 /**
  * Map portal routes → API URLs to warm on hover/intent.
  * Keep URLs aligned with each page's initial fetch.
@@ -32,6 +35,8 @@ export const PORTAL_ROUTE_PREFETCH: Record<string, string[]> = {
   '/supplier/profile': ['/api/supplier/profile'],
   '/supplier/settings': [],
   '/supplier/product-views': [],
+  '/supplier/rfqs': [`/api/supplier/rfqs?page=1&limit=${SUPPLIER_PORTAL_LIST_LIMIT}`],
+  '/supplier/orders': [`/api/supplier/orders?page=1&limit=${SUPPLIER_PORTAL_LIST_LIMIT}`],
 };
 
 export function prefetchPortalRouteData(href: string) {

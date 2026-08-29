@@ -34,7 +34,8 @@ function firstParam(value: string | string[] | undefined): string {
   return value || '';
 }
 
-export default async function ProductsPage({ searchParams }: PageProps) {
+export default async function ProductsPage(props: PageProps) {
+  const searchParams = await props.searchParams;
   const page = Math.max(1, parseInt(firstParam(searchParams?.page) || '1', 10) || 1);
   const search = firstParam(searchParams?.search);
   const category =

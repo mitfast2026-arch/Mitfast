@@ -37,6 +37,12 @@
   overflow: visible;
 }
 
+@media (max-width: 767px) {
+  .arc-fan-stage {
+    height: clamp(380px, 58vh, 480px);
+  }
+}
+
 .arc-fan-stage.is-dragging {
   cursor: grabbing !important;
 }
@@ -71,6 +77,15 @@
   pointer-events: auto;
   will-change: transform, opacity;
   contain: layout paint style;
+}
+
+@media (max-width: 767px) {
+  .arc-fan-card {
+    width: 200px;
+    height: 288px;
+    margin-left: -100px;
+    margin-top: -144px;
+  }
 }
 
 /* Full-Bleed Product Card Panel */

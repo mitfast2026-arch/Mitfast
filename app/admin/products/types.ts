@@ -91,8 +91,24 @@ export function shortId(id: string): string {
   return `${id.slice(0, 8)}…${id.slice(-4)}`;
 }
 
+export type ProfitType = 'percentage' | 'fixed';
+
 export function computeListPrice(supplierPrice: number, profitPct: number): number {
-  return Math.round((supplierPrice + supplierPrice * (profitPct / 100)) * 100) / 100;
+  return computeListPriceFromProfit(supplierPrice, 'percentage', profitPct);
+}
+
+export function computeListPriceFromProfit(
+  supplierPrice: number,
+  profitType: ProfitType,
+  profitValue: number
+): number {
+  const base = Math.max(0, supplierPrice);
+  const value = Math.max(0, profitValue);
+  const profitAmount =
+    profitType === 'percentage'
+      ? Math.round(base * (value / 100) * 100) / 100
+      : Math.round(value * 100) / 100;
+  return Math.round((base + profitAmount) * 100) / 100;
 }
 
 export function computeCustomerPrice(listPrice: number, discount: number): number {

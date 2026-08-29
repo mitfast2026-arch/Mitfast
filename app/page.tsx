@@ -36,7 +36,7 @@ export default async function HomePage() {
   const carouselProducts = cms?.carouselProducts ?? [];
 
   return (
-    <div id="home-page-shell" className="home-shell-transition w-full flex flex-col text-[#111315]">
+    <div id="home-page-shell" className="home-shell-transition flex w-full min-w-0 flex-col text-[#111315]">
       <CinematicHero
         stats={{ productCount, categoryCount }}
         slides={heroSlides}

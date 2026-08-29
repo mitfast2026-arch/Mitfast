@@ -7,10 +7,8 @@ import {
   transitionStatus,
 } from '@/lib/server/db/conditional-update';
 import { invalidateAdminCaches } from '@/lib/server/db/invalidate-caches';
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const auth = await requireAdmin();
     if (!auth.ok) return auth.response;
@@ -52,10 +50,8 @@ export async function GET(
   }
 }
 
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const auth = await requireAdmin();
     if (!auth.ok) return auth.response;

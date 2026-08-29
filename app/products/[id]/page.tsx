@@ -3,15 +3,20 @@ import { notFound } from 'next/navigation';
 import { getCachedStorefrontProductDetail } from '@/lib/server/products/cached-storefront';
 import { buildProductJsonLd, siteUrl } from '@/lib/seo/product-json-ld';
 import { serializeJsonLd } from '@/lib/server/seo/json-ld';
+import {
+  sanitizeRichTextHtml,
+  stripRichTextHtml,
+} from '@/lib/html/sanitize-rich-text.server';
 import ProductDetailClient from './ProductDetailClient';
 
 export const revalidate = 60;
 
 type PageProps = {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 };
 
-export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+export async function generateMetadata(props: PageProps): Promise<Metadata> {
+  const params = await props.params;
   const result = await getCachedStorefrontProductDetail(params.id);
   if (!result.success) {
     return {
@@ -23,7 +28,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const product = result.data.product;
   const unitPrice = Math.max(0, Number(product.selling_price || 0) - Number(product.discount || 0));
   const description =
-    (typeof product.description === 'string' && product.description.trim()) ||
+    (typeof product.description === 'string' && stripRichTextHtml(product.description)) ||
     `${product.name} — industrial B2B product from MITFAST. MOQ ${product.moq || 1}.`;
   const image =
     product.images?.find((img: { is_primary?: boolean }) => img.is_primary)?.image_url ||
@@ -55,7 +60,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
-export default async function ProductDetailPage({ params }: PageProps) {
+export default async function ProductDetailPage(props: PageProps) {
+  const params = await props.params;
   const result = await getCachedStorefrontProductDetail(params.id);
   if (!result.success) {
     notFound();
@@ -63,6 +69,9 @@ export default async function ProductDetailPage({ params }: PageProps) {
 
   const product = result.data.product;
   const jsonLd = buildProductJsonLd(product);
+  const descriptionHtml = product.description
+    ? sanitizeRichTextHtml(product.description)
+    : '';
 
   return (
     <>
@@ -85,7 +94,12 @@ export default async function ProductDetailPage({ params }: PageProps) {
           {product.sku ? <p>SKU: {product.sku}</p> : null}
         </article>
       </noscript>
-      <ProductDetailClient initialProduct={product} />
+      <ProductDetailClient
+        initialProduct={{
+          ...product,
+          descriptionHtml,
+        }}
+      />
     </>
   );
 }

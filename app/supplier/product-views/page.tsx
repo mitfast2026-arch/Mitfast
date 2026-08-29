@@ -139,10 +139,10 @@ export default function SupplierProductViewsPage() {
                     <td className="text-center type-metric">{item.orders ?? 0}</td>
                     <td className="text-right">
                       <Link
-                        href="/supplier/products"
+                        href={`/supplier/products?product=${item.productId}`}
                         className="inline-flex items-center gap-1 text-xs text-portal-muted hover:text-portal-text"
                       >
-                        Catalog
+                        Open
                         <ArrowUpRight className="w-3.5 h-3.5" />
                       </Link>
                     </td>

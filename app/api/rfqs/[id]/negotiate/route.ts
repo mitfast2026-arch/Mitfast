@@ -2,10 +2,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { adminNegotiateRfq, supplierOwnsRfqItems } from '@/lib/server/rfq/rfq-service';
 import { requireAdminOrSupplierOnRfq } from '@/lib/server/auth/get-session';
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const auth = await requireAdminOrSupplierOnRfq(params.id, supplierOwnsRfqItems);
     if (!auth.ok) return auth.response;

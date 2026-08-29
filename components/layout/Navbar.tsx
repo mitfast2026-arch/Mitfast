@@ -11,10 +11,10 @@
  * 5. Profile DB lookup eliminated — role derived from Supabase user metadata or cached ref
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ShoppingCart, User, ArrowRight } from 'lucide-react';
+import { ShoppingCart, User, ArrowRight, Menu, X } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
 import { getSettings, prefetchSettings } from '@/lib/client/settings-cache';
 
@@ -64,6 +64,14 @@ async function resolveRole(userId: string): Promise<string | null> {
   }
 }
 
+function isLinkActive(pathname: string, href: string): boolean {
+  const [pathOnly, hash] = href.split('#');
+  const route = pathOnly || '/';
+  if (hash) return false;
+  if (route === '/') return pathname === '/';
+  return pathname === route || pathname.startsWith(`${route}/`);
+}
+
 export default function Navbar() {
   const pathname = usePathname();
   const isHome = pathname === '/';
@@ -72,7 +80,10 @@ export default function Navbar() {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [cartCount, setCartCount] = useState(0);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const initedRef = useRef(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
 
   // ── Settings (logo URL) — uses shared cache, one fetch for entire app ──
   useEffect(() => {
@@ -89,6 +100,39 @@ export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [homeDarkSection, setHomeDarkSection] = useState(false);
   const isDarkSection = isServices || (isHome && homeDarkSection);
+
+  const closeMobileMenu = useCallback(() => setMobileOpen(false), []);
+
+  // Close mobile menu on route change
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
+  // Escape + body scroll lock when mobile menu open
+  useEffect(() => {
+    if (!mobileOpen) return;
+
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setMobileOpen(false);
+    }
+    window.addEventListener('keydown', onKeyDown);
+
+    // Focus first focusable in menu
+    const menu = menuRef.current;
+    const focusable = menu?.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled])'
+    );
+    focusable?.[0]?.focus();
+
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+      menuButtonRef.current?.focus();
+    };
+  }, [mobileOpen]);
 
   useEffect(() => {
     function getScrollY() {
@@ -230,12 +274,27 @@ export default function Navbar() {
       : '/customer/dashboard'
     : '/auth?role=buyer&mode=signin';
 
+  const iconClass = `nav-icon relative flex items-center justify-center h-9 w-9 min-h-10 min-w-10 md:min-h-9 md:min-w-9 rounded-xl ${
+    isDarkSection ? 'nav-icon--dark' : ''
+  }`;
+
   return (
     <header className={`fixed top-0 left-0 right-0 z-50 w-full font-sans ${navGlassClass}`}>
-      <div className="w-full max-w-[1700px] mx-auto px-6 sm:px-12 lg:px-20 grid grid-cols-[1fr_auto_1fr] h-16 items-center">
-        {/* Left: Brand Logo */}
-        <div className="flex items-center justify-start z-10">
-          <Link href="/" className="flex items-center group">
+      <div className="w-full max-w-[1700px] mx-auto px-4 sm:px-12 lg:px-20 grid grid-cols-[1fr_auto_1fr] h-16 items-center">
+        {/* Left: Brand Logo + mobile menu toggle */}
+        <div className="flex items-center justify-start gap-1 z-10">
+          <button
+            ref={menuButtonRef}
+            type="button"
+            className={`md:hidden ${iconClass}`}
+            aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={mobileOpen}
+            aria-controls="nav-mobile-menu"
+            onClick={() => setMobileOpen((o) => !o)}
+          >
+            {mobileOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+          </button>
+          <Link href="/" className="flex items-center group" onClick={closeMobileMenu}>
             <img
               src={brandLogoSrc}
               alt="MITFAST Logo"
@@ -250,16 +309,10 @@ export default function Navbar() {
           </Link>
         </div>
 
-        {/* Center: Primary Navigation */}
+        {/* Center: Primary Navigation (desktop) */}
         <nav className="nav-primary hidden md:flex" aria-label="Primary">
           {NAV_LINKS.map((link) => {
-            const [pathOnly, hash] = link.href.split('#');
-            const route = pathOnly || '/';
-            const active = hash
-              ? false
-              : route === '/'
-                ? pathname === '/'
-                : pathname === route || pathname.startsWith(`${route}/`);
+            const active = isLinkActive(pathname, link.href);
             return (
               <Link
                 key={link.label}
@@ -294,14 +347,13 @@ export default function Navbar() {
         </nav>
 
         {/* Right: Actions */}
-        <div className="flex items-center justify-end gap-3 z-10">
+        <div className="flex items-center justify-end gap-2 sm:gap-3 z-10">
           <Link
             href="/cart"
-            className={`nav-icon relative flex items-center justify-center h-9 w-9 rounded-xl ${
-              isDarkSection ? 'nav-icon--dark' : ''
-            }`}
+            className={iconClass}
             title="RFQ Cart"
             aria-label={cartCount > 0 ? `RFQ Cart, ${cartCount} line items` : 'RFQ Cart'}
+            onClick={closeMobileMenu}
           >
             <ShoppingCart className="w-4 h-4" />
             {cartCount > 0 && (
@@ -331,16 +383,101 @@ export default function Navbar() {
 
           <Link
             href={profileHref}
-            className={`nav-icon flex items-center justify-center h-9 w-9 rounded-xl ${
-              isDarkSection ? 'nav-icon--dark' : ''
-            }`}
+            className={iconClass}
             title={user ? 'Profile' : 'Sign in'}
             aria-label={user ? 'Open profile' : 'Sign in'}
+            onClick={closeMobileMenu}
           >
             <User className="w-4 h-4" />
           </Link>
         </div>
       </div>
+
+      {/* Mobile menu — md:hidden only; desktop nav unchanged */}
+      {mobileOpen ? (
+        <>
+          <div
+            className="md:hidden fixed inset-0 top-16 z-40 bg-black/40"
+            aria-hidden
+            onClick={closeMobileMenu}
+          />
+          <div
+            ref={menuRef}
+            id="nav-mobile-menu"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Navigation menu"
+            className={`md:hidden fixed top-16 left-3 right-3 z-50 max-h-[calc(100dvh-5rem)] overflow-y-auto rounded-2xl border shadow-xl p-3 space-y-1 ${
+              isDarkSection
+                ? 'nav-glass-menu--dark border-white/10 text-white'
+                : 'nav-glass-menu border-[#E2E4E8] text-[#111315]'
+            }`}
+          >
+            <nav aria-label="Mobile primary" className="flex flex-col gap-0.5">
+              {NAV_LINKS.map((link) => {
+                const active = isLinkActive(pathname, link.href);
+                return (
+                  <Link
+                    key={link.label}
+                    href={link.href}
+                    onClick={closeMobileMenu}
+                    className={`flex items-center min-h-11 px-4 rounded-xl text-sm font-semibold transition-colors ${
+                      isDarkSection
+                        ? active
+                          ? 'bg-white/15 text-white'
+                          : 'text-white/85 hover:bg-white/10 hover:text-white'
+                        : active
+                          ? 'bg-[#111315] text-white'
+                          : 'text-[#111315]/85 hover:bg-[#ECEEF0] hover:text-[#111315]'
+                    }`}
+                  >
+                    {link.label}
+                  </Link>
+                );
+              })}
+            </nav>
+
+            <div className={`pt-2 mt-1 border-t space-y-1 ${isDarkSection ? 'border-white/10' : 'border-[#E2E4E8]'}`}>
+              {!user && (
+                <Link
+                  href="/enquiry"
+                  onClick={closeMobileMenu}
+                  className={`nav-btn flex items-center justify-center gap-2 min-h-11 px-4 rounded-xl text-sm font-semibold group ${
+                    isDarkSection ? 'nav-btn--on-dark' : ''
+                  }`}
+                >
+                  <span>Get a Quote</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              )}
+              <Link
+                href={profileHref}
+                onClick={closeMobileMenu}
+                className={`flex items-center gap-2 min-h-11 px-4 rounded-xl text-sm font-semibold transition-colors ${
+                  isDarkSection
+                    ? 'text-white/85 hover:bg-white/10'
+                    : 'text-[#111315]/85 hover:bg-[#ECEEF0]'
+                }`}
+              >
+                <User className="w-4 h-4 shrink-0" />
+                {user ? 'Account' : 'Sign in'}
+              </Link>
+              <Link
+                href="/cart"
+                onClick={closeMobileMenu}
+                className={`flex items-center gap-2 min-h-11 px-4 rounded-xl text-sm font-semibold transition-colors ${
+                  isDarkSection
+                    ? 'text-white/85 hover:bg-white/10'
+                    : 'text-[#111315]/85 hover:bg-[#ECEEF0]'
+                }`}
+              >
+                <ShoppingCart className="w-4 h-4 shrink-0" />
+                RFQ Cart{cartCount > 0 ? ` (${cartCount})` : ''}
+              </Link>
+            </div>
+          </div>
+        </>
+      ) : null}
     </header>
   );
 }

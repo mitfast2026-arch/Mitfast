@@ -13,7 +13,9 @@ export default function AdminPageHeader({ title, description, actions }: AdminPa
         <h1 className="type-page">{title}</h1>
         {description ? <p className="type-subtitle mt-1">{description}</p> : null}
       </div>
-      {actions ? <div className="flex items-center gap-2 shrink-0">{actions}</div> : null}
+      {actions ? (
+        <div className="flex flex-wrap items-center gap-2 shrink-0">{actions}</div>
+      ) : null}
     </div>
   );
 }

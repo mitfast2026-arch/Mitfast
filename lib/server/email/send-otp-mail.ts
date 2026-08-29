@@ -1,7 +1,14 @@
-import { sendTransactionalEmail } from '@/lib/server/email/send-transactional-mail';
+import {
+  sendTransactionalEmail,
+  type EmailProvider,
+} from '@/lib/server/email/send-transactional-mail';
 
-/** Primary Resend, fallback Brevo — OTP emails only. */
-export async function sendOtpEmail(to: string, code: string): Promise<{ provider: 'resend' | 'brevo' }> {
+export type SendOtpResult =
+  | { ok: true; provider: EmailProvider }
+  | { ok: false; code: 'NOT_CONFIGURED' | 'ALL_FAILED' };
+
+/** Primary Resend, fallback Brevo — OTP emails only. Never logs the code. */
+export async function sendOtpEmail(to: string, code: string): Promise<SendOtpResult> {
   const subject = 'Your MITFAST verification code';
   const html = `
     <div style="font-family:Segoe UI,system-ui,sans-serif;max-width:480px;margin:0 auto;padding:28px;background:#ffffff;border:1px solid #E5E7EB;border-radius:16px;">
@@ -15,9 +22,9 @@ export async function sendOtpEmail(to: string, code: string): Promise<{ provider
     </div>
   `;
 
-  const sent = await sendTransactionalEmail({ to, subject, html });
-  if (!sent) {
-    throw new Error('No email provider configured');
+  const result = await sendTransactionalEmail({ to, subject, html });
+  if (!result.ok) {
+    return { ok: false, code: result.code };
   }
-  return sent;
+  return { ok: true, provider: result.provider };
 }

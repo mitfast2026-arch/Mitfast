@@ -21,6 +21,9 @@ import {
   ExternalLink,
   RefreshCw
 } from 'lucide-react';
+import { apiPost } from '@/lib/client/api-client';
+import { toast } from 'sonner';
+import { notifyApprovalsChanged } from '@/components/portal/ApprovalsCountContext';
 
 export default function AdminSupplierDetailPage() {
   const params = useParams();
@@ -43,6 +46,8 @@ export default function AdminSupplierDetailPage() {
   const [address, setAddress] = useState('');
   const [country, setCountry] = useState('');
   const [website, setWebsite] = useState('');
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
 
   async function loadSupplierData() {
     setLoading(true);
@@ -118,16 +123,53 @@ export default function AdminSupplierDetailPage() {
   async function handleToggleArchive() {
     if (!supplier) return;
     const endpoint = supplier.status === 'archived' ? 'restore' : 'archive';
+    setErrorMsg('');
     try {
-      await fetch(`/api/suppliers/${supplier.id}/${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ restoreAllProducts: true }),
+      const result = await apiPost(`/api/suppliers/${supplier.id}/${endpoint}`, {
+        restoreAllProducts: true,
       });
+      if (!result.ok) {
+        setErrorMsg(result.message);
+        toast.error(result.message);
+        return;
+      }
+      toast.success(supplier.status === 'archived' ? 'Supplier restored' : 'Supplier archived');
       loadSupplierData();
     } catch (err) {
-      console.error('Archive toggle error:', err);
+      const msg = err instanceof Error ? err.message : 'Archive action failed';
+      setErrorMsg(msg);
+      toast.error(msg);
     }
+  }
+
+  async function handleApproveSupplier() {
+    if (!supplier) return;
+    setErrorMsg('');
+    const result = await apiPost(`/api/suppliers/${supplier.id}/approve`);
+    if (!result.ok) {
+      setErrorMsg(result.message);
+      toast.error(result.message);
+      return;
+    }
+    toast.success('Supplier approved');
+    notifyApprovalsChanged();
+    loadSupplierData();
+  }
+
+  async function handleRejectSupplier(reason: string) {
+    if (!supplier || !reason.trim()) return;
+    setErrorMsg('');
+    const result = await apiPost(`/api/suppliers/${supplier.id}/reject`, {
+      rejectionReason: reason.trim(),
+    });
+    if (!result.ok) {
+      setErrorMsg(result.message);
+      toast.error(result.message);
+      return;
+    }
+    toast.success('Supplier application rejected');
+    notifyApprovalsChanged();
+    loadSupplierData();
   }
 
   if (loading) {
@@ -183,7 +225,33 @@ export default function AdminSupplierDetailPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+          {supplier.status === 'pending' && (
+            <>
+              <button
+                type="button"
+                onClick={handleApproveSupplier}
+                className="saas-btn-primary text-xs py-2 px-3 flex items-center gap-1.5"
+              >
+                <Check className="w-3.5 h-3.5" />
+                Approve
+              </button>
+              <button
+                type="button"
+                onClick={() => setRejectOpen(true)}
+                className="saas-btn-secondary text-xs py-2 px-3 flex items-center gap-1.5 text-portal-danger"
+              >
+                <X className="w-3.5 h-3.5" />
+                Reject
+              </button>
+              <Link
+                href="/admin/approvals"
+                className="saas-btn-secondary text-xs py-2 px-3"
+              >
+                Approval queue
+              </Link>
+            </>
+          )}
           <button 
             onClick={handleToggleArchive}
             className={`saas-btn-secondary text-xs py-2 px-3 flex items-center gap-1.5 ${
@@ -394,6 +462,54 @@ export default function AdminSupplierDetailPage() {
           </div>
         </div>
       </div>
+
+      {rejectOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          <button
+            type="button"
+            aria-label="Close"
+            className="absolute inset-0 bg-portal-hero/40 backdrop-blur-sm"
+            onClick={() => {
+              setRejectOpen(false);
+              setRejectReason('');
+            }}
+          />
+          <div className="relative w-full max-w-md bg-portal-panel rounded-xl border border-portal-border p-5 space-y-3">
+            <h3 className="text-sm font-semibold text-portal-text">Reject supplier application</h3>
+            <textarea
+              rows={3}
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="Reason for rejection…"
+              className="saas-input text-xs w-full resize-none"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setRejectOpen(false);
+                  setRejectReason('');
+                }}
+                className="saas-btn-secondary text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!rejectReason.trim()}
+                onClick={() => {
+                  void handleRejectSupplier(rejectReason);
+                  setRejectOpen(false);
+                  setRejectReason('');
+                }}
+                className="saas-btn-primary text-xs bg-portal-danger"
+              >
+                Confirm rejection
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

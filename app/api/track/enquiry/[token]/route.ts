@@ -1,10 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 
-export async function GET(
-  _request: NextRequest,
-  { params }: { params: { token: string } }
-) {
+export async function GET(_request: NextRequest, props: { params: Promise<{ token: string }> }) {
+  const params = await props.params;
   try {
     const token = params.token?.trim();
     if (!token) {

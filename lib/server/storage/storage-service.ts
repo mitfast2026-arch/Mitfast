@@ -140,6 +140,45 @@ function looksLikeTigrisKey(value: string): boolean {
   return LOGICAL_BUCKETS.some((b) => value === b || value.startsWith(`${b}/`));
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientStorageError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const err = error as { name?: string; message?: string; $metadata?: { httpStatusCode?: number } };
+  const status = err.$metadata?.httpStatusCode;
+  if (status === 429 || (typeof status === 'number' && status >= 500)) return true;
+  const msg = (err.message || '').toLowerCase();
+  return (
+    msg.includes('timeout') ||
+    msg.includes('throttl') ||
+    msg.includes('econnreset') ||
+    msg.includes('socket hang up') ||
+    msg.includes('network') ||
+    msg.includes('503') ||
+    msg.includes('502')
+  );
+}
+
+/** 3 attempts with 100ms / 400ms / 1600ms backoff for transient S3 failures. */
+async function withStorageRetry<T>(fn: () => Promise<T>): Promise<T> {
+  const delays = [100, 400, 1600];
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (attempt >= delays.length || !isTransientStorageError(error)) {
+        throw error;
+      }
+      await sleep(delays[attempt]);
+    }
+  }
+  throw lastError;
+}
+
 /**
  * Uploads a file buffer to Tigris under a logical bucket prefix.
  * Public logical buckets use object ACL public-read; documents stay private.
@@ -157,20 +196,19 @@ export async function uploadToBucket(
     const body = Buffer.isBuffer(fileBuffer) ? fileBuffer : Buffer.from(fileBuffer);
     const isPrivateDoc = bucket === 'documents';
 
-    await client.send(
-      new PutObjectCommand({
-        Bucket: tigrisBucket,
-        Key: key,
-        Body: body,
-        ContentType: contentType,
-        ...(isPrivateDoc ? {} : { ACL: 'public-read' as ObjectCannedACL }),
-      })
+    await withStorageRetry(() =>
+      client.send(
+        new PutObjectCommand({
+          Bucket: tigrisBucket,
+          Key: key,
+          Body: body,
+          ContentType: contentType,
+          ...(isPrivateDoc ? {} : { ACL: 'public-read' as ObjectCannedACL }),
+        })
+      )
     );
 
-    const publicUrl = isPrivateDoc
-      ? // Placeholder until signed; callers that need a URL should use signedDocumentUrl
-        publicObjectUrl(key)
-      : publicObjectUrl(key);
+    const publicUrl = publicObjectUrl(key);
 
     return {
       success: true,
@@ -346,11 +384,13 @@ async function deleteFromTigris(key: string): Promise<ServerResult<{ deleted: bo
   try {
     const { bucket } = requireTigrisConfig();
     const client = getS3Client();
-    await client.send(
-      new DeleteObjectCommand({
-        Bucket: bucket,
-        Key: key,
-      })
+    await withStorageRetry(() =>
+      client.send(
+        new DeleteObjectCommand({
+          Bucket: bucket,
+          Key: key,
+        })
+      )
     );
     return { success: true, data: { deleted: true } };
   } catch (error) {

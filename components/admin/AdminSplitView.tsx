@@ -9,6 +9,11 @@ type AdminSplitViewProps = {
   className?: string;
   /** Independent column scrolling within the viewport (admin work queues). */
   scrollable?: boolean;
+  /**
+   * On viewports below `lg`, show only the detail pane (hide list) so actions
+   * are not trapped in a half-height column. Pair with a mobile back control in detail.
+   */
+  mobileDetailOpen?: boolean;
 };
 
 export default function AdminSplitView({
@@ -18,6 +23,7 @@ export default function AdminSplitView({
   detailCols = 7,
   className,
   scrollable = false,
+  mobileDetailOpen = false,
 }: AdminSplitViewProps) {
   const listClass =
     listCols === 4
@@ -44,7 +50,10 @@ export default function AdminSplitView({
         <div
           className={clsx(
             listClass,
-            'min-w-0 min-h-0 max-h-[42vh] lg:max-h-none overflow-y-auto overscroll-contain space-y-2 pr-0.5'
+            'min-w-0 min-h-0 overflow-y-auto overscroll-contain space-y-2 pr-0.5',
+            mobileDetailOpen
+              ? 'hidden lg:block lg:max-h-none'
+              : 'max-h-[min(70vh,calc(100dvh-14rem))] lg:max-h-none'
           )}
         >
           {list}
@@ -52,7 +61,10 @@ export default function AdminSplitView({
         <div
           className={clsx(
             detailClass,
-            'min-w-0 min-h-0 max-h-[58vh] lg:max-h-none overflow-y-auto overscroll-contain'
+            'min-w-0 min-h-0 overflow-y-auto overscroll-contain',
+            mobileDetailOpen
+              ? 'max-h-[calc(100dvh-12rem)] lg:max-h-none'
+              : 'hidden lg:block lg:max-h-none'
           )}
         >
           {detail}
@@ -63,8 +75,24 @@ export default function AdminSplitView({
 
   return (
     <div className={clsx('grid grid-cols-1 lg:grid-cols-12 gap-4 items-start min-w-0', className)}>
-      <div className={clsx(listClass, 'min-w-0 space-y-2')}>{list}</div>
-      <div className={clsx(detailClass, 'min-w-0 lg:sticky lg:top-3 self-start')}>{detail}</div>
+      <div
+        className={clsx(
+          listClass,
+          'min-w-0 space-y-2',
+          mobileDetailOpen && 'hidden lg:block'
+        )}
+      >
+        {list}
+      </div>
+      <div
+        className={clsx(
+          detailClass,
+          'min-w-0 lg:sticky lg:top-3 self-start',
+          !mobileDetailOpen && 'hidden lg:block'
+        )}
+      >
+        {detail}
+      </div>
     </div>
   );
 }

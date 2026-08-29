@@ -8,6 +8,7 @@ export const ENQUIRY_TYPE_LABELS: Record<string, string> = {
   procurement: 'Procurement',
   dispatch: 'Delivery',
   cart: 'Cart RFQ',
+  cart_enquiry: 'Cart RFQ',
   general: 'General',
 };
 

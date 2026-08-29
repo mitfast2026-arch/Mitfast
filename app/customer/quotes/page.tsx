@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -64,12 +64,34 @@ function CustomerQuotesInner() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [convertingId, setConvertingId] = useState<string | null>(null);
+  const submitToastHandled = useRef(false);
 
   useEffect(() => {
     if (tabParam === 'rfqs' || tabParam === 'enquiries') {
       setTab(tabParam);
     }
   }, [tabParam]);
+
+  useEffect(() => {
+    if (submitToastHandled.current) return;
+    const created = searchParams.get('created');
+    const submitted = searchParams.get('submitted');
+    if (!created && submitted !== 'true') return;
+    submitToastHandled.current = true;
+
+    if (created) {
+      const count = parseInt(created, 10);
+      toast.success(
+        Number.isFinite(count) && count > 1
+          ? `${count} RFQs submitted successfully.`
+          : 'RFQ submitted successfully.'
+      );
+      router.replace('/customer/quotes?tab=rfqs');
+    } else if (submitted === 'true') {
+      toast.success('Enquiry submitted successfully. Our team will contact you soon.');
+      router.replace('/customer/quotes?tab=enquiries');
+    }
+  }, [searchParams, router]);
 
   const loadAll = useCallback(async () => {
     setLoading(true);

@@ -81,19 +81,21 @@ export default function CinematicHero({
       : '—';
 
   return (
-    <section className="relative z-10 w-full min-h-screen min-h-[760px] max-h-[1100px] overflow-hidden flex flex-col justify-between">
-      {list.map((s, i) => (
-        <div
-          key={s.id}
-          className="absolute inset-0 w-full h-full bg-cover bg-center bg-no-repeat z-0 transition-opacity duration-700"
-          style={{
-            backgroundImage: `url('${s.imageUrl}')`,
-            backgroundPosition: 'right center',
-            opacity: i === index ? 1 : 0,
-          }}
-          aria-hidden={i !== index}
-        />
-      ))}
+    <section className="relative z-10 w-full min-h-[max(560px,100svh)] sm:min-h-[max(640px,100svh)] md:min-h-[max(760px,100svh)] max-h-[1100px] flex flex-col justify-between">
+      <div className="absolute inset-0 z-0 overflow-hidden" aria-hidden>
+        {list.map((s, i) => (
+          <div
+            key={s.id}
+            className="absolute inset-0 w-full h-full bg-cover bg-center bg-no-repeat transition-opacity duration-700"
+            style={{
+              backgroundImage: `url('${s.imageUrl}')`,
+              backgroundPosition: 'right center',
+              opacity: i === index ? 1 : 0,
+            }}
+            aria-hidden={i !== index}
+          />
+        ))}
+      </div>
 
       <div className="w-full max-w-[1700px] mx-auto px-6 sm:px-12 lg:px-20 relative z-20 pt-28 sm:pt-36 pb-6 flex-1 flex flex-col justify-center items-start text-left">
         <div className="max-w-xl space-y-6">

@@ -1,6 +1,31 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { isRpcMissing } from '@/lib/server/db/production-guards';
 
+let pruneScheduled = false;
+
+/**
+ * Best-effort prune of old rate-limit rows (non-blocking, at most once per process tick).
+ */
+function maybePruneRateLimitLog(): void {
+  if (pruneScheduled) return;
+  pruneScheduled = true;
+  queueMicrotask(async () => {
+    try {
+      const admin = createAdminClient();
+      await (admin as any).rpc('prune_api_rate_limit_log', {
+        p_older_than: '7 days',
+      });
+    } catch {
+      /* non-blocking */
+    } finally {
+      // Allow another prune attempt after ~5 minutes of process uptime activity
+      setTimeout(() => {
+        pruneScheduled = false;
+      }, 5 * 60 * 1000);
+    }
+  });
+}
+
 /**
  * Postgres-backed rate limit (advisory lock RPC). Fail-open only in non-production
  * when the RPC is missing so local/dev still works before migrations.
@@ -34,5 +59,17 @@ export async function assertRateLimit(options: {
     return { ok: false, code: 'RATE_LIMITED' };
   }
 
+  // Occasionally prune old log rows so advisory-lock COUNT stays cheap under spikes
+  if (Math.random() < 0.02) {
+    maybePruneRateLimitLog();
+  }
+
   return { ok: true };
+}
+
+export function rateLimitedResponse(message = 'Too many requests. Retry shortly.') {
+  return {
+    success: false as const,
+    error: { message, code: 'RATE_LIMITED' as const },
+  };
 }

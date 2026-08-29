@@ -5,7 +5,7 @@ import ServicesEnquiryGrid from '@/components/services/ServicesEnquiryGrid';
 export const metadata: Metadata = {
   title: 'Services — MITFAST B2B Procurement',
   description:
-    'Sourcing development, off-catalog procurement, catalog pricing, and delivery quotes from AS9100D and ISO 9001 certified suppliers.',
+    'Sourcing development, off-catalog procurement, and catalog pricing from AS9100D and ISO 9001 certified suppliers.',
 };
 
 export default function ServicesPage() {

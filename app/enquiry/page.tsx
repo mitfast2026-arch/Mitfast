@@ -24,14 +24,7 @@ const ENQUIRY_TYPE_COPY: Record<
     metaLabel: "Procurement",
     metaValue: "Off-catalog procurement requests, volumes, and factory-direct terms.",
     message:
-      "Procurement request: describe required SKUs, quantity, delivery timeline, and any quality or packing requirements.",
-  },
-  dispatch: {
-    heading: "Delivery enquiry",
-    metaLabel: "Delivery",
-    metaValue: "Shipping and delivery for a live or upcoming order.",
-    message:
-      "Delivery request: include order or RFQ reference if you have one, destination, and required delivery date.",
+      "Procurement request: describe required SKUs, quantity, and any quality or packing requirements.",
   },
   custom: {
     heading: "Send an enquiry",
@@ -44,7 +37,7 @@ const ENQUIRY_TYPE_COPY: Record<
     metaLabel: "Cart RFQ",
     metaValue: "Guest quote request from your RFQ cart — our team will follow up with pricing.",
     message:
-      "Cart quote request: please confirm quantities, delivery timeline, and any packaging or inspection requirements.",
+      "Cart quote request: please confirm quantities and any packaging or inspection requirements.",
   },
 };
 
@@ -52,7 +45,6 @@ const SERVICE_OPTIONS = [
   { value: "custom", label: "Custom specification" },
   { value: "sourcing", label: "Sourcing development" },
   { value: "procurement", label: "Off-catalog procurement" },
-  { value: "dispatch", label: "Delivery and shipping" },
 ] as const;
 
 type ServiceValue = (typeof SERVICE_OPTIONS)[number]["value"];
@@ -65,7 +57,7 @@ type CartLinePreview = {
 
 function formatCartMessage(lines: CartLinePreview[]): string {
   const header =
-    "Cart quote request: please confirm quantities, delivery timeline, and any packaging or inspection requirements.";
+    "Cart quote request: please confirm quantities and any packaging or inspection requirements.";
   if (!lines.length) return header;
   const list = lines
     .map((line, idx) => `${idx + 1}. ${line.name} — qty ${line.quantity}`)

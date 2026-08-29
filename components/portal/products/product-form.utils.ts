@@ -71,6 +71,8 @@ export function productToFormValues(product: ProductFormProduct): ProductFormVal
     ),
     supplierPrice:
       (proposed?.supplier_price as number) ?? product.supplier_price ?? 0,
+    profitType:
+      product.profit_type === 'fixed' ? 'fixed' : 'percentage',
     profit: product.profit_value ?? 15,
     discount,
     discountEnabled: discount > 0,
@@ -135,6 +137,12 @@ export function validateFormValues(
   if (incompleteSpec) {
     errors.specRows = 'Each specification needs both name and value';
   }
+
+  const DESCRIPTION_MAX = 20000;
+  if (values.description.length > DESCRIPTION_MAX) {
+    errors.description = `Description must be ${DESCRIPTION_MAX.toLocaleString()} characters or fewer`;
+  }
+
   return errors;
 }
 
@@ -165,11 +173,15 @@ export function buildPayload(
     gstIncluded: values.gstIncluded,
     discount,
     minOrderValue: values.minValue > 0 ? values.minValue : null,
-    profitType: 'percentage' as const,
+    profitType: values.profitType,
     profitValue: values.profit,
     ribbonLabel: values.ribbon.trim() || null,
     specifications,
   };
+
+  if (opts?.isSupplier) {
+    payload.imageUrls = values.images.map((img) => img.image_url).filter(Boolean);
+  }
 
   if (!opts?.isSupplier) {
     payload.moq = values.moq;

@@ -870,3 +870,172 @@ export async function getRfqsForAdmin(params: {
     return { success: false, error: { message: 'Failed to fetch RFQs for admin', code: 'INTERNAL_ERROR' } };
   }
 }
+
+async function getSupplierProductIds(
+  adminClient: ReturnType<typeof createAdminClient>,
+  supplierId: string
+): Promise<string[]> {
+  const { data: supplierProducts } = await adminClient
+    .from('products')
+    .select('id')
+    .eq('supplier_id', supplierId);
+
+  return (supplierProducts || []).map((p: { id: string }) => p.id);
+}
+
+export async function getSupplierRfqs(
+  supplierId: string,
+  params: { page?: number; limit?: number; search?: string }
+): Promise<
+  ServerResult<{
+    rfqs: Array<{
+      id: string;
+      rfq_number: string;
+      status: string;
+      rejection_reason: string | null;
+      created_at: string;
+      updated_at: string;
+      item_count: number;
+    }>;
+    total: number;
+    page: number;
+    limit: number;
+  }>
+> {
+  try {
+    const adminClient = createAdminClient();
+    const page = Math.max(1, params.page || 1);
+    const limit = Math.min(100, Math.max(1, params.limit || 10));
+    const offset = (page - 1) * limit;
+
+    const productIds = await getSupplierProductIds(adminClient, supplierId);
+    if (productIds.length === 0) {
+      return { success: true, data: { rfqs: [], total: 0, page, limit } };
+    }
+
+    let query = adminClient
+      .from('rfqs')
+      .select(
+        `
+        id,
+        rfq_number,
+        status,
+        rejection_reason,
+        created_at,
+        updated_at,
+        rfq_items!inner(id)
+      `,
+        { count: 'exact' }
+      )
+      .in('rfq_items.product_id', productIds);
+
+    const search = params.search?.trim();
+    if (search) {
+      const q = sanitizePostgrestSearch(search);
+      if (q) {
+        query = query.ilike('rfq_number', `%${q}%`);
+      }
+    }
+
+    query = query.order('created_at', { ascending: false });
+
+    const { data, count, error } = await query.range(offset, offset + limit - 1);
+
+    if (error) {
+      return { success: false, error: { message: error.message, code: 'DATABASE_ERROR' } };
+    }
+
+    const rfqs = (data || []).map((row: any) => ({
+      id: row.id,
+      rfq_number: row.rfq_number,
+      status: row.status,
+      rejection_reason: row.rejection_reason,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      item_count: Array.isArray(row.rfq_items) ? row.rfq_items.length : 0,
+    }));
+
+    return { success: true, data: { rfqs, total: count || 0, page, limit } };
+  } catch (error) {
+    console.error('[getSupplierRfqs] Error:', error);
+    return { success: false, error: { message: 'Failed to fetch supplier RFQs', code: 'INTERNAL_ERROR' } };
+  }
+}
+
+export async function getSupplierRfqDetail(
+  supplierId: string,
+  rfqId: string
+): Promise<
+  ServerResult<{
+    id: string;
+    rfq_number: string;
+    status: string;
+    rejection_reason: string | null;
+    created_at: string;
+    updated_at: string;
+    items: Array<{
+      id: string;
+      product_id: string;
+      product_name_snapshot: string;
+      original_quantity: number;
+      original_unit_price: number;
+      final_quantity: number | null;
+      final_unit_price: number | null;
+      sku: string | null;
+    }>;
+  }>
+> {
+  try {
+    const adminClient = createAdminClient();
+    const productIds = await getSupplierProductIds(adminClient, supplierId);
+    if (productIds.length === 0) {
+      return { success: false, error: { message: 'RFQ not found', code: 'NOT_FOUND' } };
+    }
+
+    const { data: rfq, error: rfqError } = await adminClient
+      .from('rfqs')
+      .select('id, rfq_number, status, rejection_reason, created_at, updated_at')
+      .eq('id', rfqId)
+      .maybeSingle();
+
+    if (rfqError || !rfq) {
+      return { success: false, error: { message: 'RFQ not found', code: 'NOT_FOUND' } };
+    }
+
+    const { data: items, error: itemsError } = await adminClient
+      .from('rfq_items')
+      .select(
+        'id, product_id, product_name_snapshot, original_quantity, original_unit_price, final_quantity, final_unit_price, product:products(sku)'
+      )
+      .eq('rfq_id', rfqId)
+      .in('product_id', productIds);
+
+    if (itemsError) {
+      return { success: false, error: { message: itemsError.message, code: 'DATABASE_ERROR' } };
+    }
+
+    if (!items || items.length === 0) {
+      return { success: false, error: { message: 'RFQ not found', code: 'NOT_FOUND' } };
+    }
+
+    return {
+      success: true,
+      data: {
+        ...rfq,
+        items: items.map((item: any) => ({
+          id: item.id,
+          product_id: item.product_id,
+          product_name_snapshot: item.product_name_snapshot,
+          original_quantity: item.original_quantity,
+          original_unit_price: item.original_unit_price,
+          final_quantity: item.final_quantity,
+          final_unit_price: item.final_unit_price,
+          sku: item.product?.sku || null,
+        })),
+      },
+    };
+  } catch (error) {
+    console.error('[getSupplierRfqDetail] Error:', error);
+    return { success: false, error: { message: 'Failed to fetch RFQ detail', code: 'INTERNAL_ERROR' } };
+  }
+}

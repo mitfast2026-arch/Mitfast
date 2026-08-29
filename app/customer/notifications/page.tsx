@@ -97,7 +97,9 @@ export default function CustomerNotificationsPage() {
               title: `Batch Order: ${o.order_number}`,
               message: `Order status is "${o.status?.replace(/_/g, ' ')}" with payment "${o.payment_status?.replace(/_/g, ' ')}".`,
               timestamp: o.updated_at || o.created_at,
-              read: o.status === 'completed',
+              read: ['dispatched', 'completed', 'delivered'].includes(
+                (o.status || '').toLowerCase()
+              ),
               link: '/customer/orders',
             });
           });

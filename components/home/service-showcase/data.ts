@@ -1,4 +1,4 @@
-import { Anchor, Cpu, Layers, ShieldCheck, type LucideIcon } from 'lucide-react';
+import { Cpu, Layers, ShieldCheck, type LucideIcon } from 'lucide-react';
 
 export interface ServiceShowcaseItem {
   id: string;
@@ -73,21 +73,5 @@ export const serviceShowcaseItems: ServiceShowcaseItem[] = [
     image: '/images/quote_product.jpg',
     objectPosition: 'center',
     icon: ShieldCheck,
-  },
-  {
-    id: 'quote-dispatch',
-    number: '04',
-    tag: 'DELIVERY & SHIPPING',
-    title: 'Delivery Quote',
-    subtitle: 'Bulk & Export Orders',
-    category: 'Order Delivery',
-    badge: '99.8% On-Time',
-    description:
-      'Get delivery schedules and shipping quotes for confirmed bulk orders, export deliveries, and scheduled batches.',
-    ctaText: 'Learn More',
-    ctaHref: '/enquiry?type=dispatch',
-    image: '/images/quote_dispatch.jpg',
-    objectPosition: 'center 70%',
-    icon: Anchor,
   },
 ];

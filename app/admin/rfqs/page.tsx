@@ -12,6 +12,7 @@ import {
   MessageSquare,
   XCircle,
   ArrowRight,
+  ChevronLeft,
 } from 'lucide-react';
 import { apiPost } from '@/lib/client/api-client';
 import {
@@ -279,6 +280,7 @@ export default function AdminRfqsPage() {
       <AdminSplitView
         listCols={5}
         detailCols={7}
+        mobileDetailOpen={!!selectedRfq}
         list={
           rfqs.length === 0 ? (
             <div className="saas-panel p-10 text-center text-sm text-portal-muted">No RFQs found.</div>
@@ -310,6 +312,14 @@ export default function AdminRfqsPage() {
         detail={
           selectedRfq ? (
             <div className="saas-panel p-4 sm:p-5 space-y-4 min-w-0">
+              <button
+                type="button"
+                onClick={() => setSelectedRfq(null)}
+                className="lg:hidden saas-btn-ghost text-xs py-1.5 px-2 -ml-1 inline-flex items-center gap-1"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Back to list
+              </button>
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b border-portal-border pb-3">
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
