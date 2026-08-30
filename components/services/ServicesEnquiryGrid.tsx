@@ -98,9 +98,9 @@ export default function ServicesEnquiryGrid() {
                 src={item.image}
                 alt=""
                 fill
-                sizes="(max-width: 767px) 100vw, 33vw"
+                sizes="(max-width: 767px) 100vw, 50vw"
                 style={{ objectPosition: item.objectPosition }}
-                priority
+                priority={index < 2}
               />
             </div>
             <div className="svc-cell__scrim" />
