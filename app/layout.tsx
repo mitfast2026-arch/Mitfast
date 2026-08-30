@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import Script from 'next/script';
 import { Inter, Instrument_Sans } from 'next/font/google';
 import './globals.css';
 import '@/components/home/curved-products/curved-products.css';
@@ -72,17 +73,17 @@ export default function RootLayout({
       className={`${inter.variable} ${instrumentSans.variable}`}
       suppressHydrationWarning
     >
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){try{var m=localStorage.getItem('mitfast-portal-color-mode');document.documentElement.dataset.portalTheme=m==='light'?'light':'dark';}catch(e){document.documentElement.dataset.portalTheme='dark';}})();`,
-          }}
-        />
-      </head>
       <body
         className={`${inter.className} min-h-screen w-full min-w-0 bg-white text-[#111315] antialiased`}
         suppressHydrationWarning
       >
+        <Script
+          id="portal-theme-init"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var m=localStorage.getItem('mitfast-portal-color-mode');document.documentElement.dataset.portalTheme=m==='light'?'light':'dark';}catch(e){document.documentElement.dataset.portalTheme='dark';}})();`,
+          }}
+        />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: serializeJsonLd(orgLd) }}

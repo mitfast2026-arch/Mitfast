@@ -24,7 +24,6 @@ type SiteSettings = {
 const PRODUCT_LINKS = [
   { href: '/services', label: 'Services' },
   { href: '/products', label: 'Complete Catalog' },
-  { href: '/categories', label: 'Product Categories' },
   { href: '/cart', label: 'RFQ Cart' },
   { href: '/enquiry', label: 'Custom Drawing Inquiry' },
 ] as const;
@@ -43,38 +42,6 @@ const ACCOUNT_LINKS = [
 
 const focusRing =
   'rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#D7D9DC]';
-
-function FooterCTA() {
-  return (
-    <div className="border-b border-white/10 pb-10 md:pb-12">
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-        <div className="max-w-xl space-y-3">
-          <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-[#D7D9DC]/80">
-            Precision sourcing · B2B
-          </p>
-          <h2 className="font-display text-2xl font-bold leading-tight tracking-tight text-white sm:text-3xl lg:text-4xl">
-            Source verified parts. Request a quote in minutes.
-          </h2>
-        </div>
-        <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
-          <Link
-            href="/enquiry"
-            className={`inline-flex items-center justify-center gap-2 rounded-xl bg-white px-6 py-3 text-sm font-semibold text-[#111315] transition-colors hover:bg-[#ECEEF0] ${focusRing}`}
-          >
-            Get a Quote
-            <ArrowRight className="h-4 w-4" aria-hidden />
-          </Link>
-          <Link
-            href="/products"
-            className={`inline-flex items-center justify-center gap-2 rounded-xl border border-white/25 bg-transparent px-6 py-3 text-sm font-semibold text-white transition-colors hover:border-white/45 hover:bg-white/5 ${focusRing}`}
-          >
-            Explore Catalog
-          </Link>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function FooterNavColumn({
   title,
@@ -193,13 +160,11 @@ export default function Footer() {
   return (
     <>
       <footer
-        className="site-footer site-footer__grid-bg relative z-20 w-full text-white bg-[#111315] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+        className="site-footer site-footer__grid-bg relative w-full text-white bg-[#111315] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
         aria-label="Site footer"
       >
-        <div className="relative z-10 mx-auto w-full max-w-[1400px] px-5 py-14 sm:px-8 md:py-20 lg:px-10">
-          <FooterCTA />
-
-          <div className="grid grid-cols-1 gap-10 border-b border-white/10 py-10 md:grid-cols-12 md:gap-8 md:py-12 lg:gap-12">
+        <div className="relative mx-auto w-full max-w-[1400px] px-5 py-14 sm:px-8 md:py-20 lg:px-10">
+          <div className="grid grid-cols-1 gap-10 border-b border-white/10 pb-10 md:grid-cols-12 md:gap-8 md:pb-12 lg:gap-12">
             <div className="md:col-span-5 lg:col-span-5 space-y-5">
               <Link href="/" className={`inline-flex ${focusRing}`}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}

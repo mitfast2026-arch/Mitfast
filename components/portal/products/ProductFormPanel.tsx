@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import OverlayPortal, { OverlayBackdrop } from '@/components/ui/OverlayPortal';
 import {
   X,
   Loader2,
@@ -132,7 +132,6 @@ export default function ProductFormPanel({
   const [rejectReason, setRejectReason] = useState('');
   const [changesOpen, setChangesOpen] = useState(false);
   const [changesNote, setChangesNote] = useState('');
-  const [mounted, setMounted] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
   const [maxProductImages, setMaxProductImages] = useState(8);
@@ -163,10 +162,6 @@ export default function ProductFormPanel({
   );
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
     if (!open) return;
     apiGet<{ maxProductImages?: number }>('/api/settings')
       .then((res) => {
@@ -193,20 +188,6 @@ export default function ProductFormPanel({
     if (isDirty && !window.confirm('Discard unsaved changes?')) return;
     onClose();
   }, [isDirty, onClose, submitting]);
-
-  useEffect(() => {
-    if (!open) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') handleCloseAttempt();
-    }
-    window.addEventListener('keydown', onKey);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [open, handleCloseAttempt]);
 
   useEffect(() => {
     if (!open || !isDirty) return;
@@ -578,7 +559,7 @@ export default function ProductFormPanel({
     }
   }
 
-  if (!open || !mounted) return null;
+  if (!open) return null;
 
   const needsApproval =
     product?.approval_status === 'pending' ||
@@ -588,25 +569,25 @@ export default function ProductFormPanel({
   const isArchived = product?.archive_status === 'archived';
   const pid = product?.id;
 
-  return createPortal(
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 max-md:p-0">
-      <button
-        type="button"
-        aria-label="Close"
-        className="absolute inset-0 bg-portal-hero/40 backdrop-blur-sm"
-        onClick={handleCloseAttempt}
-      />
+  return (
+    <OverlayPortal
+      open
+      layer="modal"
+      onEscape={handleCloseAttempt}
+      className="flex items-center justify-center p-4 max-md:p-0"
+    >
+      <OverlayBackdrop className="bg-portal-hero/40 backdrop-blur-sm" onClick={handleCloseAttempt} />
 
       <div
         role="dialog"
         aria-modal="true"
-        className="relative w-full max-w-4xl max-h-[85vh] max-md:h-dvh max-md:max-h-dvh max-md:rounded-none bg-portal-panel rounded-xl shadow-2xl flex flex-col overflow-hidden border border-portal-border"
+        className="relative w-full max-w-4xl max-h-[85dvh] max-md:h-dvh max-md:max-h-dvh max-md:rounded-none bg-portal-panel rounded-xl shadow-2xl flex flex-col overflow-hidden border border-portal-border"
       >
         {/* Sticky header */}
-        <div className="shrink-0 px-5 py-4 border-b border-portal-border bg-portal-panel">
+        <div className="shrink-0 px-4 sm:px-5 py-3 sm:py-4 border-b border-portal-border bg-portal-panel">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <h2 className="text-base font-semibold text-portal-text truncate">
+              <h2 className="text-sm sm:text-base font-semibold text-portal-text truncate">
                 {detailLoading ? 'Loading…' : modeTitle(mode, product)}
               </h2>
               <p className="text-[11px] text-portal-muted mt-0.5">{modeSubtitle(mode)}</p>
@@ -614,14 +595,15 @@ export default function ProductFormPanel({
             <button
               type="button"
               onClick={handleCloseAttempt}
-              className="p-1.5 rounded-md text-portal-muted hover:bg-portal-hover hover:text-portal-text"
+              className="p-2 rounded-md text-portal-muted hover:bg-portal-hover hover:text-portal-text"
+              aria-label="Close"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
 
           {product && mode.includes('admin') && (
-            <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-portal-border">
+            <div className="flex flex-wrap items-center gap-2 mt-2.5 pt-2.5 border-t border-portal-border">
               {product.approval_status && (
                 <span
                   className={
@@ -691,7 +673,7 @@ export default function ProductFormPanel({
         )}
 
         {/* Scroll body */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4 space-y-3 bg-portal-inset">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-3.5 sm:px-5 py-3 sm:py-4 space-y-3 bg-portal-inset">
           {detailLoading ? (
             <div className="flex flex-col items-center py-16 text-portal-muted">
               <Loader2 className="w-6 h-6 animate-spin mb-2" />
@@ -794,7 +776,7 @@ export default function ProductFormPanel({
         )}
 
         {/* Sticky footer */}
-        <div className="shrink-0 flex flex-wrap flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 px-5 py-3.5 border-t border-portal-border bg-portal-panel">
+        <div className="shrink-0 flex flex-wrap flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 px-4 sm:px-5 py-3 sm:py-3.5 border-t border-portal-border bg-portal-panel">
           <button
             type="button"
             onClick={handleCloseAttempt}
@@ -877,8 +859,7 @@ export default function ProductFormPanel({
           )}
         </div>
       </div>
-    </div>,
-    document.body
+    </OverlayPortal>
   );
 }
 

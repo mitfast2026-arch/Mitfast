@@ -12,6 +12,8 @@ export function PortalToaster() {
     <Toaster
       theme={isLight ? 'light' : 'dark'}
       position="top-right"
+      className="z-toast"
+      style={{ zIndex: 'var(--z-toast)' }}
       toastOptions={{
         style: {
           background: 'var(--portal-panel)',

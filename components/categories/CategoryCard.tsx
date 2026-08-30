@@ -29,35 +29,41 @@ export default function CategoryCard({ category, index }: CategoryCardProps) {
       className={styles.card}
       aria-label={`Browse ${category.name}`}
     >
-      <div className={styles.index}>{formatIndex(index)}</div>
+      <div className={styles.leftCol}>
+        <div className={styles.topInfo}>
+          <span className={styles.index}>{formatIndex(index)}</span>
+          <h2 className={styles.categoryTitle} title={category.name}>
+            {category.name}
+          </h2>
+          <span className={styles.rule} aria-hidden="true" />
+        </div>
 
-      <div className={styles.copy}>
-        <h2 className={styles.categoryTitle}>{category.name}</h2>
-        <span className={styles.rule} aria-hidden="true" />
-      </div>
-
-      <div className={styles.media}>
-        {imageSrc ? (
-          <RemoteImage
-            src={imageSrc}
-            alt={category.name}
-            sizes="(max-width: 768px) 100vw, 33vw"
-            objectFit="contain"
-          />
-        ) : (
-          <div className="flex h-full min-h-[160px] w-full items-center justify-center bg-[#F3F4F6] text-[#9CA3AF]">
-            <Package className="h-10 w-10" aria-hidden />
-          </div>
-        )}
-      </div>
-
-      <div className={styles.footer}>
-        <span className={styles.count}>
+        <div className={styles.count}>
           {count} {count === 1 ? 'product' : 'products'}
-        </span>
-        <span className={styles.cta}>
-          Browse <ArrowRight className="inline h-3.5 w-3.5" aria-hidden />
-        </span>
+        </div>
+      </div>
+
+      <div className={styles.rightCol}>
+        <div className={styles.imageFrame}>
+          {imageSrc ? (
+            <div className={styles.imageWrapper}>
+              <RemoteImage
+                src={imageSrc}
+                alt={category.name}
+                sizes="(max-width: 640px) 120px, (max-width: 1024px) 140px, 160px"
+                objectFit="contain"
+              />
+            </div>
+          ) : (
+            <div className={styles.placeholder}>
+              <Package className={styles.placeholderIcon} aria-hidden="true" />
+            </div>
+          )}
+        </div>
+
+        <div className={styles.arrow} aria-hidden="true">
+          <ArrowRight className={styles.arrowIcon} />
+        </div>
       </div>
     </Link>
   );

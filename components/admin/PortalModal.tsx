@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
+import OverlayPortal, { OverlayBackdrop } from '@/components/ui/OverlayPortal';
 
 type PortalModalProps = {
   open: boolean;
@@ -39,10 +40,6 @@ export default function PortalModal({
     previousFocusRef.current = document.activeElement as HTMLElement | null;
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-        return;
-      }
       if (e.key !== 'Tab' || !panelRef.current) return;
 
       const focusables = Array.from(
@@ -65,7 +62,6 @@ export default function PortalModal({
     };
 
     document.addEventListener('keydown', onKey);
-    document.body.style.overflow = 'hidden';
 
     const focusTimer = window.setTimeout(() => {
       const panel = panelRef.current;
@@ -78,22 +74,21 @@ export default function PortalModal({
     return () => {
       window.clearTimeout(focusTimer);
       document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = '';
       previousFocusRef.current?.focus?.();
     };
-  }, [open, onClose]);
-
-  if (!open) return null;
+  }, [open]);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 max-md:p-0 bg-black/70"
-      onClick={onClose}
-      role="presentation"
+    <OverlayPortal
+      open={open}
+      layer="modal"
+      onEscape={onClose}
+      className="flex items-center justify-center p-4 max-md:p-0"
     >
+      <OverlayBackdrop className="bg-black/70" onClick={onClose} />
       <div
         ref={panelRef}
-        className={`saas-panel w-full ${maxWidthClass[maxWidth]} flex flex-col max-h-[90vh] max-md:h-dvh max-md:max-h-dvh max-md:rounded-none shadow-lg outline-none`}
+        className={`relative saas-panel w-full ${maxWidthClass[maxWidth]} flex flex-col max-h-[90dvh] max-md:h-dvh max-md:max-h-dvh max-md:rounded-none shadow-lg outline-none`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -101,22 +96,22 @@ export default function PortalModal({
         tabIndex={-1}
       >
         {title ? (
-          <div className="flex items-center justify-between px-5 py-4 border-b border-portal-border shrink-0">
-            <h2 id="portal-modal-title" className="type-section">
+          <div className="flex items-center justify-between px-4 sm:px-5 py-3 sm:py-4 border-b border-portal-border shrink-0">
+            <h2 id="portal-modal-title" className="type-section text-sm sm:text-base">
               {title}
             </h2>
-            <button type="button" onClick={onClose} className="saas-btn-ghost" aria-label="Close">
+            <button type="button" onClick={onClose} className="saas-btn-ghost p-2" aria-label="Close">
               <X className="w-4 h-4" />
             </button>
           </div>
         ) : null}
-        <div className="px-5 py-4 overflow-y-auto flex-1">{children}</div>
+        <div className="px-4 sm:px-5 py-3 sm:py-4 overflow-y-auto flex-1">{children}</div>
         {footer ? (
-          <div className="px-5 py-4 border-t border-portal-border shrink-0 flex flex-wrap justify-end gap-2">
+          <div className="px-4 sm:px-5 py-3 sm:py-4 border-t border-portal-border shrink-0 flex flex-wrap flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2">
             {footer}
           </div>
         ) : null}
       </div>
-    </div>
+    </OverlayPortal>
   );
 }

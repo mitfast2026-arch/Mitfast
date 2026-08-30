@@ -206,9 +206,9 @@ export default function AdminSettingsPage() {
         </div>
       )}
 
-      <form onSubmit={handleSaveSettings} className="space-y-6">
+      <form onSubmit={handleSaveSettings} className="space-y-4 sm:space-y-6">
         {/* RFQ & commerce — enforced in cart + RFQ submission */}
-        <section className="saas-panel p-6 space-y-4">
+        <section className="saas-panel p-4 sm:p-6 space-y-4">
           <div className="flex items-center gap-2 border-b border-portal-border pb-3">
             <ShoppingCart className="w-4 h-4 text-portal-text" />
             <h2 className="type-section text-sm">RFQ &amp; commerce</h2>
@@ -263,7 +263,7 @@ export default function AdminSettingsPage() {
         </section>
 
         {/* Business contact — shown in site footer */}
-        <section className="saas-panel p-6 space-y-4">
+        <section className="saas-panel p-4 sm:p-6 space-y-4">
           <div className="flex items-center gap-2 border-b border-portal-border pb-3">
             <Building2 className="w-4 h-4 text-portal-text" />
             <h2 className="type-section text-sm">Business contact</h2>
@@ -328,7 +328,7 @@ export default function AdminSettingsPage() {
         </section>
 
         {/* Storefront assets */}
-        <section className="saas-panel p-6 space-y-4">
+        <section className="saas-panel p-4 sm:p-6 space-y-4">
           <div className="flex items-center gap-2 border-b border-portal-border pb-3">
             <ImageIcon className="w-4 h-4 text-portal-text" />
             <h2 className="type-section text-sm">Storefront assets</h2>

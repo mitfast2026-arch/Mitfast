@@ -146,8 +146,8 @@ export default function SupplierDashboardPage() {
           </span>
         </div>
 
-        <div className="saas-table-container">
-          <table className="saas-table">
+        <div className="saas-table-container overflow-x-auto">
+          <table className="saas-table min-w-[32rem]">
             <thead>
               <tr>
                 <th>Product name</th>

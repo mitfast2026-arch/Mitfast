@@ -508,17 +508,18 @@ export default function AdminCategoriesPage() {
           </div>
 
           {/* Desktop table */}
-          <table className="saas-table text-xs hidden md:table min-w-[40rem]">
-            <thead>
-              <tr>
-                <th className="w-12">#</th>
-                <th className="w-16">Image</th>
-                <th>Category name</th>
-                <th className="w-24 text-center">Products</th>
-                <th className="w-28">Created</th>
-                <th className="text-right w-36">Actions</th>
-              </tr>
-            </thead>
+          <div className="overflow-x-auto w-full hidden md:block">
+            <table className="saas-table text-xs w-full min-w-[40rem]">
+              <thead>
+                <tr>
+                  <th className="w-12">#</th>
+                  <th className="w-16">Image</th>
+                  <th>Category name</th>
+                  <th className="w-24 text-center">Products</th>
+                  <th className="w-28">Created</th>
+                  <th className="text-right w-36">Actions</th>
+                </tr>
+              </thead>
             <tbody>
               {loading ? (
                 <tr>
@@ -660,6 +661,7 @@ export default function AdminCategoriesPage() {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
 

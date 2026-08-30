@@ -40,6 +40,7 @@ import AdminPageHeader from '@/components/admin/AdminPageHeader';
 import AdminStatStrip from '@/components/admin/AdminStatStrip';
 import AdminToolbar from '@/components/admin/AdminToolbar';
 import PortalModal from '@/components/admin/PortalModal';
+import OverlayPortal from '@/components/ui/OverlayPortal';
 import { ChartCard, PortalDonutChart, PortalBarChart } from '@/components/portal/ds';
 import { selectChart } from '@/lib/portal/chart-selection';
 
@@ -359,7 +360,7 @@ function AdminSuppliersPageContent() {
 
     try {
       const result = await apiGet<{ products: any[] }>(
-        `/api/products?mode=admin&supplierId=${sup.id}&archiveStatus=archived`
+        `/api/products?mode=admin&supplierId=${sup.id}&archiveStatus=archived&limit=100`
       );
       if (result.ok) {
         const prods = result.data.products || [];
@@ -591,12 +592,12 @@ function AdminSuppliersPageContent() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1.5">
-              <Filter className="w-3 h-3 text-portal-muted" />
+            <div className="flex items-center gap-1.5 w-full sm:w-auto">
+              <Filter className="w-3 h-3 text-portal-muted shrink-0" />
               <select
                 value={countryFilter}
                 onChange={(e) => setCountryFilter(e.target.value)}
-                className="saas-input text-sm py-2 min-w-[140px]"
+                className="saas-input text-sm py-2 w-full sm:w-auto sm:min-w-[140px]"
               >
                 <option value="">All countries</option>
                 {countries.map((c) => (
@@ -607,12 +608,12 @@ function AdminSuppliersPageContent() {
               </select>
             </div>
 
-            <div className="flex items-center gap-1.5">
-              <ArrowUpDown className="w-3 h-3 text-portal-muted" />
+            <div className="flex items-center gap-1.5 w-full sm:w-auto">
+              <ArrowUpDown className="w-3 h-3 text-portal-muted shrink-0" />
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as SortOption)}
-                className="saas-input text-sm py-2 min-w-[150px]"
+                className="saas-input text-sm py-2 w-full sm:w-auto sm:min-w-[150px]"
               >
                 {SORT_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
@@ -950,8 +951,13 @@ function AdminSuppliersPageContent() {
 
       {/* Archive confirmation */}
       {archiveTarget && (
-        <div className="fixed inset-0 z-50 bg-portal-text/50 flex items-center justify-center p-4">
-          <div className="w-full max-w-md p-5 rounded-2xl bg-portal-panel shadow-2xl space-y-4">
+        <OverlayPortal
+          open
+          layer="modal"
+          onEscape={() => setArchiveTarget(null)}
+          className="flex items-center justify-center p-4 bg-portal-text/50"
+        >
+          <div className="relative w-full max-w-md p-5 rounded-2xl bg-portal-panel shadow-2xl space-y-4 max-h-[90dvh] overflow-y-auto">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Archive className="w-4 h-4 text-portal-danger" />
@@ -988,13 +994,18 @@ function AdminSuppliersPageContent() {
               </button>
             </div>
           </div>
-        </div>
+        </OverlayPortal>
       )}
 
       {/* Restore modal */}
       {restoreModalOpen && restoreTargetSupplier && (
-        <div className="fixed inset-0 z-50 bg-portal-text/50 flex items-center justify-center p-4">
-          <form onSubmit={handleExecuteRestore} className="w-full max-w-lg p-5 rounded-2xl bg-portal-panel shadow-2xl space-y-4">
+        <OverlayPortal
+          open
+          layer="modal"
+          onEscape={() => setRestoreModalOpen(false)}
+          className="flex items-center justify-center p-4 bg-portal-text/50"
+        >
+          <form onSubmit={handleExecuteRestore} className="relative w-full max-w-lg p-5 rounded-2xl bg-portal-panel shadow-2xl space-y-4 max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-portal-border pb-3">
               <div className="flex items-center gap-2">
                 <RotateCcw className="w-4 h-4 text-portal-success" />
@@ -1095,13 +1106,18 @@ function AdminSuppliersPageContent() {
               </button>
             </div>
           </form>
-        </div>
+        </OverlayPortal>
       )}
 
       {/* Analytics modal — chart of existing supplier stats */}
       {statsModalOpen && selectedStats && (
-        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
-          <div className="w-full max-w-lg p-5 rounded-[24px] bg-portal-panel border border-portal-border shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto">
+        <OverlayPortal
+          open
+          layer="modal"
+          onEscape={() => setStatsModalOpen(false)}
+          className="flex items-center justify-center p-4 bg-black/70"
+        >
+          <div className="relative w-full max-w-lg p-5 rounded-[24px] bg-portal-panel border border-portal-border shadow-2xl space-y-4 max-h-[85dvh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-portal-border pb-3 sticky top-0 bg-portal-panel z-10">
               <div>
                 <h3 className="text-sm font-bold text-portal-text">{selectedStats.supplier.company_name}</h3>
@@ -1219,13 +1235,21 @@ function AdminSuppliersPageContent() {
               </>
             ) : null}
           </div>
-        </div>
+        </OverlayPortal>
       )}
 
       {/* Create supplier modal */}
       {createModalOpen && (
-        <div className="fixed inset-0 z-50 bg-portal-text/50 flex items-center justify-center p-4">
-          <form onSubmit={handleCreateSupplier} className="w-full max-w-md p-5 rounded-2xl bg-portal-panel shadow-2xl space-y-3">
+        <OverlayPortal
+          open
+          layer="modal"
+          onEscape={() => {
+            setCreateModalOpen(false);
+            setCreateError('');
+          }}
+          className="flex items-center justify-center p-4 bg-portal-text/50"
+        >
+          <form onSubmit={handleCreateSupplier} className="relative w-full max-w-md p-5 rounded-2xl bg-portal-panel shadow-2xl space-y-3 max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-portal-border pb-3">
               <h3 className="text-sm font-bold text-portal-text">Add supplier partner</h3>
               <button
@@ -1347,7 +1371,7 @@ function AdminSuppliersPageContent() {
               </button>
             </div>
           </form>
-        </div>
+        </OverlayPortal>
       )}
     </div>
   );

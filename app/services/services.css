@@ -204,7 +204,7 @@
 .svc-detail-root {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: var(--z-modal);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -387,9 +387,18 @@
 }
 
 @media (max-width: 767px) {
+  .svc-page {
+    min-height: auto;
+    padding: clamp(0.75rem, 3vw, 1rem) clamp(0.75rem, 3vw, 1rem) clamp(1.25rem, 4vw, 1.75rem);
+  }
+
   .svc-grid {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
+    grid-template-columns: none;
     grid-template-rows: none;
+    gap: clamp(0.75rem, 2.5vw, 1rem);
+    min-height: auto;
   }
 
   .svc-grid.is-interacting .svc-cell:not(.is-hovered):not(:focus-visible) {
@@ -397,17 +406,79 @@
   }
 
   .svc-cell {
-    min-height: 70vh;
+    min-height: clamp(260px, 58vw, 320px);
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .svc-cell__media {
+    transform: scale(1.01);
+  }
+
+  .svc-cell__scrim {
+    background: linear-gradient(
+      180deg,
+      rgba(11, 15, 20, 0.18) 0%,
+      rgba(11, 15, 20, 0.35) 30%,
+      rgba(11, 15, 20, 0.78) 65%,
+      rgba(11, 15, 20, 0.94) 100%
+    );
+  }
+
+  .svc-cell__brand {
+    top: clamp(0.75rem, 2.5vw, 1rem);
+    left: clamp(0.875rem, 3vw, 1.125rem);
+    font-size: 0.625rem;
+    letter-spacing: 0.22em;
+    color: rgba(247, 247, 248, 0.48);
+  }
+
+  .svc-cell__content {
+    padding: clamp(0.875rem, 3.5vw, 1.125rem);
+    transform: none;
+  }
+
+  .svc-cell.is-hovered .svc-cell__content,
+  .svc-cell:focus-visible .svc-cell__content {
+    transform: none;
+  }
+
+  .svc-cell__meta {
+    font-size: clamp(0.625rem, 2.5vw, 0.6875rem);
+    letter-spacing: 0.14em;
+    margin-bottom: 0.25rem;
+    color: rgba(247, 247, 248, 0.58);
+  }
+
+  .svc-cell__number {
+    margin-right: 0.35rem;
+  }
+
+  .svc-cell__title {
+    font-size: clamp(1.375rem, 5.5vw, 1.625rem);
+    line-height: 1.15;
+    letter-spacing: -0.025em;
+    margin: 0 0 0.25rem;
+  }
+
+  .svc-cell__subtitle {
+    font-size: clamp(0.875rem, 3.4vw, 0.9375rem);
+    line-height: 1.35;
+    color: var(--svc-muted);
+    max-width: none;
+    margin: 0 0 0.625rem;
   }
 
   .svc-cell__action {
     opacity: 1;
     transform: none;
-    color: rgba(247, 247, 248, 0.75);
+    font-size: clamp(0.8125rem, 3vw, 0.875rem);
+    color: rgba(247, 247, 248, 0.85);
+    gap: 0.45rem;
   }
 
   .svc-cell__action-line {
-    width: 1.5rem;
+    width: 1.25rem;
   }
 }
 

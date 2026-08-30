@@ -28,6 +28,10 @@ import {
   internalPathname,
   resolvePostAuthPath as resolveRoleHome,
 } from '@/lib/auth/post-auth-path';
+import {
+  OAUTH_INTENT_COOKIE,
+  getPortalMismatchError,
+} from '@/lib/auth/portal-role';
 import './auth.css';
 
 export type AuthSearchParams = {
@@ -102,6 +106,17 @@ async function resolvePostAuthPath(
       await supabase.auth.signOut();
       throw new Error('This account does not have admin access.');
     }
+    return resolveRoleHome({
+      role: 'admin',
+      redirectPath: opts.redirectPath,
+      identityComplete: true,
+    });
+  }
+
+  const mismatchError = getPortalMismatchError(opts.preferredRole, profile?.role);
+  if (mismatchError) {
+    await supabase.auth.signOut();
+    throw new Error(mismatchError);
   }
 
   if (profile?.role === 'admin') {
@@ -112,13 +127,7 @@ async function resolvePostAuthPath(
     });
   }
 
-  const wantsSupplier = opts.preferredRole === 'supplier' || profile?.role === 'supplier';
-
-  if (wantsSupplier) {
-    if (profile?.role === 'customer') {
-      throw new Error('This account is already a buyer. Use a different email for supplier access.');
-    }
-
+  if (opts.preferredRole === 'supplier') {
     const { data: sup } = await supabase
       .from('suppliers')
       .select('status')
@@ -419,6 +428,9 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
     setLoading(true);
     submitLockRef.current = true;
     try {
+      // Set short-lived intent cookie so callback can verify intended portal
+      document.cookie = `${OAUTH_INTENT_COOKIE}=${activeRole}; path=/; max-age=600; SameSite=Lax`;
+
       const supabase = createBrowserClient();
       const origin = window.location.origin;
       // Supplier Google onboarding intent via next= only — never authorize from metadata alone
@@ -452,27 +464,45 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
   }
 
   async function deliverOtp() {
-    const res = await fetch('/api/auth/otp/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: email.trim(),
-        role: activeRole === 'supplier' ? 'supplier' : 'customer',
-      }),
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok || !json.success) {
-      const retryAfter = Number(json?.error?.retryAfterSeconds);
-      if (res.status === 429 && Number.isFinite(retryAfter) && retryAfter > 0) {
-        setCooldown(retryAfter);
-        setRegisterStep('otp');
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15_000);
+
+    try {
+      const res = await fetch('/api/auth/otp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email.trim(),
+          role: activeRole === 'supplier' ? 'supplier' : 'customer',
+        }),
+        signal: controller.signal,
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        const retryAfter = Number(json?.error?.retryAfterSeconds);
+        if (res.status === 429 && Number.isFinite(retryAfter) && retryAfter > 0) {
+          setCooldown(retryAfter);
+          setRegisterStep('otp');
+        }
+        throw new Error(json?.error?.message || 'Could not send verification code');
       }
-      throw new Error(json?.error?.message || 'Could not send verification code');
+
+      setRegisterStep('otp');
+      setCooldown(OTP_RESEND_COOLDOWN_SEC);
+      setOtpFailCount(0);
+      setSuccessMsg('Verification code sent. Check your inbox (and spam).');
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new Error('Request timed out. Please check your network connection and try again.');
+      }
+      if (err instanceof TypeError && err.message.includes('fetch')) {
+        throw new Error('Network connection error. Please check your internet connection and try again.');
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
     }
-    setRegisterStep('otp');
-    setCooldown(OTP_RESEND_COOLDOWN_SEC);
-    setOtpFailCount(0);
-    setSuccessMsg('Verification code sent. Check your inbox (and spam).');
   }
 
   async function sendOtp() {

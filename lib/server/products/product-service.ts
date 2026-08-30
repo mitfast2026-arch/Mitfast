@@ -29,6 +29,7 @@ import {
   stripRichTextHtml,
   isEmptyRichText,
 } from '@/lib/html/sanitize-rich-text.server';
+import { getProductsRatingAggregates } from '@/lib/server/reviews/review-service';
 import type { ServerResult } from '@/lib/server/auth/get-session';
 import type {
   ProductApprovalStatus,
@@ -1750,6 +1751,9 @@ export async function getStorefrontProducts(params: {
       };
     }
 
+    const productIds = (products || []).map((p: any) => p.id);
+    const ratingMap = await getProductsRatingAggregates(productIds);
+
     // Slim list payload: primary image only + truncated description for cards
     const slimProducts = (products || []).map((raw: any) => {
       const p = normalizeStorefrontSupplier(raw);
@@ -1759,8 +1763,12 @@ export async function getStorefrontProducts(params: {
         [...images].sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0))[0] ||
         null;
       const cleanDesc = typeof p.description === 'string' ? stripRichTextHtml(p.description) : '';
+      const ratingInfo = ratingMap[p.id];
+
       return {
         ...p,
+        rating: ratingInfo ? ratingInfo.averageRating : null,
+        review_count: ratingInfo ? ratingInfo.reviewCount : 0,
         description: cleanDesc.length > 120 ? `${cleanDesc.slice(0, 120).trim()}…` : cleanDesc,
         images: primary
           ? [{ id: primary.id, image_url: primary.image_url, sort_order: primary.sort_order ?? 0, is_primary: true }]

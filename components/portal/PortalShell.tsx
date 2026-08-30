@@ -20,6 +20,7 @@ import PortalRouteSkeleton from '@/components/portal/PortalRouteSkeleton';
 import PortalColorModeToggle from '@/components/portal/PortalColorModeToggle';
 import { prefetchPortalRouteData } from '@/lib/client/portal-nav-prefetch';
 import { markPortalNavClick } from '@/lib/client/portal-data-cache';
+import OverlayPortal, { OverlayBackdrop } from '@/components/ui/OverlayPortal';
 
 export type PortalNavItem = {
   label: string;
@@ -78,7 +79,17 @@ export default function PortalShell({
 
   useEffect(() => {
     setPendingHref(null);
+    setMobileOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    function onChange() {
+      if (mq.matches) setMobileOpen(false);
+    }
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
 
   const currentDate = new Date().toLocaleDateString('en-US', {
     weekday: 'short',
@@ -268,19 +279,19 @@ export default function PortalShell({
 
       <div className="flex-1 flex flex-col min-w-0 h-dvh overflow-hidden bg-portal-canvas">
         {/* Top bar — static */}
-        <header className="shrink-0 z-20 border-b border-portal-border bg-portal-canvas/90 backdrop-blur-sm px-4 sm:px-6 lg:px-8 py-3">
-          <div className="flex items-center gap-3 w-full">
+        <header className="relative shrink-0 z-header border-b border-portal-border bg-portal-canvas/90 backdrop-blur-sm px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3">
+          <div className="flex items-center gap-2 sm:gap-3 w-full min-w-0">
             <button
               type="button"
               onClick={() => setMobileOpen((o) => !o)}
-              className="lg:hidden saas-btn-ghost"
+              className="lg:hidden saas-btn-ghost p-2 shrink-0"
               aria-label="Toggle navigation"
             >
               {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
 
             <form
-              className="saas-search-field flex-1 max-w-md"
+              className="saas-search-field flex-1 max-w-md min-w-0"
               onSubmit={(e) => {
                 e.preventDefault();
                 onSearchSubmit?.(search.trim());
@@ -289,7 +300,7 @@ export default function PortalShell({
               <Search className="saas-search-icon" aria-hidden />
               <input
                 type="search"
-                className="saas-input"
+                className="saas-input text-xs sm:text-sm"
                 placeholder={searchPlaceholder}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -297,7 +308,7 @@ export default function PortalShell({
               />
             </form>
 
-            <div className="ml-auto flex items-center gap-2 sm:gap-3">
+            <div className="ml-auto flex items-center gap-1.5 sm:gap-3 shrink-0">
               <span className="hidden sm:inline font-mono text-xs text-portal-muted whitespace-nowrap">
                 {currentDate}
               </span>
@@ -338,32 +349,32 @@ export default function PortalShell({
           </div>
         </header>
 
-        {mobileOpen ? (
-          <>
-            <div
-              className="lg:hidden fixed inset-0 z-30 bg-black/60"
-              onClick={() => setMobileOpen(false)}
-            />
-            <div className="lg:hidden fixed top-16 left-3 right-3 z-40 p-4 saas-panel space-y-1 max-h-[calc(100vh-5rem)] overflow-y-auto">
-              {renderNav(false, () => setMobileOpen(false))}
-              <button
-                type="button"
-                onClick={() => void handleSignOutClick()}
-                disabled={signingOut}
-                className="w-full text-left py-2.5 px-3 rounded-xl text-sm text-portal-danger hover:bg-portal-danger-soft flex items-center gap-2 mt-2 disabled:opacity-60"
-              >
-                <LogOut className="w-4 h-4" />
-                {signingOut ? 'Signing out…' : 'Sign Out'}
-              </button>
-            </div>
-          </>
-        ) : null}
+        <OverlayPortal
+          open={mobileOpen}
+          layer="drawer"
+          onEscape={() => setMobileOpen(false)}
+          className="lg:hidden"
+        >
+          <OverlayBackdrop className="bg-black/60" onClick={() => setMobileOpen(false)} />
+          <div className="absolute top-14 sm:top-16 left-2 sm:left-3 right-2 sm:right-3 p-3 sm:p-4 saas-panel space-y-1 max-h-[calc(100dvh-4.5rem)] overflow-y-auto">
+            {renderNav(false, () => setMobileOpen(false))}
+            <button
+              type="button"
+              onClick={() => void handleSignOutClick()}
+              disabled={signingOut}
+              className="w-full text-left py-2.5 px-3 rounded-xl text-sm text-portal-danger hover:bg-portal-danger-soft flex items-center gap-2 mt-2 disabled:opacity-60"
+            >
+              <LogOut className="w-4 h-4" />
+              {signingOut ? 'Signing out…' : 'Sign Out'}
+            </button>
+          </div>
+        </OverlayPortal>
 
         {/* Full-bleed scroll pane — scrollbar on the right edge of the viewport column */}
         <main className="relative flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden w-full">
           <div
             className={clsx(
-              'w-full max-w-full min-w-0 px-4 sm:px-6 lg:px-8 py-3 sm:py-4',
+              'w-full max-w-full min-w-0 px-3 sm:px-6 lg:px-8 py-3 sm:py-4',
               showNavSkeleton && 'invisible pointer-events-none'
             )}
             aria-hidden={showNavSkeleton || undefined}

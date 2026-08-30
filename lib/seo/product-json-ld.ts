@@ -84,8 +84,25 @@ export function buildWebSiteJsonLd(): Record<string, unknown> {
     url: siteUrl(),
     potentialAction: {
       '@type': 'SearchAction',
-      target: `${siteUrl()}/products?search={search_term_string}`,
+      target: {
+        '@type': 'EntryPoint',
+        urlTemplate: `${siteUrl()}/products?search={search_term_string}`,
+      },
       'query-input': 'required name=search_term_string',
     },
+  };
+}
+
+export function buildCatalogItemListJsonLd(products: Array<{ id: string; name: string }>): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'ItemList',
+    name: 'MITFAST Industrial Products Catalog',
+    itemListElement: products.map((p, index) => ({
+      '@type': 'ListItem',
+      position: index + 1,
+      name: p.name,
+      url: `${siteUrl()}/products/${p.id}`,
+    })),
   };
 }

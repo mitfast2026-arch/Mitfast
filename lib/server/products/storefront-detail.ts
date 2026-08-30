@@ -2,6 +2,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import type { ServerResult } from '@/lib/server/auth/get-session';
 import { isRpcMissing } from '@/lib/server/db/production-guards';
 import { sanitizeRichTextHtml } from '@/lib/html/sanitize-rich-text.server';
+import { getProductsRatingAggregates } from '@/lib/server/reviews/review-service';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -159,11 +160,16 @@ export async function getStorefrontProductDetail(productId: string): Promise<Ser
       ? sanitizeRichTextHtml(product.description)
       : '';
 
+    const ratingMap = await getProductsRatingAggregates([productId]);
+    const ratingInfo = ratingMap[productId];
+
     return {
       success: true,
       data: {
         product: {
           ...normalized,
+          rating: ratingInfo ? ratingInfo.averageRating : null,
+          review_count: ratingInfo ? ratingInfo.reviewCount : 0,
           descriptionHtml,
         },
       },

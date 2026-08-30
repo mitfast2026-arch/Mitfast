@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { X, Loader2, Archive } from 'lucide-react';
+import OverlayPortal from '@/components/ui/OverlayPortal';
 import type { CategoryListItem } from '@/types/category';
 
 type CategoryArchiveDialogProps = {
@@ -20,8 +21,13 @@ export default function CategoryArchiveDialog({
   onConfirm,
 }: CategoryArchiveDialogProps) {
   return (
-    <div className="fixed inset-0 z-50 bg-portal-text/50 flex items-center justify-center p-4">
-      <div className="w-full max-w-md p-5 rounded-2xl bg-portal-panel shadow-2xl space-y-4">
+    <OverlayPortal
+      open
+      layer="modal"
+      onEscape={onClose}
+      className="flex items-center justify-center p-4 bg-portal-text/50"
+    >
+      <div className="relative w-full max-w-md p-5 rounded-2xl bg-portal-panel shadow-2xl space-y-4 max-h-[90dvh] overflow-y-auto">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2">
             <Archive className="w-4 h-4 text-portal-warning" />
@@ -65,6 +71,6 @@ export default function CategoryArchiveDialog({
           </button>
         </div>
       </div>
-    </div>
+    </OverlayPortal>
   );
 }

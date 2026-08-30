@@ -91,7 +91,6 @@ export default async function ProductDetailPage(props: PageProps) {
             ).toLocaleString('en-IN')}
           </p>
           <p>MOQ: {product.moq || 1}</p>
-          {product.sku ? <p>SKU: {product.sku}</p> : null}
         </article>
       </noscript>
       <ProductDetailClient

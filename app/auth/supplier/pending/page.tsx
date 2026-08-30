@@ -91,10 +91,10 @@ function SupplierPendingContent() {
   }
 
   return (
-    <div className="min-h-screen saas-canvas-bg flex items-center justify-center py-16 px-4">
+    <div className="min-h-screen saas-canvas-bg flex items-center justify-center py-8 sm:py-16 px-3 sm:px-4">
       <div
         ref={cardRef}
-        className="w-full max-w-lg saas-panel p-8 text-center space-y-6 border border-slate-200/80 rounded-2xl bg-white shadow-sm"
+        className="w-full max-w-lg saas-panel p-5 sm:p-8 text-center space-y-5 sm:space-y-6 border border-slate-200/80 rounded-2xl bg-white shadow-sm"
       >
         <div className="w-16 h-16 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center mx-auto text-amber-600 shadow-inner">
           {isArchived ? <Archive className="w-8 h-8" /> : <Clock className="w-8 h-8 animate-pulse" />}

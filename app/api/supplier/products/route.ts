@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireSupplier } from '@/lib/server/auth/get-session';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { sanitizeIlikePattern } from '@/lib/server/db/sanitize-search';
+import { sanitizePostgrestSearch } from '@/lib/server/db/sanitize-search';
 
 export async function GET(request: NextRequest) {
   try {
@@ -43,8 +43,8 @@ export async function GET(request: NextRequest) {
       .order('created_at', { ascending: false });
 
     if (search) {
-      const q = sanitizeIlikePattern(search);
-      if (q) query = query.ilike('name', `%${q}%`);
+      const q = sanitizePostgrestSearch(search);
+      if (q) query = query.or(`name.ilike.%${q}%,sku.ilike.%${q}%`);
     }
 
     const { data: products, count, error } = await query.range(offset, offset + limit - 1);

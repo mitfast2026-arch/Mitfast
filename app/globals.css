@@ -68,6 +68,17 @@
     --portal-status-yellow: #FDE68A;
     --portal-status-green: #6EE7B7;
     --portal-status-text: #0A0A0A;
+
+    /* Overlay / chrome stacking — do not invent per-component z-index */
+    --z-base: 0;
+    --z-sticky: 10;
+    --z-header: 20;
+    --z-bottom-nav: 30;
+    --z-backdrop: 100;
+    --z-drawer: 110;
+    --z-modal: 120;
+    --z-popover: 130;
+    --z-toast: 200;
   }
 
   /* Customer account — flat navbar-white canvas, floating elevation */
@@ -1348,6 +1359,28 @@
     @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
   }
 
+  /* Shared overlay layers — portal to document.body; do not nest under isolate/filter parents */
+  .overlay-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-backdrop);
+  }
+
+  .overlay-drawer {
+    position: fixed;
+    z-index: var(--z-drawer);
+  }
+
+  .overlay-modal {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-modal);
+  }
+
+  [data-sonner-toaster] {
+    z-index: var(--z-toast) !important;
+  }
+
   .home-shell-transition {
     background-color: #FFFFFF;
   }
@@ -1424,13 +1457,188 @@
   }
 
   .nav-glass-menu {
-    background: rgba(247, 247, 248, 0.96);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    background: rgba(255, 255, 255, 0.98);
+    backdrop-filter: blur(20px) saturate(1.4);
+    -webkit-backdrop-filter: blur(20px) saturate(1.4);
   }
 
   .nav-glass-menu--dark {
-    background: rgba(17, 19, 21, 0.96);
+    background: rgba(17, 19, 21, 0.98);
+    backdrop-filter: blur(20px) saturate(1.4);
+    -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  }
+
+  /* Fullscreen Mobile/Tablet Navigation Drawer */
+  .mobile-drawer-backdrop {
+    opacity: 0;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    will-change: opacity;
+  }
+
+  .mobile-drawer-backdrop.is-open {
+    opacity: 1;
+  }
+
+  .mobile-drawer-panel {
+    transform: translateY(-100%);
+    opacity: 0.8;
+    transition:
+      transform 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+      opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    will-change: transform, opacity;
+  }
+
+  .mobile-drawer-panel.is-open {
+    transform: translateY(0);
+    opacity: 1;
+  }
+
+  /* Smooth nested menu slider container */
+  .mobile-submenu-track {
+    display: flex;
+    width: 200%;
+    transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform;
+  }
+
+  .mobile-submenu-track.show-nested {
+    transform: translateX(-50%);
+  }
+
+  .mobile-submenu-page {
+    width: 50%;
+    flex-shrink: 0;
+  }
+
+  /* Mobile menu interactive rows — Insta360-style minimal rows with subtle divider */
+  .mobile-nav-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    min-height: 56px;
+    padding: 1rem 0.75rem;
+    font-size: 1.0625rem;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    color: #111315;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid #F3F4F6;
+    text-align: left;
+    transition: background-color 0.15s ease, color 0.15s ease;
+    cursor: pointer;
+  }
+
+  .mobile-nav-row:last-child {
+    border-bottom: none;
+  }
+
+  .mobile-nav-row:hover,
+  .mobile-nav-row:active {
+    background: rgba(17, 19, 21, 0.02);
+    color: #000000;
+  }
+
+  .mobile-nav-row--sub {
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: #4B5563;
+    padding: 0.875rem 0.75rem;
+    min-height: 48px;
+  }
+
+  .mobile-nav-row--sub:hover,
+  .mobile-nav-row--sub:active {
+    background: rgba(17, 19, 21, 0.03);
+    color: #111315;
+  }
+
+  .mobile-nav-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #6B7280;
+    padding: 0.5rem 0.75rem;
+    border-radius: 8px;
+    background: transparent;
+    border: none;
+    transition: color 0.2s ease, background-color 0.2s ease;
+  }
+
+  .mobile-nav-back:hover {
+    color: #111315;
+    background: rgba(17, 19, 21, 0.05);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mobile-drawer-backdrop,
+    .mobile-drawer-panel,
+    .mobile-submenu-track,
+    .mobile-nav-row,
+    .mobile-nav-back {
+      transition: none !important;
+      transform: none !important;
+    }
+  }
+
+  /* Cinematic Hero Background Focal Point */
+  .cinematic-hero-slide {
+    background-position: 68% center;
+    background-size: cover;
+    background-repeat: no-repeat;
+  }
+
+  @media (min-width: 640px) {
+    .cinematic-hero-slide {
+      background-position: 78% center;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .cinematic-hero-slide {
+      background-position: right center;
+    }
+  }
+
+  /* Tablet Hero Text Readability Scrim (768px–1023px) */
+  .hero-text-card {
+    position: relative;
+    font-size: clamp(2.15rem, 5.2vw + 0.8rem, 4.25rem);
+  }
+
+  .hero-readability-scrim {
+    display: none;
+    position: absolute;
+    inset: -1.5rem -2.25rem -1.75rem -2.25rem;
+    border-radius: 28px;
+    background: radial-gradient(
+      ellipse at center,
+      rgba(255, 255, 255, 0.86) 0%,
+      rgba(255, 255, 255, 0.7) 50%,
+      rgba(255, 255, 255, 0.3) 80%,
+      transparent 100%
+    );
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  @media (min-width: 768px) and (max-width: 1023px) {
+    .hero-readability-scrim {
+      display: block;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .hero-readability-scrim {
+      display: none !important;
+    }
   }
 
   /* Navbar opaque action buttons (not glass) */
@@ -1524,12 +1732,12 @@
   }
 
   /* Primary desktop nav — one flex group, identical items, shared underline geometry.
-     Display is controlled by Tailwind `hidden md:flex` on the element; do not set
-     display here or it overrides `hidden` below the md breakpoint. */
+     Display is controlled by Tailwind `hidden lg:flex` on the element; do not set
+     display here or it overrides `hidden` below the lg breakpoint. */
   .nav-primary {
     align-items: center;
     justify-content: center;
-    gap: 2rem;
+    gap: clamp(1.25rem, 2vw, 2.25rem);
     height: 100%;
     font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   }

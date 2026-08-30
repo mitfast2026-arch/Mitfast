@@ -94,8 +94,8 @@ export default function SupplierRejectedPage() {
   }
 
   return (
-    <div className="min-h-screen saas-canvas-bg flex items-center justify-center py-16 px-4">
-      <div className="w-full max-w-lg space-y-6">
+    <div className="min-h-screen saas-canvas-bg flex items-center justify-center py-8 sm:py-16 px-3 sm:px-4">
+      <div className="w-full max-w-lg space-y-5 sm:space-y-6">
         <div className="text-center space-y-2">
           <div className="saas-icon-well-lg mx-auto text-portal-danger">
             <XCircle className="w-6 h-6" />
@@ -107,7 +107,7 @@ export default function SupplierRejectedPage() {
         </div>
 
         {supplier?.rejection_reason && (
-          <div className="p-4 rounded-2xl bg-portal-danger-soft border border-portal-danger/30 space-y-1 text-xs">
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-portal-danger-soft border border-portal-danger/30 space-y-1 text-xs">
             <div className="font-semibold text-portal-danger flex items-center gap-1.5">
               <AlertCircle className="w-4 h-4" />
               Admin feedback
@@ -116,7 +116,7 @@ export default function SupplierRejectedPage() {
           </div>
         )}
 
-        <div className="saas-panel p-6 space-y-4">
+        <div className="saas-panel p-4 sm:p-6 space-y-4">
           <form onSubmit={handleResubmit} className="space-y-3 text-xs">
             <div className="space-y-1">
               <label className="saas-label">Company Legal Entity *</label>

@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
 import { signOutTo } from '@/lib/client/sign-out';
+import OverlayPortal, { OverlayBackdrop } from '@/components/ui/OverlayPortal';
 import { clsx } from 'clsx';
 
 type NavItem = {
@@ -101,6 +102,15 @@ export default function CustomerLayout({
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    function onChange() {
+      if (mq.matches) setMobileOpen(false);
+    }
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
 
   function handleSignOut() {
     signOutTo('/auth?role=buyer&mode=signin');
@@ -195,19 +205,27 @@ export default function CustomerLayout({
     );
   }
 
-  function SidenavBody({ onNavigate }: { onNavigate?: () => void }) {
+  function SidenavBody({
+    onNavigate,
+    isDrawer,
+  }: {
+    onNavigate?: () => void;
+    isDrawer?: boolean;
+  }) {
     return (
       <>
-        <div className="px-3.5 pt-1 pb-5">
-          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#9ca3af]">
-            Account
-          </p>
-          <p className="text-[18px] font-extrabold tracking-[-0.03em] text-[#111111] truncate mt-2 leading-snug">
-            {profile?.full_name || 'Buyer'}
-          </p>
-        </div>
+        {!isDrawer && (
+          <div className="px-3.5 pt-1 pb-5">
+            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#9ca3af]">
+              Account
+            </p>
+            <p className="text-[18px] font-extrabold tracking-[-0.03em] text-[#111111] truncate mt-2 leading-snug">
+              {profile?.full_name || 'Buyer'}
+            </p>
+          </div>
+        )}
 
-        <div className="space-y-7 flex-1">
+        <div className={clsx('space-y-6 flex-1', isDrawer && 'pt-1')}>
           <div>
             <p className="px-3.5 mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-[#9ca3af]">
               Shop
@@ -224,8 +242,11 @@ export default function CustomerLayout({
 
         <button
           type="button"
-          onClick={handleSignOut}
-          className="mt-8 flex items-center gap-3 w-full px-3.5 py-3 rounded-[14px] text-[16px] font-semibold text-[#B91C1C] hover:bg-[#FEF2F2]/80 transition-colors"
+          onClick={() => {
+            onNavigate?.();
+            handleSignOut();
+          }}
+          className="mt-6 flex items-center gap-3 w-full px-3.5 py-3 rounded-[14px] text-[15px] sm:text-[16px] font-semibold text-[#B91C1C] hover:bg-[#FEF2F2] transition-colors"
         >
           <LogOut className="w-5 h-5 shrink-0" strokeWidth={1.75} />
           Sign out
@@ -250,62 +271,70 @@ export default function CustomerLayout({
           <SidenavBody />
         </aside>
 
-        <div className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md px-4 py-2 flex items-center justify-between gap-2">
-          <button
-            type="button"
-            onClick={() => setMobileOpen(true)}
-            className="inline-flex items-center gap-2.5 h-11 px-4 rounded-[12px] bg-[#f0f2f5] text-[15px] font-semibold text-[#111111]"
-          >
-            <Menu className="w-5 h-5" strokeWidth={1.75} />
-            Menu
-          </button>
-          <div className="flex items-center gap-1">
-            {shopNav.map((item) => {
-              const Icon = item.icon;
-              const active = isActive(item);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  aria-label={item.label}
-                  className={clsx(
-                    'relative h-11 w-11 rounded-[12px] flex items-center justify-center',
-                    active ? 'bg-[#111111] text-white shadow-[var(--buyer-shadow-sm)]' : 'text-[#6b7280]'
-                  )}
-                >
-                  <Icon className="w-5 h-5" strokeWidth={1.75} />
-                  {item.badge !== undefined ? (
-                    <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-[#B91C1C]" />
-                  ) : null}
-                </Link>
-              );
-            })}
+        <div className="flex-1 min-w-0 flex flex-col">
+          <div className="lg:hidden sticky top-16 z-sticky -mx-4 mb-4 px-4 py-2.5 md:-mx-8 md:px-8 bg-white/95 backdrop-blur-md border-b border-[#F0F2F5] flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => setMobileOpen(true)}
+              className="inline-flex items-center gap-2 h-11 px-3.5 rounded-[12px] bg-[#f0f2f5] hover:bg-[#e4e7eb] active:scale-[0.98] text-[14px] sm:text-[15px] font-semibold text-[#111111] transition-all shrink-0"
+              aria-label="Open customer navigation menu"
+              aria-expanded={mobileOpen}
+              aria-controls="customer-nav-drawer"
+            >
+              <Menu className="w-5 h-5" strokeWidth={1.75} />
+              <span>Menu</span>
+            </button>
+            <p className="min-w-0 text-[13px] sm:text-[14px] font-semibold text-[#6b7280] truncate text-right">
+              {profile?.full_name || 'Buyer'}
+            </p>
           </div>
-        </div>
 
-        {mobileOpen ? (
-          <div className="lg:hidden fixed inset-0 z-50 flex">
-            <div className="absolute inset-0 bg-black/30" onClick={() => setMobileOpen(false)} />
-            <div className="relative w-[280px] max-w-[85%] h-full bg-white p-4 flex flex-col overflow-y-auto shadow-[var(--buyer-shadow-md)]">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[13px] font-semibold text-[#111111] truncate">
-                  {profile?.full_name || 'Buyer'}
-                </p>
+          <OverlayPortal
+            open={mobileOpen}
+            layer="drawer"
+            onEscape={() => setMobileOpen(false)}
+            className="lg:hidden flex"
+          >
+            <OverlayBackdrop
+              className="bg-black/40 backdrop-blur-xs transition-opacity duration-200"
+              onClick={() => setMobileOpen(false)}
+            />
+            <div
+              id="customer-nav-drawer"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Customer Navigation"
+              className="relative w-[min(320px,88vw)] md:w-[340px] max-w-[90vw] h-full bg-white flex flex-col shadow-2xl z-10 animate-in slide-in-from-left duration-250 ease-out"
+            >
+              <div className="flex items-center justify-between px-4 sm:px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-3.5 border-b border-[#F0F2F5] shrink-0 bg-white">
+                <div className="min-w-0 pr-2">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#9ca3af]">
+                    Account
+                  </p>
+                  <p className="text-[16px] font-extrabold tracking-[-0.02em] text-[#111111] truncate mt-0.5 leading-snug">
+                    {profile?.full_name || 'Buyer'}
+                  </p>
+                </div>
                 <button
                   type="button"
                   onClick={() => setMobileOpen(false)}
-                  className="p-2 rounded-lg hover:bg-[#eceef0]"
-                  aria-label="Close"
+                  className="h-9 w-9 -mr-1 rounded-xl flex items-center justify-center text-[#6B7280] hover:text-[#111111] hover:bg-[#F4F5F7] transition-colors shrink-0"
+                  aria-label="Close navigation"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-5 h-5" strokeWidth={1.8} />
                 </button>
               </div>
-              <SidenavBody onNavigate={() => setMobileOpen(false)} />
-            </div>
-          </div>
-        ) : null}
 
-        <main className="buyer-main flex-1 pb-20 lg:pb-0">{children}</main>
+              <div className="flex-1 overflow-y-auto px-3.5 sm:px-4 py-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] flex flex-col">
+                <SidenavBody isDrawer onNavigate={() => setMobileOpen(false)} />
+              </div>
+            </div>
+          </OverlayPortal>
+
+          <main className="buyer-main flex-1">
+            {children}
+          </main>
+        </div>
       </div>
     </div>
   );

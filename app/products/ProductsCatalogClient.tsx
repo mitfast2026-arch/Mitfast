@@ -29,6 +29,7 @@ import { resolveSupplierCountry } from "@/lib/country-origin";
 import { getSettings } from "@/lib/client/settings-cache";
 import { prefetchStorefrontProduct } from "@/lib/client/storefront-nav-prefetch";
 import { stripHtmlTags } from "@/lib/html/strip-html";
+import OverlayPortal from '@/components/ui/OverlayPortal';
 import "./products-catalog.css";
 
 /* ── Types ──────────────────────────────────────────────── */
@@ -68,7 +69,8 @@ interface Product {
   stock_quantity?: number;
   unit?: string;
   spec_line?: string;
-  rating?: number;
+  rating?: number | null;
+  review_count?: number;
 }
 
 interface Category {
@@ -116,6 +118,28 @@ function getSpecLine(product: Product): string {
     if (short) return short;
   }
   return "";
+}
+
+function getVisiblePages(page: number, totalPages: number): (number | "ellipsis")[] {
+  if (totalPages <= 1) return [1];
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, i) => i + 1);
+  }
+  const pages = new Set<number>();
+  pages.add(1);
+  pages.add(totalPages);
+  for (let p = Math.max(1, page - 1); p <= Math.min(totalPages, page + 1); p++) {
+    pages.add(p);
+  }
+  const sorted = Array.from(pages).sort((a, b) => a - b);
+  const result: (number | "ellipsis")[] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    if (i > 0 && sorted[i] - sorted[i - 1] > 1) {
+      result.push("ellipsis");
+    }
+    result.push(sorted[i]);
+  }
+  return result;
 }
 
 function getPriceDisplay(product: Product): {
@@ -300,6 +324,7 @@ function ProductsCatalogContent({
   const searchParams = useSearchParams();
   const router = useRouter();
   const quickRowRef = useRef<HTMLDivElement>(null);
+  const resultsContainerRef = useRef<HTMLDivElement>(null);
   const skipSeededFetch = useRef(Boolean(seedKey && initialProducts.length >= 0));
 
   const [products, setProducts] = useState<Product[]>(initialProducts);
@@ -360,11 +385,16 @@ function ProductsCatalogContent({
   ]);
 
   useEffect(() => {
-    document.body.style.overflow = mobileFilterOpen ? "hidden" : "";
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, [mobileFilterOpen]);
+    if (searchInput === currentSearch) return;
+    const timer = setTimeout(() => {
+      pushParams((params) => {
+        if (searchInput.trim()) params.set("search", searchInput.trim());
+        else params.delete("search");
+        params.set("page", "1");
+      });
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchInput, currentSearch]);
 
   useEffect(() => {
     let cancelled = false;
@@ -378,6 +408,9 @@ function ProductsCatalogContent({
   }, []);
 
   useEffect(() => {
+    const controller = new AbortController();
+    const signal = controller.signal;
+
     async function loadCatalog() {
       setLoading(true);
       try {
@@ -412,9 +445,10 @@ function ProductsCatalogContent({
         query.set("page", currentPage.toString());
         query.set("limit", "12");
 
+        const fetchCats = categories.length === 0;
         const [prodRes, catRes] = await Promise.all([
-          fetch(`/api/products?${query.toString()}`),
-          fetch("/api/categories"),
+          fetch(`/api/products?${query.toString()}`, { signal }),
+          fetchCats ? fetch("/api/categories", { signal }) : Promise.resolve(null),
         ]);
 
         let list: Product[] = [];
@@ -435,6 +469,8 @@ function ProductsCatalogContent({
           }
         }
 
+        if (signal.aborted) return;
+
         setProducts(list);
         setPagination({
           page,
@@ -443,7 +479,7 @@ function ProductsCatalogContent({
           totalPages: Math.max(1, Math.ceil(total / limit)),
         });
 
-        if (catRes.ok) {
+        if (catRes && catRes.ok) {
           const json = await catRes.json();
           if (json.success) {
             const apiCats: Category[] = json.data.categories || [];
@@ -459,7 +495,10 @@ function ProductsCatalogContent({
             }
           }
         }
-      } catch (error) {
+      } catch (error: any) {
+        if (error?.name === "AbortError" || signal.aborted) {
+          return;
+        }
         console.error("Failed to load products catalog:", error);
         setProducts([]);
         setPagination({
@@ -469,7 +508,9 @@ function ProductsCatalogContent({
           totalPages: 1,
         });
       } finally {
-        setLoading(false);
+        if (!signal.aborted) {
+          setLoading(false);
+        }
       }
     }
 
@@ -491,6 +532,10 @@ function ProductsCatalogContent({
     skipSeededFetch.current = false;
 
     loadCatalog();
+
+    return () => {
+      controller.abort();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     currentCategory,
@@ -510,6 +555,15 @@ function ProductsCatalogContent({
     const params = new URLSearchParams(searchParams.toString());
     mutate(params);
     router.push(`/products?${params.toString()}`, { scroll: false });
+  }
+
+  function handlePageChange(newPage: number) {
+    pushParams((params) => {
+      params.set("page", String(newPage));
+    });
+    if (typeof window !== "undefined") {
+      resultsContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   }
 
   function toggleInList(list: string[], id: string) {
@@ -764,6 +818,7 @@ function ProductsCatalogContent({
     const unit = product.unit || "piece";
     const imageUrl = getProductImageUrl(product);
     const origin = resolveSupplierCountry(product);
+    const rating = getProductRating(product);
     const rfqHref = `/rfq?product=${product.id}&qty=${product.moq && product.moq > 0 ? product.moq : 1}`;
     return (
       <div key={product.id} className="pc-list-row">
@@ -787,6 +842,12 @@ function ProductsCatalogContent({
           <div className="pc-card__moq">
             MOQ: {product.moq} {unit}
           </div>
+          {rating != null ? (
+            <div className="pc-list-row__rating" title={`${rating.toFixed(1)} out of 5 stars`}>
+              <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+              <span className="text-xs font-semibold text-neutral-800">{rating.toFixed(1)}</span>
+            </div>
+          ) : null}
           {origin ? (
             <div className="pc-list-row__origin">
               <CountryFlag
@@ -911,7 +972,7 @@ function ProductsCatalogContent({
               </div>
             </aside>
 
-            <main className="pc-main">
+            <main className="pc-main" ref={resultsContainerRef}>
               {cartError && (
                 <div
                   className="pc-toolbar"
@@ -929,102 +990,129 @@ function ProductsCatalogContent({
                 </div>
               )}
               <div className="pc-toolbar">
-                <div className="pc-toolbar__count">
-                  {loading
-                    ? "Loading…"
-                    : `${displayTotal.toLocaleString("en-IN")} Products found`}
+                <div className="pc-toolbar__row pc-toolbar__row--primary">
+                  <div className="pc-toolbar__count">
+                    {loading
+                      ? "Loading…"
+                      : `${displayTotal.toLocaleString("en-IN")} Products found`}
+                  </div>
+
+                  <div className="pc-toolbar__search">
+                    <Search className="pc-toolbar__search-icon" />
+                    <input
+                      type="search"
+                      placeholder="Search catalog, parts, materials…"
+                      value={searchInput}
+                      onChange={(e) => setSearchInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          pushParams((params) => {
+                            if (searchInput.trim()) params.set("search", searchInput.trim());
+                            else params.delete("search");
+                            params.set("page", "1");
+                          });
+                        }
+                      }}
+                      className="pc-toolbar__search-input"
+                      aria-label="Search products"
+                    />
+                    {searchInput && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearchInput("");
+                          pushParams((params) => {
+                            params.delete("search");
+                            params.set("page", "1");
+                          });
+                        }}
+                        className="pc-toolbar__search-clear"
+                        aria-label="Clear search input"
+                      >
+                        <X className="w-3.5 h-3.5 text-gray-400 hover:text-gray-700" />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-              <div className="pc-toolbar__right flex items-center gap-2">
-                <div className="relative flex items-center">
-                  <Search className="w-3.5 h-3.5 absolute left-2.5 text-[#9CA3AF] pointer-events-none" />
-                  <input
-                    type="search"
-                    placeholder="Search catalog…"
-                    value={searchInput}
-                    onChange={(e) => setSearchInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
+                {currentSearch && (
+                  <div className="pc-active-search-chip">
+                    <span>
+                      Results for: <strong>&ldquo;{currentSearch}&rdquo;</strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchInput("");
                         pushParams((params) => {
-                          if (searchInput.trim()) params.set("search", searchInput.trim());
-                          else params.delete("search");
+                          params.delete("search");
                           params.set("page", "1");
                         });
-                      }
-                    }}
-                    className="pl-8 pr-2.5 py-1.5 text-xs bg-white border border-[#E5E7EB] rounded-lg focus:outline-none focus:border-[#111315] w-36 sm:w-48 text-[#111315]"
-                    aria-label="Search products"
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  className="pc-filters-mobile"
-                  onClick={() => setMobileFilterOpen(true)}
-                  aria-label="Open filters"
-                >
-                  <SlidersHorizontal className="w-3.5 h-3.5" />
-                  Filters
-                  {activeFilterCount > 0 && (
-                    <span
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        width: 18,
-                        height: 18,
-                        borderRadius: "50%",
-                        background: "#111111",
-                        color: "#FFFFFF",
-                        fontSize: 10,
-                        fontWeight: 700,
-                        marginLeft: 2,
                       }}
+                      className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-900 font-medium ml-auto"
+                      aria-label="Clear active search"
                     >
-                      {activeFilterCount}
-                    </span>
-                  )}
-                </button>
+                      <X className="w-3 h-3" />
+                      <span>Clear</span>
+                    </button>
+                  </div>
+                )}
 
-                <div className="pc-view-toggle" role="group" aria-label="View mode">
+                <div className="pc-toolbar__row pc-toolbar__row--secondary">
                   <button
                     type="button"
-                    className={viewMode === "grid" ? "is-active" : ""}
-                    onClick={() => setViewMode("grid")}
-                    aria-pressed={viewMode === "grid"}
-                    title="Grid view"
+                    className="pc-filters-mobile"
+                    onClick={() => setMobileFilterOpen(true)}
+                    aria-label="Open filters"
                   >
-                    <LayoutGrid className="w-4 h-4" />
+                    <SlidersHorizontal className="w-3.5 h-3.5" />
+                    <span>Filters</span>
+                    {activeFilterCount > 0 && (
+                      <span className="pc-filters-badge">
+                        {activeFilterCount}
+                      </span>
+                    )}
                   </button>
-                  <button
-                    type="button"
-                    className={viewMode === "list" ? "is-active" : ""}
-                    onClick={() => setViewMode("list")}
-                    aria-pressed={viewMode === "list"}
-                    title="List view"
+
+                  <div className="pc-view-toggle" role="group" aria-label="View mode">
+                    <button
+                      type="button"
+                      className={viewMode === "grid" ? "is-active" : ""}
+                      onClick={() => setViewMode("grid")}
+                      aria-pressed={viewMode === "grid"}
+                      title="Grid view"
+                    >
+                      <LayoutGrid className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      className={viewMode === "list" ? "is-active" : ""}
+                      onClick={() => setViewMode("list")}
+                      aria-pressed={viewMode === "list"}
+                      title="List view"
+                    >
+                      <List className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <select
+                    className="pc-sort"
+                    value={currentSort}
+                    onChange={(e) =>
+                      pushParams((params) => {
+                        params.set("sort", e.target.value);
+                        params.set("page", "1");
+                      })
+                    }
+                    aria-label="Sort products"
                   >
-                    <List className="w-4 h-4" />
-                  </button>
+                    <option value="relevance">Relevance</option>
+                    <option value="price_asc">Price: low → high</option>
+                    <option value="price_desc">Price: high → low</option>
+                    <option value="name_asc">Name: A → Z</option>
+                  </select>
                 </div>
-
-                <select
-                  className="pc-sort"
-                  value={currentSort}
-                  onChange={(e) =>
-                    pushParams((params) => {
-                      params.set("sort", e.target.value);
-                      params.set("page", "1");
-                    })
-                  }
-                  aria-label="Sort products"
-                >
-                  <option value="relevance">Relevance</option>
-                  <option value="price_asc">Price: low → high</option>
-                  <option value="price_desc">Price: high → low</option>
-                  <option value="name_asc">Name: A → Z</option>
-                </select>
               </div>
-            </div>
 
             {/* Results */}
             {loading ? (
@@ -1076,38 +1164,13 @@ function ProductsCatalogContent({
                   type="button"
                   className="pc-page-btn is-nav"
                   disabled={pagination.page <= 1}
-                  onClick={() =>
-                    pushParams((params) => {
-                      params.set("page", String(pagination.page - 1));
-                    })
-                  }
+                  onClick={() => handlePageChange(pagination.page - 1)}
                   aria-label="Previous page"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
 
-                {(pagination.totalPages <= 1
-                  ? [1]
-                  : Array.from({ length: pagination.totalPages }, (_, i) => i + 1)
-                      .filter((pageNum) => {
-                        if (pagination.totalPages <= 7) return true;
-                        if (pageNum === 1 || pageNum === pagination.totalPages)
-                          return true;
-                        if (Math.abs(pageNum - pagination.page) <= 1) return true;
-                        return false;
-                      })
-                      .reduce<(number | "ellipsis")[]>((acc, pageNum, idx, arr) => {
-                        if (
-                          idx > 0 &&
-                          typeof arr[idx - 1] === "number" &&
-                          pageNum - (arr[idx - 1] as number) > 1
-                        ) {
-                          acc.push("ellipsis");
-                        }
-                        acc.push(pageNum);
-                        return acc;
-                      }, [])
-                ).map((item, idx) =>
+                {getVisiblePages(pagination.page, pagination.totalPages).map((item, idx) =>
                   item === "ellipsis" ? (
                     <span key={`ellipsis-${idx}`} className="pc-page-ellipsis">
                       …
@@ -1119,11 +1182,7 @@ function ProductsCatalogContent({
                       className={`pc-page-btn ${
                         pagination.page === item ? "is-active" : ""
                       }`}
-                      onClick={() =>
-                        pushParams((params) => {
-                          params.set("page", String(item));
-                        })
-                      }
+                      onClick={() => handlePageChange(item)}
                       aria-current={pagination.page === item ? "page" : undefined}
                     >
                       {item}
@@ -1135,11 +1194,7 @@ function ProductsCatalogContent({
                   type="button"
                   className="pc-page-btn is-nav"
                   disabled={pagination.page >= pagination.totalPages}
-                  onClick={() =>
-                    pushParams((params) => {
-                      params.set("page", String(pagination.page + 1));
-                    })
-                  }
+                  onClick={() => handlePageChange(pagination.page + 1)}
                   aria-label="Next page"
                 >
                   <ChevronRight className="w-4 h-4" />
@@ -1151,57 +1206,47 @@ function ProductsCatalogContent({
         </div>
       </section>
 
-      {/* Mobile filter drawer */}
-      {mobileFilterOpen && (
+      {/* Mobile filter drawer — portaled so it is not trapped under AppShell isolate */}
+      <OverlayPortal
+        open={mobileFilterOpen}
+        layer="drawer"
+        onEscape={() => setMobileFilterOpen(false)}
+        className="lg:hidden"
+      >
         <div
           className="pc-drawer-overlay"
           onClick={() => setMobileFilterOpen(false)}
           aria-hidden
         />
-      )}
-      <div
-        className={`pc-drawer ${mobileFilterOpen ? "is-open" : ""}`}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Product Filters"
-      >
-        <div className="pc-drawer__header">
-          <h2 className="pc-drawer__title">
-            Filters
-            {activeFilterCount > 0 && (
-              <span
-                style={{
-                  marginLeft: 8,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: 20,
-                  height: 20,
-                  borderRadius: "50%",
-                  background: "#111111",
-                  color: "#FFFFFF",
-                  fontSize: 11,
-                  fontWeight: 700,
-                  verticalAlign: "middle",
-                }}
-              >
-                {activeFilterCount}
-              </span>
-            )}
-          </h2>
-          <button
-            type="button"
-            onClick={() => setMobileFilterOpen(false)}
-            className="pc-drawer__close"
-            aria-label="Close filters"
-          >
-            <X className="w-4 h-4" />
-          </button>
+        <div
+          className="pc-drawer is-open"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Product Filters"
+        >
+          <div className="pc-drawer__header">
+            <h2 className="pc-drawer__title">
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="pc-filters-badge" style={{ marginLeft: 8 }}>
+                  {activeFilterCount}
+                </span>
+              )}
+            </h2>
+            <button
+              type="button"
+              onClick={() => setMobileFilterOpen(false)}
+              className="pc-drawer__close"
+              aria-label="Close filters"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="pc-drawer__body">
+            <FilterPanel {...filterProps} />
+          </div>
         </div>
-        <div className="pc-drawer__body">
-          <FilterPanel {...filterProps} />
-        </div>
-      </div>
+      </OverlayPortal>
     </div>
   );
 }

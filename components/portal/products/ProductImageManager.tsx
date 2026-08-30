@@ -268,7 +268,7 @@ export default function ProductImageManager({
         onChange={handleFileSelect}
       />
       <p className="text-[11px] text-portal-muted">
-        {totalCount}/{maxImages} images · Preferred: WebP · JPEG/PNG ok · max 4 MB · 1600px recommended
+        {totalCount}/{maxImages} images · Preferred: WebP · JPEG/PNG ok · max 4 MB · auto-compressed &lt;300 KB WebP
       </p>
     </div>
   );

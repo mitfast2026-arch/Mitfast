@@ -6,20 +6,15 @@ import { useParams } from "next/navigation";
 import {
   AlertCircle,
   ArrowRight,
-  Box,
   Check,
   ChevronDown,
   ChevronRight,
   CreditCard,
   FileText,
-  Gauge,
   Heart,
   Package,
-  Ruler,
-  ShieldCheck,
   ShoppingCart,
-  Weight,
-  Zap,
+  Star,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createBrowserClient } from "@/lib/supabase/client";
@@ -60,8 +55,35 @@ type Product = {
   category?: { id: string; name: string } | null;
   supplier?: { country?: string; address?: string } | null;
   supplier_country?: string | null;
+  rating?: number | null;
+  review_count?: number;
   images?: ProductImage[];
   specifications?: ProductSpec[];
+};
+
+type ProductReviewItem = {
+  id: string;
+  rating: number;
+  reviewText: string | null;
+  createdAt: string;
+  updatedAt: string;
+  customerName: string;
+  isVerifiedBuyer: boolean;
+};
+
+type ProductReviewsData = {
+  averageRating: number;
+  totalReviews: number;
+  distribution: { 5: number; 4: number; 3: number; 2: number; 1: number };
+  reviews: ProductReviewItem[];
+  userReview?: {
+    id: string;
+    rating: number;
+    reviewText: string | null;
+    createdAt: string;
+    updatedAt: string;
+  } | null;
+  isEligible?: boolean;
 };
 
 function formatINR(value: number): string {
@@ -141,19 +163,6 @@ function unitPriceOf(p: { selling_price?: number; discount?: number }): number {
   );
 }
 
-function specIcon(name: string) {
-  const n = name.toLowerCase();
-  if (n.includes("weight") || n.includes("mass")) return Weight;
-  if (n.includes("thrust") || n.includes("force") || n.includes("torque")) return Gauge;
-  if (n.includes("power") || n.includes("volt") || n.includes("kv") || n.includes("current"))
-    return Zap;
-  if (n.includes("dimen") || n.includes("diameter") || n.includes("shaft") || n.includes("size"))
-    return Ruler;
-  if (n.includes("material") || n.includes("grade") || n.includes("finish")) return ShieldCheck;
-  if (n.includes("config") || n.includes("application") || n.includes("type")) return Package;
-  return FileText;
-}
-
 export default function ProductDetailClient({
   initialProduct = null,
 }: {
@@ -187,6 +196,15 @@ export default function ProductDetailClient({
   const [loadError, setLoadError] = useState<string | null>(null);
   const thumbsRef = useRef<HTMLDivElement>(null);
   const viewTrackedRef = useRef<string | null>(null);
+
+  // ── Product Reviews state ──────────────────────────────────
+  const [reviewsData, setReviewsData] = useState<ProductReviewsData | null>(null);
+  const [reviewFormOpen, setReviewFormOpen] = useState(false);
+  const [ratingInput, setRatingInput] = useState<number>(5);
+  const [hoverRating, setHoverRating] = useState<number>(0);
+  const [reviewTextInput, setReviewTextInput] = useState("");
+  const [submittingReview, setSubmittingReview] = useState(false);
+  const [currentUser, setCurrentUser] = useState<{ id: string; role: string } | null>(null);
 
   // ── Track product detail view only on successful full page load ──────
   useEffect(() => {
@@ -235,13 +253,28 @@ export default function ProductDetailClient({
     setLoadError(null);
     if (!opts?.soft) setLoading(true);
 
-    // Start product fetch + wishlist fetch IN PARALLEL — both are independent
-    const [productRes, wishlistRes] = await Promise.allSettled([
+    // Start product fetch + wishlist fetch + reviews fetch IN PARALLEL
+    const [productRes, wishlistRes, reviewsRes] = await Promise.allSettled([
       fetch(`/api/products/${productId}`),
       fetch('/api/wishlist'),
+      fetch(`/api/products/${productId}/reviews`),
     ]);
 
     try {
+      // ── Reviews ──────────────────────────────────────────────
+      if (reviewsRes.status === 'fulfilled') {
+        try {
+          const rJson = await reviewsRes.value.json();
+          if (rJson.success && rJson.data) {
+            const rData = rJson.data as ProductReviewsData;
+            setReviewsData(rData);
+            if (rData.userReview) {
+              setRatingInput(rData.userReview.rating);
+              setReviewTextInput(rData.userReview.reviewText || "");
+            }
+          }
+        } catch {}
+      }
       // ── Product ──────────────────────────────────────────────
       if (productRes.status === 'fulfilled') {
         const res = productRes.value;
@@ -349,6 +382,31 @@ export default function ProductDetailClient({
     void loadProduct();
   }, [productId, loadProduct, initialProduct]);
 
+  // Fetch current user session to determine guest vs customer
+  useEffect(() => {
+    async function checkAuth() {
+      try {
+        const supabase = createBrowserClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("id, role")
+            .eq("user_id", user.id)
+            .maybeSingle();
+          if (profile) {
+            setCurrentUser({ id: profile.id, role: profile.role });
+          }
+        } else {
+          setCurrentUser(null);
+        }
+      } catch {
+        setCurrentUser(null);
+      }
+    }
+    void checkAuth();
+  }, []);
+
   async function handleToggleWishlist() {
     if (!product) return;
     const prevWishlisted = wishlisted;
@@ -391,6 +449,49 @@ export default function ProductDetailClient({
       toast.error("Network error updating wishlist");
     } finally {
       setWishlistBusy(false);
+    }
+  }
+
+  async function handleSubmitReview(e: React.FormEvent) {
+    e.preventDefault();
+    if (!product || submittingReview) return;
+
+    if (ratingInput < 1 || ratingInput > 5) {
+      toast.error("Please select a rating between 1 and 5 stars");
+      return;
+    }
+
+    setSubmittingReview(true);
+    try {
+      const res = await fetch(`/api/products/${product.id}/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rating: ratingInput,
+          reviewText: reviewTextInput.trim() || undefined,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        toast.error(json.error?.message || "Failed to submit review");
+        return;
+      }
+
+      toast.success(
+        json.data?.isUpdated
+          ? "Your review has been updated"
+          : "Thank you! Your review has been submitted"
+      );
+      setReviewFormOpen(false);
+
+      // Refresh reviews and product detail safely
+      void loadProduct({ soft: true });
+    } catch (err) {
+      console.error("Submit review error:", err);
+      toast.error("Network error while submitting review");
+    } finally {
+      setSubmittingReview(false);
     }
   }
 
@@ -452,12 +553,6 @@ export default function ProductDetailClient({
     return list;
   }, [product]);
 
-  const keySpecs = useMemo(() => {
-    return [...(product?.specifications || [])].sort(
-      (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0),
-    ).slice(0, 8);
-  }, [product]);
-
   if (loading) {
     return (
       <div className="pdp-page">
@@ -512,7 +607,6 @@ export default function ProductDetailClient({
     product.ribbon_label ||
     product.category?.name?.split(" ")[0] ||
     "MITFAST";
-  const realSku = product.sku?.trim() || null;
 
   const setQty = (next: number) => {
     setQuantity(Math.max(minLot, next));
@@ -626,27 +720,6 @@ export default function ProductDetailClient({
                 )}
               </div>
             </div>
-
-            <div className="pdp-trust">
-              <div className="pdp-trust__item">
-                <span className="pdp-trust__icon" aria-hidden>
-                  <ShieldCheck className="w-4 h-4" />
-                </span>
-                100% Original
-              </div>
-              <div className="pdp-trust__item">
-                <span className="pdp-trust__icon" aria-hidden>
-                  <Box className="w-4 h-4" />
-                </span>
-                Secure Packaging
-              </div>
-              <div className="pdp-trust__item">
-                <span className="pdp-trust__icon" aria-hidden>
-                  <Check className="w-4 h-4" />
-                </span>
-                Quality Checked
-              </div>
-            </div>
           </section>
 
           {/* ── Middle: Info + key specs ──────────────────── */}
@@ -655,11 +728,17 @@ export default function ProductDetailClient({
             <h1 className="pdp-title">{product.name}</h1>
 
             <div className="pdp-meta">
+              {reviewsData && reviewsData.totalReviews > 0 ? (
+                <a href="#customer-reviews" className="pdp-rating" title={`${reviewsData.averageRating.toFixed(1)} out of 5 stars`}>
+                  <Star className="pdp-rating__star fill-amber-400 text-amber-400" />
+                  <span>{reviewsData.averageRating.toFixed(1)}</span>
+                  <span className="pdp-rating__count">({reviewsData.totalReviews})</span>
+                </a>
+              ) : null}
               {product.category?.name && (
                 <span className="pdp-sku">{product.category.name}</span>
               )}
               <span className="pdp-sku">MOQ: {minLot} pieces</span>
-              {realSku && <span className="pdp-sku">SKU: {realSku}</span>}
               {supplierOrigin && (
                 <span className="pdp-sku pdp-origin">
                   <CountryFlag
@@ -686,28 +765,6 @@ export default function ProductDetailClient({
               }
               return <p className="pdp-desc">No description provided.</p>;
             })()}
-
-            {keySpecs.length > 0 && (
-              <>
-                <ul className="pdp-specs">
-                  {keySpecs.map((spec, idx) => {
-                    const Icon = specIcon(spec.spec_name);
-                    return (
-                      <li key={spec.id || `${spec.spec_name}-${idx}`} className="pdp-spec">
-                        <Icon className="pdp-spec__icon" aria-hidden strokeWidth={1.75} />
-                        <span className="pdp-spec__label">{spec.spec_name}</span>
-                        <span className="pdp-spec__value">{spec.spec_value}</span>
-                      </li>
-                    );
-                  })}
-                </ul>
-
-                <a href="#full-specs" className="pdp-specs-link">
-                  View full specifications
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </a>
-              </>
-            )}
           </section>
 
           {/* ── Right: Buy box ────────────────────────────── */}
@@ -837,12 +894,6 @@ export default function ProductDetailClient({
                 <th scope="row">Product</th>
                 <td>{product.name}</td>
               </tr>
-              {realSku && (
-                <tr>
-                  <th scope="row">SKU</th>
-                  <td>{realSku}</td>
-                </tr>
-              )}
               <tr>
                 <th scope="row">Category</th>
                 <td>{product.category?.name || "N/A"}</td>
@@ -889,6 +940,239 @@ export default function ProductDetailClient({
               ))}
             </tbody>
           </table>
+          </div>
+        </section>
+
+        {/* ── Product Reviews & Ratings Section ────────────── */}
+        <section className="pdp-reviews-section" id="customer-reviews" aria-labelledby="reviews-heading">
+          <div className="pdp-reviews-section__head">
+            <div>
+              <h2 className="pdp-full__title" id="reviews-heading">
+                Customer Reviews & Ratings
+              </h2>
+              <p className="pdp-reviews-section__sub">
+                Verified feedback from authenticated buyers who placed RFQs or orders for this product.
+              </p>
+            </div>
+            {reviewsData?.isEligible && !reviewFormOpen && (
+              <button
+                type="button"
+                className="pdp-btn-review-action"
+                onClick={() => setReviewFormOpen(true)}
+              >
+                {reviewsData.userReview ? "Edit Your Review" : "Write a Review"}
+              </button>
+            )}
+          </div>
+
+          <div className="pdp-reviews-grid">
+            {/* Left: Aggregate Score & Distribution */}
+            <div className="pdp-reviews-summary-card">
+              <div className="pdp-reviews-summary__score">
+                <span className="pdp-reviews-summary__num">
+                  {reviewsData ? reviewsData.averageRating.toFixed(1) : "0.0"}
+                </span>
+                <div className="pdp-reviews-summary__stars">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <Star
+                      key={star}
+                      className={`w-5 h-5 ${
+                        (reviewsData?.averageRating || 0) >= star
+                          ? "fill-amber-400 text-amber-400"
+                          : (reviewsData?.averageRating || 0) >= star - 0.5
+                          ? "fill-amber-200 text-amber-400"
+                          : "text-neutral-200"
+                      }`}
+                    />
+                  ))}
+                </div>
+                <span className="pdp-reviews-summary__count">
+                  Based on {reviewsData?.totalReviews || 0}{" "}
+                  {reviewsData?.totalReviews === 1 ? "review" : "reviews"}
+                </span>
+              </div>
+
+              {/* Star Distribution Bars */}
+              <div className="pdp-reviews-bars">
+                {[5, 4, 3, 2, 1].map((s) => {
+                  const count = (reviewsData?.distribution as any)?.[s] || 0;
+                  const total = reviewsData?.totalReviews || 0;
+                  const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+                  return (
+                    <div key={s} className="pdp-reviews-bar-row">
+                      <span className="pdp-reviews-bar-label">{s} star</span>
+                      <div className="pdp-reviews-bar-track">
+                        <div
+                          className="pdp-reviews-bar-fill"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <span className="pdp-reviews-bar-pct">{pct}%</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Right: Review Form or Review List */}
+            <div className="pdp-reviews-main-column">
+              {/* Interactive Review Form (when opened by eligible user) */}
+              {reviewFormOpen && reviewsData?.isEligible && (
+                <form
+                  onSubmit={handleSubmitReview}
+                  className="pdp-review-form-card"
+                  aria-label="Write a review"
+                >
+                  <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
+                    <h3 className="font-bold text-neutral-900 text-sm">
+                      {reviewsData.userReview ? "Edit Your Review" : "Write a Verified Review"}
+                    </h3>
+                    <button
+                      type="button"
+                      className="text-neutral-400 hover:text-neutral-600 text-xs font-semibold"
+                      onClick={() => setReviewFormOpen(false)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+
+                  <div className="space-y-4 pt-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-neutral-700 mb-1.5">
+                        Overall Rating (Required)
+                      </label>
+                      <div
+                        className="flex items-center gap-1.5"
+                        onMouseLeave={() => setHoverRating(0)}
+                      >
+                        {[1, 2, 3, 4, 5].map((star) => {
+                          const active = (hoverRating || ratingInput) >= star;
+                          return (
+                            <button
+                              key={star}
+                              type="button"
+                              className="p-1 rounded-md hover:scale-110 transition-transform focus:outline-none"
+                              onMouseEnter={() => setHoverRating(star)}
+                              onClick={() => setRatingInput(star)}
+                              aria-label={`Rate ${star} out of 5 stars`}
+                            >
+                              <Star
+                                className={`w-6 h-6 transition-colors ${
+                                  active
+                                    ? "fill-amber-400 text-amber-400"
+                                    : "text-neutral-300 fill-transparent"
+                                }`}
+                              />
+                            </button>
+                          );
+                        })}
+                        <span className="text-xs font-bold text-neutral-700 ml-2">
+                          {(hoverRating || ratingInput)} / 5 stars
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label htmlFor="review-comment" className="block text-xs font-semibold text-neutral-700 mb-1.5">
+                        Your Review & Industrial Feedback (Optional)
+                      </label>
+                      <textarea
+                        id="review-comment"
+                        rows={4}
+                        maxLength={2000}
+                        value={reviewTextInput}
+                        onChange={(e) => setReviewTextInput(e.target.value)}
+                        placeholder="Share details on precision, tolerances, packaging, finish, or lead-time quality..."
+                        className="w-full text-xs p-3 rounded-lg border border-neutral-200 focus:border-neutral-900 focus:ring-1 focus:ring-neutral-900 outline-none transition-all placeholder:text-neutral-400"
+                      />
+                      <div className="flex justify-end text-[11px] text-neutral-400 mt-1">
+                        {reviewTextInput.length} / 2000
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-3 pt-2">
+                      <button
+                        type="button"
+                        className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:text-neutral-900"
+                        onClick={() => setReviewFormOpen(false)}
+                        disabled={submittingReview}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={submittingReview}
+                        className="px-5 py-2 text-xs font-bold text-white bg-neutral-900 hover:bg-neutral-800 rounded-lg transition-colors shadow-sm disabled:opacity-50"
+                      >
+                        {submittingReview
+                          ? "Submitting..."
+                          : reviewsData.userReview
+                          ? "Update Review"
+                          : "Submit Review"}
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              )}
+
+              {/* Reviews List */}
+              <div className="pdp-reviews-list">
+                {reviewsData?.reviews && reviewsData.reviews.length > 0 ? (
+                  reviewsData.reviews.map((rev) => (
+                    <article key={rev.id} className="pdp-review-item">
+                      <div className="pdp-review-item__head">
+                        <div className="flex items-center gap-2">
+                          <span className="pdp-review-item__avatar">
+                            {rev.customerName.slice(0, 1)}
+                          </span>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="pdp-review-item__author">{rev.customerName}</span>
+                              <span className="pdp-review-item__badge">
+                                <Check className="w-3 h-3 text-emerald-600" />
+                                Verified Buyer
+                              </span>
+                            </div>
+                            <span className="pdp-review-item__date">
+                              {new Date(rev.createdAt).toLocaleDateString("en-IN", {
+                                year: "numeric",
+                                month: "short",
+                                day: "numeric",
+                              })}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-0.5">
+                          {[1, 2, 3, 4, 5].map((st) => (
+                            <Star
+                              key={st}
+                              className={`w-3.5 h-3.5 ${
+                                rev.rating >= st
+                                  ? "fill-amber-400 text-amber-400"
+                                  : "text-neutral-200"
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+
+                      {rev.reviewText && (
+                        <p className="pdp-review-item__text">{rev.reviewText}</p>
+                      )}
+                    </article>
+                  ))
+                ) : (
+                  <div className="pdp-reviews-empty">
+                    <Star className="w-8 h-8 text-neutral-300 mx-auto mb-2" strokeWidth={1.5} />
+                    <p className="text-sm font-semibold text-neutral-800">No reviews yet</p>
+                    <p className="text-xs text-neutral-500 mt-1 max-w-sm mx-auto">
+                      Be the first verified customer to rate and review this product after placing an RFQ.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </section>
 

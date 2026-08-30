@@ -325,19 +325,25 @@ export async function updateCartItemQuantity(
     }
 
     const adminClient = createAdminClient();
+    const { data: cart } = await adminClient
+      .from('carts')
+      .select('id')
+      .eq('customer_id', customerId)
+      .maybeSingle();
+
+    if (!cart) {
+      return { success: false, error: { message: 'Cart not found', code: 'NOT_FOUND' } };
+    }
+
     const { data: row, error: fetchError } = await adminClient
       .from('cart_items')
-      .select('id, quantity, cart:carts!inner(customer_id), product:products(moq, min_order_value, selling_price, discount)')
+      .select('id, quantity, product:products(moq, min_order_value, selling_price, discount)')
       .eq('id', cartItemId)
-      .single();
+      .eq('cart_id', cart.id)
+      .maybeSingle();
 
     if (fetchError || !row) {
       return { success: false, error: { message: 'RFQ line item not found', code: 'NOT_FOUND' } };
-    }
-
-    const cartOwner = (row.cart as { customer_id?: string } | null)?.customer_id;
-    if (!cartOwner || cartOwner !== customerId) {
-      return { success: false, error: { message: 'Forbidden', code: 'FORBIDDEN' } };
     }
 
     const p = row.product as any;
@@ -354,7 +360,8 @@ export async function updateCartItemQuantity(
     const { error } = await adminClient
       .from('cart_items')
       .update({ quantity })
-      .eq('id', cartItemId);
+      .eq('id', cartItemId)
+      .eq('cart_id', cart.id);
 
     if (error) {
       return { success: false, error: { message: error.message, code: 'DATABASE_ERROR' } };
@@ -376,22 +383,21 @@ export async function removeCartItem(
 ): Promise<ServerResult<{ removed: boolean }>> {
   try {
     const adminClient = createAdminClient();
-    const { data: row, error: fetchError } = await adminClient
+    const { data: cart } = await adminClient
+      .from('carts')
+      .select('id')
+      .eq('customer_id', customerId)
+      .maybeSingle();
+
+    if (!cart) {
+      return { success: true, data: { removed: true } };
+    }
+
+    const { error } = await adminClient
       .from('cart_items')
-      .select('id, cart:carts!inner(customer_id)')
+      .delete()
       .eq('id', cartItemId)
-      .single();
-
-    if (fetchError || !row) {
-      return { success: false, error: { message: 'RFQ line item not found', code: 'NOT_FOUND' } };
-    }
-
-    const cartOwner = (row.cart as { customer_id?: string } | null)?.customer_id;
-    if (!cartOwner || cartOwner !== customerId) {
-      return { success: false, error: { message: 'Forbidden', code: 'FORBIDDEN' } };
-    }
-
-    const { error } = await adminClient.from('cart_items').delete().eq('id', cartItemId);
+      .eq('cart_id', cart.id);
 
     if (error) {
       return { success: false, error: { message: error.message, code: 'DATABASE_ERROR' } };

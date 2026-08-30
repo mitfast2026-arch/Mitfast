@@ -30,45 +30,61 @@ export default function TrackEnquiryPage() {
 
   return (
     <div className="container-custom py-12 max-w-xl space-y-4">
-      <h1 className="type-page">Enquiry tracking</h1>
-      {loading && <p className="type-subtitle">Loading status…</p>}
+      <h1 className="text-2xl font-bold tracking-tight text-gray-900">Enquiry tracking</h1>
+      {loading && <p className="text-sm text-gray-500">Loading status…</p>}
       {!loading && error && <p className="text-sm text-rose-700">{error}</p>}
       {!loading && !error && !data && (
         <p className="type-subtitle">No enquiry found for this tracking link.</p>
       )}
       {data && (
-        <div className="saas-panel p-5 space-y-2 text-sm">
-          <div>
-            Status: <b>{String(data.status).replace(/_/g, " ")}</b>
+        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm space-y-3 text-sm text-gray-900">
+          <div className="flex items-center justify-between">
+            <span className="text-xs uppercase font-semibold text-gray-500">Status</span>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 capitalize">
+              {String(data.status).replace(/_/g, " ")}
+            </span>
           </div>
-          {data.productName && <div>Product: {data.productName}</div>}
+          {data.productName && (
+            <div>
+              <span className="text-xs text-gray-500 block">Product</span>
+              <span className="font-medium text-gray-900">{data.productName}</span>
+            </div>
+          )}
           {data.guestName && (
-            <div className="text-xs text-[#6B7280]">{data.guestName}</div>
+            <div>
+              <span className="text-xs text-gray-500 block">Contact</span>
+              <span className="font-medium text-gray-900">{data.guestName}</span>
+            </div>
           )}
           {data.message && (
-            <p className="text-xs whitespace-pre-wrap">{data.message}</p>
+            <div>
+              <span className="text-xs text-gray-500 block">Specifications</span>
+              <p className="text-xs whitespace-pre-wrap text-gray-700 bg-gray-50 p-3 rounded-lg border border-gray-100 mt-1">
+                {data.message}
+              </p>
+            </div>
           )}
           {data.responseMessage && (
-            <div className="rounded-lg border border-[#D1FAE5] bg-[#ECFDF5] p-3 space-y-1">
-              <div className="text-[10px] font-semibold uppercase text-[#065F46]">
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 space-y-1">
+              <div className="text-[11px] font-semibold uppercase text-emerald-800">
                 Response
               </div>
-              <p className="text-xs whitespace-pre-wrap text-[#065F46]">
+              <p className="text-xs whitespace-pre-wrap text-emerald-900">
                 {data.responseMessage}
               </p>
               {data.respondedAt && (
-                <div className="text-[10px] text-[#047857]">
+                <div className="text-[10px] text-emerald-700">
                   {new Date(data.respondedAt).toLocaleString()}
                 </div>
               )}
             </div>
           )}
-          <div className="text-xs text-[#6B7280]">
+          <div className="text-xs text-gray-400 pt-2 border-t border-gray-100">
             Submitted {new Date(data.createdAt).toLocaleString()}
           </div>
           {data.order?.trackingToken && (
             <Link
-              className="text-xs underline"
+              className="text-xs text-blue-600 hover:underline block pt-1"
               href={`/track/${data.order.trackingToken}`}
             >
               Open order tracking ({data.order.orderNumber})
@@ -76,9 +92,14 @@ export default function TrackEnquiryPage() {
           )}
         </div>
       )}
-      <Link href="/" className="saas-btn-ghost text-xs">
-        Back to home
-      </Link>
+      <div>
+        <Link
+          href="/"
+          className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-xs font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
+        >
+          Back to home
+        </Link>
+      </div>
     </div>
   );
 }

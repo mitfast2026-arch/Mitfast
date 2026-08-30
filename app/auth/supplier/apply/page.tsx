@@ -158,8 +158,8 @@ export default function SupplierApplyPage() {
   }
 
   return (
-    <div className="min-h-screen saas-canvas-bg flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div ref={containerRef} className="sm:mx-auto sm:w-full sm:max-w-lg space-y-6">
+    <div className="min-h-screen saas-canvas-bg flex flex-col justify-center py-6 sm:py-12 px-3 sm:px-6 lg:px-8">
+      <div ref={containerRef} className="sm:mx-auto sm:w-full sm:max-w-lg space-y-5 sm:space-y-6">
         <div className="flex items-center justify-between">
           <Link
             href="/"
@@ -180,7 +180,7 @@ export default function SupplierApplyPage() {
           </p>
         </div>
 
-        <div className="saas-panel py-8 px-6 sm:px-8 space-y-6 border border-slate-200/80 shadow-sm rounded-2xl bg-white">
+        <div className="saas-panel py-6 sm:py-8 px-4 sm:px-8 space-y-5 sm:space-y-6 border border-slate-200/80 shadow-sm rounded-2xl bg-white">
           {isGoogleAuth && (
             <div className="p-3.5 rounded-xl bg-emerald-50/80 border border-emerald-200 text-xs text-emerald-900 flex items-center gap-2.5">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />

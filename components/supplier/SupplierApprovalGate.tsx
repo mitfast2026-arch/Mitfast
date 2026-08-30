@@ -95,8 +95,8 @@ export default function SupplierApprovalGate({
   }
 
   return (
-    <div className="min-h-screen saas-canvas-bg text-portal-text flex flex-col justify-between p-6 sm:p-12">
-      <div className="max-w-3xl mx-auto w-full space-y-8 my-auto">
+    <div className="min-h-screen saas-canvas-bg text-portal-text flex flex-col justify-between p-4 sm:p-8 lg:p-12">
+      <div className="max-w-3xl mx-auto w-full space-y-6 sm:space-y-8 my-auto">
         {/* Brand Header */}
         <div className="flex items-center justify-between border-b border-portal-border pb-4">
           <div className="flex items-center gap-3">
@@ -124,7 +124,7 @@ export default function SupplierApprovalGate({
 
         {/* STATE 1: PENDING APPROVAL */}
         {supplier.status === 'pending' && (
-          <div className="saas-panel p-8 space-y-6">
+          <div className="saas-panel p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
             <div className="flex items-start gap-4">
               <div className="w-12 h-12 rounded bg-portal-warning-soft text-portal-warning flex items-center justify-center shrink-0">
                 <Clock className="w-6 h-6 animate-pulse" />
@@ -167,7 +167,7 @@ export default function SupplierApprovalGate({
 
         {/* STATE 2: REJECTED WITH MANDATORY RESUBMISSION FORM */}
         {supplier.status === 'rejected' && (
-          <div className="saas-panel p-8 space-y-6">
+          <div className="saas-panel p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
             <div className="flex items-start gap-4">
               <div className="w-12 h-12 rounded bg-portal-danger-soft text-portal-danger flex items-center justify-center shrink-0">
                 <AlertTriangle className="w-6 h-6" />

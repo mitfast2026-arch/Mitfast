@@ -9,6 +9,7 @@
  */
 
 import React, { useState, useEffect, useMemo, useRef, Suspense } from "react";
+import OverlayPortal from '@/components/ui/OverlayPortal';
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -25,7 +26,6 @@ import {
   X,
   Edit3,
   Building2,
-  ShieldCheck,
   Send,
   FileText,
   Info,
@@ -325,8 +325,9 @@ function CartRFQPageInner() {
     moq: number = 1,
   ) {
     const clampedQty = Math.max(moq, newQty);
-    if (clampedQty < 1 || !cart?.items) return;
+    if (clampedQty < 1 || !cart?.items || actionInProgress === cartItemId) return;
     setErrorMsg("");
+    setActionInProgress(cartItemId);
 
     const prevCart = cart;
 
@@ -372,23 +373,32 @@ function CartRFQPageInner() {
       const errMsg = err.message || "Failed to update quantity";
       setErrorMsg(errMsg);
       toast.error(errMsg);
+    } finally {
+      setActionInProgress(null);
     }
   }
 
   async function handleRemoveItem(cartItemId: string, productName?: string) {
-    if (!cart?.items) return;
+    if (!cart?.items || actionInProgress === cartItemId) return;
+    setActionInProgress(cartItemId);
     const prevCart = cart;
 
     // 1. Optimistic removal
     const updatedItems = cart.items.filter((it: any) => it.id !== cartItemId);
     const newSubtotal = computeOptimisticSubtotal(updatedItems);
     const newItemCount = sumCartQuantities(updatedItems);
+    const prevSub = cart.subtotal || 1;
+    const ratio = prevSub > 0 ? newSubtotal / prevSub : 0;
+    const newTotalGst = Math.round((cart.totalGst || 0) * ratio * 100) / 100;
+    const newGrandTotal = Math.round((newSubtotal + newTotalGst) * 100) / 100;
 
     setCart({
       ...cart,
       items: updatedItems,
       subtotal: newSubtotal,
       itemCount: newItemCount,
+      totalGst: newTotalGst,
+      grandTotal: newGrandTotal,
     });
 
     notifyCartUpdated(newItemCount);
@@ -403,18 +413,25 @@ function CartRFQPageInner() {
       const res = await fetch(`/api/cart?cartItemId=${cartItemId}`, {
         method: "DELETE",
       });
-      const json = await res.json();
+      const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.success) {
-        setCart(prevCart);
-        notifyCartUpdated(prevCart?.itemCount ?? 0);
-        toast.error(json.error?.message || "Failed to remove item");
+        if (res.status === 404 || json.error?.code === "NOT_FOUND") {
+          // Item is already gone from server; keep it removed
+          await refreshCart();
+        } else {
+          setCart(prevCart);
+          notifyCartUpdated(prevCart?.itemCount ?? 0);
+          toast.error(json.error?.message || "Failed to remove item");
+        }
       } else {
         await refreshCart();
       }
-    } catch (err) {
+    } catch {
       setCart(prevCart);
       notifyCartUpdated(prevCart?.itemCount ?? 0);
       toast.error("Network error removing item");
+    } finally {
+      setActionInProgress(null);
     }
   }
 
@@ -723,10 +740,12 @@ function CartRFQPageInner() {
     <div ref={containerRef} className="b2b-cart-container">
       {/* Toast Notification */}
       {successToast && (
-        <div className="fixed bottom-6 left-4 right-4 sm:left-auto sm:right-6 sm:max-w-sm z-50 flex items-center gap-3 px-5 py-3.5 bg-[#111315] text-white rounded-xl shadow-2xl text-sm font-semibold animate-in fade-in slide-in-from-bottom-2">
+        <OverlayPortal open layer="popover" lockScroll={false}>
+          <div className="fixed bottom-6 left-4 right-4 sm:left-auto sm:right-6 sm:max-w-sm z-toast flex items-center gap-3 px-5 py-3.5 bg-[#111315] text-white rounded-xl shadow-2xl text-sm font-semibold animate-in fade-in slide-in-from-bottom-2">
           <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
           <span>{successToast}</span>
         </div>
+        </OverlayPortal>
       )}
 
       {/* Top Header */}
@@ -738,7 +757,7 @@ function CartRFQPageInner() {
             {meetsRfqThreshold ? "RFQ Cart" : "Enquiry & Cart"} ({items.length})
           </span>
         </div>
-        <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-3 mt-1">
+        <div className="flex flex-row items-center justify-between gap-3 mt-1">
           <h1 className="b2b-cart-title">
             {meetsRfqThreshold ? "Request for Quote (RFQ)" : "Cart & Commercial Enquiry"}
           </h1>
@@ -747,65 +766,54 @@ function CartRFQPageInner() {
               type="button"
               onClick={handleClearCart}
               disabled={actionInProgress === "clear-all"}
-              className="text-sm font-semibold text-[#6B7280] hover:text-[#B91C1C] transition-colors"
+              className="text-xs sm:text-sm font-semibold text-[#6B7280] hover:text-[#B91C1C] transition-colors shrink-0"
             >
               Clear Cart
             </button>
           )}
         </div>
-        <p className="b2b-cart-subtitle">
-          {meetsRfqThreshold
-            ? "Your volume qualifies for direct factory RFQ pricing. Review batch items and submit for engineering quotation."
-            : "Review batch items, verify MOQ compliance, and submit as a Commercial Enquiry to our sales desk."}
-        </p>
       </div>
 
       {/* ── Empty State ───────────────────────── */}
       {items.length === 0 ? (
-        <div className="space-y-10 b2b-anim">
+        <div className="space-y-6 md:space-y-8 lg:space-y-10 b2b-anim">
           <div className="b2b-empty-card">
             <div className="b2b-empty-icon-box">
-              <ShoppingCart className="w-10 h-10 stroke-[1.5]" />
+              <ShoppingCart className="w-8 h-8 md:w-10 md:h-10 stroke-[1.5]" />
             </div>
             <h2 className="b2b-empty-title">Your cart is empty!</h2>
             <p className="b2b-empty-sub">
               Explore our industrial catalog of high-tensile bolts, CNC turned components, titanium aerospace fasteners, and hydraulic couplings.
             </p>
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+            <div className="mt-6 sm:mt-8 flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3 sm:gap-4">
               <Link
                 href="/products"
-                className="inline-flex items-center gap-2.5 px-8 py-3.5 bg-[#111315] text-white rounded-xl font-bold text-base hover:bg-[#1F2429] transition-all shadow-sm hover:shadow-md"
+                className="inline-flex items-center justify-center gap-2.5 px-6 sm:px-8 py-3 sm:py-3.5 bg-[#111315] text-white rounded-xl font-bold text-sm sm:text-base hover:bg-[#1F2429] transition-all shadow-sm hover:shadow-md"
               >
                 <span>Browse Product Catalog</span>
-                <ArrowRight className="w-5 h-5" />
-              </Link>
-              <Link
-                href="/enquiry?type=custom_manufacturing"
-                className="inline-flex items-center gap-2.5 px-8 py-3.5 bg-[#F7F7F8] border border-[#E2E4E8] text-[#111315] rounded-xl font-bold text-base hover:bg-[#ECEEF0] transition-colors"
-              >
-                <span>Upload Custom CAD Drawing</span>
+                <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
               </Link>
             </div>
           </div>
 
           {/* Recommended Products Grid */}
           {sampleProducts.length > 0 && (
-            <div className="space-y-6 pt-4">
+            <div className="space-y-4 sm:space-y-6 pt-2 sm:pt-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-xl font-bold text-[#111315]">
+                  <h3 className="text-lg sm:text-xl font-bold text-[#111315]">
                     Popular Industrial Fasteners
                   </h3>
-                  <p className="text-sm text-[#6B7280] mt-0.5">
+                  <p className="text-xs sm:text-sm text-[#6B7280] mt-0.5">
                     Click to add standard batch quantities directly to your cart.
                   </p>
                 </div>
                 <Link
                   href="/products"
-                  className="text-sm font-bold text-[#111315] hover:underline inline-flex items-center gap-1.5"
+                  className="text-xs sm:text-sm font-bold text-[#111315] hover:underline inline-flex items-center gap-1.5"
                 >
                   <span>View All</span>
-                  <ArrowRight className="w-4 h-4" />
+                  <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </Link>
               </div>
 
@@ -821,38 +829,38 @@ function CartRFQPageInner() {
 
                   return (
                     <div key={p.id} className="b2b-rec-card group">
-                      <div className="flex items-start gap-4">
-                        <div className="w-20 h-20 rounded-xl bg-[#F7F7F8] border border-[#E2E4E8] overflow-hidden flex items-center justify-center shrink-0">
+                      <div className="flex items-start gap-3 sm:gap-4">
+                        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg sm:rounded-xl bg-[#F7F7F8] border border-[#E2E4E8] overflow-hidden flex items-center justify-center shrink-0">
                           {img ? (
                             <RemoteImage src={img} alt={p.name} sizes="80px" />
                           ) : (
-                            <Package className="w-8 h-8 text-[#9CA3AF]" />
+                            <Package className="w-6 h-6 sm:w-8 sm:h-8 text-[#9CA3AF]" />
                           )}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <span className="text-xs font-semibold uppercase text-[#6B7280] block truncate tracking-wide">
+                          <span className="text-[10px] sm:text-xs font-semibold uppercase text-[#6B7280] block truncate tracking-wide">
                             {p.category?.name || p.categoryName || "Fastener"}
                           </span>
                           <Link
                             href={`/products/${p.id}`}
-                            className="text-base font-bold text-[#111315] line-clamp-1 group-hover:underline block mt-0.5"
+                            className="text-sm sm:text-base font-bold text-[#111315] line-clamp-1 group-hover:underline block mt-0.5"
                           >
                             {p.name}
                           </Link>
-                          <div className="mt-1.5 flex items-baseline gap-2">
-                            <span className="text-base font-bold text-[#111315]">
+                          <div className="mt-1 sm:mt-1.5 flex items-baseline gap-1.5 sm:gap-2">
+                            <span className="text-sm sm:text-base font-bold text-[#111315]">
                               ₹{price.toLocaleString("en-IN")}
                             </span>
-                            <span className="text-xs text-[#6B7280]">/ pc</span>
-                            <span className="text-xs font-semibold text-[#6B7280] ml-auto">
+                            <span className="text-[10px] sm:text-xs text-[#6B7280]">/ pc</span>
+                            <span className="text-[10px] sm:text-xs font-semibold text-[#6B7280] ml-auto">
                               MOQ: {moq}
                             </span>
                           </div>
                         </div>
                       </div>
 
-                      <div className="mt-5 pt-3.5 border-t border-[#E2E4E8] flex items-center justify-between">
-                        <span className="text-sm text-[#6B7280]">
+                      <div className="mt-3.5 sm:mt-5 pt-2.5 sm:pt-3.5 border-t border-[#E2E4E8] flex items-center justify-between">
+                        <span className="text-xs sm:text-sm text-[#6B7280]">
                           Batch Total: <strong className="text-[#111315] font-bold">₹{(price * moq).toLocaleString("en-IN")}</strong>
                         </span>
 
@@ -864,12 +872,12 @@ function CartRFQPageInner() {
                         >
                           {isAdding ? (
                             <>
-                              <RefreshCw className="w-4 h-4 animate-spin" />
+                              <RefreshCw className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin" />
                               <span>Adding…</span>
                             </>
                           ) : (
                             <>
-                              <Plus className="w-4 h-4" />
+                              <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                               <span>Add to Cart</span>
                             </>
                           )}
@@ -884,9 +892,9 @@ function CartRFQPageInner() {
         </div>
       ) : (
         /* ── Populated Cart & RFQ Workspace ───────────────────────── */
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] xl:grid-cols-[1fr_460px] gap-8 xl:gap-9 items-start b2b-anim">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] xl:grid-cols-[1fr_460px] gap-4 sm:gap-6 lg:gap-8 xl:gap-9 items-start b2b-anim">
           {/* Left Column: Delivery Address + Items */}
-          <div className="space-y-5">
+          <div className="space-y-3 sm:space-y-4 lg:space-y-5 min-w-0">
             {/* Delivery Address Banner */}
             <div className="b2b-address-strip">
               <div className="b2b-address-info">
@@ -914,7 +922,7 @@ function CartRFQPageInner() {
                 onClick={() => setAddressModalOpen(true)}
                 className="b2b-address-change-btn"
               >
-                <Edit3 className="w-4 h-4" />
+                <Edit3 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 <span>{selectedAddress || customAddress.addressLine1 ? "Change" : "Add Address"}</span>
               </button>
             </div>
@@ -927,12 +935,12 @@ function CartRFQPageInner() {
                   : "b2b-threshold-banner--pending"
               }`}
             >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex items-start gap-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4">
+                <div className="flex items-start gap-2.5 sm:gap-3">
                   {meetsRfqThreshold ? (
-                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                    <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600 shrink-0 mt-0.5" />
                   ) : (
-                    <Info className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <Info className="w-4 h-4 sm:w-5 sm:h-5 text-amber-600 shrink-0 mt-0.5" />
                   )}
                   <div>
                     <div className="b2b-threshold-title">
@@ -963,13 +971,13 @@ function CartRFQPageInner() {
                 </div>
 
                 {/* Status Indicator */}
-                <div className="shrink-0 flex items-center gap-3">
+                <div className="shrink-0 flex items-center gap-2 self-start sm:self-auto">
                   {!meetsRfqThreshold ? (
-                    <div className="px-3.5 py-1.5 bg-amber-100/90 border border-amber-200 rounded-lg text-xs font-bold text-amber-900">
+                    <div className="px-2.5 sm:px-3.5 py-1 sm:py-1.5 bg-amber-100/90 border border-amber-200 rounded-lg text-[11px] sm:text-xs font-bold text-amber-900">
                       Commercial Enquiry
                     </div>
                   ) : (
-                    <div className="px-3.5 py-1.5 bg-emerald-100 border border-emerald-200 rounded-lg text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+                    <div className="px-2.5 sm:px-3.5 py-1 sm:py-1.5 bg-emerald-100 border border-emerald-200 rounded-lg text-[11px] sm:text-xs font-bold text-emerald-900 flex items-center gap-1.5">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
                       <span>Official RFQ</span>
                     </div>
@@ -993,7 +1001,7 @@ function CartRFQPageInner() {
             <div className="b2b-items-box">
               <div className="b2b-items-header">
                 <span>Cart Items ({items.length})</span>
-                <span className="text-sm font-semibold text-[#6B7280]">
+                <span className="text-xs sm:text-sm font-semibold text-[#6B7280]">
                   Total Quantity: {totalQuantity.toLocaleString("en-IN")} units
                 </span>
               </div>
@@ -1021,20 +1029,20 @@ function CartRFQPageInner() {
                             <RemoteImage
                               src={img}
                               alt={p?.name || "Product"}
-                              sizes="144px"
+                              sizes="(max-width: 640px) 72px, (max-width: 1024px) 120px, 144px"
                             />
                           ) : (
-                            <Package className="w-10 h-10 text-[#9CA3AF] stroke-[1.5]" />
+                            <Package className="w-6 h-6 sm:w-8 sm:h-8 lg:w-10 lg:h-10 text-[#9CA3AF] stroke-[1.5]" />
                           )}
                         </div>
 
                         <div className="b2b-item-details">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex flex-wrap items-center justify-between gap-1.5 sm:gap-2">
                             <span className="b2b-item-category">
                               {p?.categoryName || p?.category?.name || "Industrial Fastener"}
                             </span>
                             {p?.ribbonLabel && (
-                              <span className="px-2.5 py-0.5 text-xs font-bold uppercase bg-[#111315] text-white rounded-md">
+                              <span className="px-1.5 sm:px-2.5 py-0.5 text-[10px] sm:text-xs font-bold uppercase bg-[#111315] text-white rounded">
                                 {p.ribbonLabel}
                               </span>
                             )}
@@ -1054,27 +1062,27 @@ function CartRFQPageInner() {
 
                             {/* Informative MOQ status badge per item */}
                             {moqShortage > 0 ? (
-                              <span className="px-2.5 py-0.5 text-xs font-bold bg-amber-50 border border-amber-200 text-amber-800 rounded-md flex items-center gap-1">
-                                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                                {moqShortage.toLocaleString("en-IN")} pcs left to reach MOQ (Enquiry allowed)
+                              <span className="px-1.5 sm:px-2.5 py-0.5 text-[10px] sm:text-xs font-bold bg-amber-50 border border-amber-200 text-amber-800 rounded flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-600 shrink-0" />
+                                <span>{moqShortage.toLocaleString("en-IN")} pcs left (Enquiry allowed)</span>
                               </span>
                             ) : (
-                              <span className="px-2.5 py-0.5 text-xs font-semibold bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-md flex items-center gap-1">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                                MOQ Satisfied ({item.quantity.toLocaleString("en-IN")} pcs)
+                              <span className="px-1.5 sm:px-2.5 py-0.5 text-[10px] sm:text-xs font-semibold bg-emerald-50 border border-emerald-200 text-emerald-700 rounded flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600 shrink-0" />
+                                <span>MOQ Satisfied</span>
                               </span>
                             )}
 
-                            <span>•</span>
+                            <span className="text-[#D1D5DB]">•</span>
                             {p?.isAvailable === false ? (
-                              <span className="text-amber-800 font-semibold flex items-center gap-1">
-                                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                                No longer available
+                              <span className="text-amber-800 font-semibold flex items-center gap-1 text-[11px] sm:text-xs">
+                                <AlertTriangle className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-600 shrink-0" />
+                                <span>Unavailable</span>
                               </span>
                             ) : (
-                              <span className="text-emerald-700 font-semibold flex items-center gap-1">
-                                <span className="w-2 h-2 rounded-full bg-emerald-600 inline-block" />
-                                Available
+                              <span className="text-emerald-700 font-semibold flex items-center gap-1 text-[11px] sm:text-xs">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 inline-block" />
+                                <span>Available</span>
                               </span>
                             )}
                           </div>
@@ -1097,7 +1105,7 @@ function CartRFQPageInner() {
                       {/* Bottom Action Bar: Stepper + Total + Remove */}
                       <div className="b2b-item-actions-bar">
                         <div className="b2b-stepper-wrap">
-                          <span className="b2b-stepper-label">Quantity:</span>
+                          <span className="b2b-stepper-label">Qty:</span>
                           <div className="b2b-stepper-control">
                             <button
                               type="button"
@@ -1113,7 +1121,7 @@ function CartRFQPageInner() {
                               className="b2b-stepper-btn"
                               aria-label="Decrease quantity"
                             >
-                              <Minus className="w-4 h-4" />
+                              <Minus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                             </button>
 
                             <input
@@ -1143,14 +1151,14 @@ function CartRFQPageInner() {
                               className="b2b-stepper-btn"
                               aria-label="Increase quantity"
                             >
-                              <Plus className="w-4 h-4" />
+                              <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                             </button>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-8">
+                        <div className="flex items-center gap-3 sm:gap-6 lg:gap-8">
                           <div className="text-right">
-                            <div className="text-xs text-[#6B7280] font-medium">Line Total</div>
+                            <div className="text-[10px] sm:text-xs text-[#6B7280] font-medium">Line Total</div>
                             <div className="b2b-item-line-total">
                               ₹{lineTotal.toLocaleString("en-IN")}
                             </div>
@@ -1162,7 +1170,7 @@ function CartRFQPageInner() {
                             disabled={isUpdating}
                             className="b2b-remove-btn"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                             <span>Remove</span>
                           </button>
                         </div>
@@ -1171,20 +1179,6 @@ function CartRFQPageInner() {
                   );
                 })}
               </div>
-            </div>
-
-            {/* Notes Field */}
-            <div className="p-5 bg-white border border-[#E2E4E8] rounded-2xl space-y-2.5">
-              <label className="block text-sm font-bold uppercase tracking-wider text-[#111315]">
-                Order & Technical Notes (Optional)
-              </label>
-              <textarea
-                rows={2}
-                placeholder="Specify custom surface coating, tolerance notes, or inspection requests..."
-                value={customerNotes}
-                onChange={(e) => setCustomerNotes(e.target.value)}
-                className="w-full p-3.5 text-base text-[#111315] bg-[#F7F7F8] border border-[#E2E4E8] rounded-xl outline-none focus:bg-white focus:border-[#111315] transition-colors resize-none"
-              />
             </div>
           </div>
 
@@ -1198,7 +1192,7 @@ function CartRFQPageInner() {
                 </span>
               </div>
 
-              <div className="b2b-summary-body space-y-3.5">
+              <div className="b2b-summary-body space-y-2.5 sm:space-y-3 lg:space-y-3.5">
                 <div className="b2b-summary-line">
                   <span>Price ({items.length} {items.length === 1 ? "item" : "items"})</span>
                   <span>₹{cartTotal.toLocaleString("en-IN")}</span>
@@ -1221,14 +1215,14 @@ function CartRFQPageInner() {
 
                 {/* Submission Pathway Explanation Notice */}
                 {!meetsRfqThreshold ? (
-                  <div className="p-3 bg-amber-50/80 border border-amber-200/80 rounded-xl text-xs text-amber-900 leading-relaxed flex items-start gap-2">
+                  <div className="p-2.5 sm:p-3 bg-amber-50/80 border border-amber-200/80 rounded-xl text-xs text-amber-900 leading-relaxed flex items-start gap-2">
                     <Info className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
                     <div>
                       <strong>Commercial Enquiry:</strong> Cart total is under the ₹{minimumRfqValue.toLocaleString("en-IN")} threshold. You can submit this as an inquiry to our sales team for custom pricing and stock confirmation.
                     </div>
                   </div>
                 ) : (
-                  <div className="p-3 bg-emerald-50/80 border border-emerald-200/80 rounded-xl text-xs text-emerald-900 leading-relaxed flex items-start gap-2">
+                  <div className="p-2.5 sm:p-3 bg-emerald-50/80 border border-emerald-200/80 rounded-xl text-xs text-emerald-900 leading-relaxed flex items-start gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
                     <div>
                       <strong>Official RFQ Qualified:</strong> Your order meets all volume and MOQ criteria for direct factory bidding and formal quote dispatch.
@@ -1237,9 +1231,9 @@ function CartRFQPageInner() {
                 )}
 
                 {/* Buyer / Contact Details Summary */}
-                <div className="pt-4 border-t border-[#E2E4E8] space-y-2.5">
+                <div className="pt-3 sm:pt-3.5 lg:pt-4 border-t border-[#E2E4E8] space-y-2 sm:space-y-2.5">
                   <div className="flex items-center justify-between">
-                    <div className="font-bold text-sm text-[#111315] uppercase tracking-wider">
+                    <div className="font-bold text-xs sm:text-sm text-[#111315] uppercase tracking-wider">
                       Buyer Details
                     </div>
                     {customer?.id && (contactName && contactPhone && !editingContact) && (
@@ -1253,13 +1247,13 @@ function CartRFQPageInner() {
                     )}
                   </div>
                   {customer?.id && !editingContact && (contactName && contactPhone) ? (
-                    <div className="space-y-1 text-sm text-[#6B7280]">
-                      <div className="font-bold text-base text-[#111315]">{contactName || "Verified Buyer"}</div>
+                    <div className="space-y-0.5 sm:space-y-1 text-xs sm:text-sm text-[#6B7280]">
+                      <div className="font-bold text-sm sm:text-base text-[#111315]">{contactName || "Verified Buyer"}</div>
                       <div>{contactEmail} • {contactPhone}</div>
                       {companyName && <div className="font-medium text-[#111315]">Company: {companyName}</div>}
                     </div>
                   ) : (
-                    <div className="space-y-2.5">
+                    <div className="space-y-2 sm:space-y-2.5">
                       <input
                         className="b2b-input"
                         placeholder="Full Name *"
@@ -1300,8 +1294,8 @@ function CartRFQPageInner() {
 
                 {/* Error Banner */}
                 {errorMsg && (
-                  <div className="p-3.5 bg-[#FEF2F2] border border-[#FECACA] rounded-xl text-sm text-[#B91C1C] flex items-start gap-2.5">
-                    <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+                  <div className="p-3 sm:p-3.5 bg-[#FEF2F2] border border-[#FECACA] rounded-xl text-xs sm:text-sm text-[#B91C1C] flex items-start gap-2 sm:gap-2.5">
+                    <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5 shrink-0 mt-0.5" />
                     <span>{errorMsg}</span>
                   </div>
                 )}
@@ -1314,26 +1308,21 @@ function CartRFQPageInner() {
                 >
                   {submitting ? (
                     <>
-                      <RefreshCw className="w-5 h-5 animate-spin" />
+                      <RefreshCw className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
                       <span>{meetsRfqThreshold ? "Submitting Official RFQ…" : "Submitting Commercial Enquiry…"}</span>
                     </>
                   ) : meetsRfqThreshold ? (
                     <>
                       <span>Submit Request for Quote</span>
-                      <ArrowRight className="w-5 h-5" />
+                      <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
                     </>
                   ) : (
                     <>
                       <span>Submit as Commercial Enquiry</span>
-                      <Send className="w-4 h-4" />
+                      <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                     </>
                   )}
                 </button>
-
-                <div className="pt-2 text-center text-xs text-[#6B7280] flex items-center justify-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Safe and Secure B2B Procurement</span>
-                </div>
               </div>
             </form>
           </div>
@@ -1341,9 +1330,9 @@ function CartRFQPageInner() {
       )}
 
       {/* Guest Enquiry Confirmation Modal */}
-      {enquirySuccessModal.open && (
+      <OverlayPortal open={enquirySuccessModal.open} layer="modal">
         <div className="b2b-modal-overlay">
-          <div className="b2b-modal-content space-y-6 text-center">
+          <div className="b2b-modal-content space-y-6 text-center animate-in fade-in zoom-in-95 duration-150">
             <div className="w-16 h-16 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto">
               <CheckCircle2 className="w-9 h-9" />
             </div>
@@ -1384,12 +1373,22 @@ function CartRFQPageInner() {
             </div>
           </div>
         </div>
-      )}
+      </OverlayPortal>
 
       {/* Address Selection Modal */}
-      {addressModalOpen && (
-        <div className="b2b-modal-overlay">
-          <div className="b2b-modal-content space-y-5">
+      <OverlayPortal
+        open={addressModalOpen}
+        layer="modal"
+        onEscape={() => setAddressModalOpen(false)}
+      >
+        <div
+          className="b2b-modal-overlay"
+          onClick={() => setAddressModalOpen(false)}
+        >
+          <div
+            className="b2b-modal-content space-y-5 animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between pb-3.5 border-b border-[#E2E4E8]">
               <h3 className="text-lg font-bold text-[#111315]">
                 Select Delivery Address
@@ -1530,13 +1529,13 @@ function CartRFQPageInner() {
             <button
               type="button"
               onClick={() => setAddressModalOpen(false)}
-              className="w-full h-12 bg-[#111315] text-white rounded-xl font-bold text-base hover:bg-[#1F2429] transition-colors"
+              className="w-full h-11 sm:h-12 bg-[#111315] text-white rounded-xl font-bold text-sm sm:text-base hover:bg-[#1F2429] transition-colors"
             >
               Confirm Address
             </button>
           </div>
         </div>
-      )}
+      </OverlayPortal>
 
       {/* Guest / Auth Gate Modal */}
       <AuthOrGuestGate

@@ -27,23 +27,23 @@ export default function AdminSplitView({
 }: AdminSplitViewProps) {
   const listClass =
     listCols === 4
-      ? 'lg:col-span-4'
+      ? 'md:col-span-4 lg:col-span-4'
       : listCols === 5
-        ? 'lg:col-span-5'
-        : 'lg:col-span-4';
+        ? 'md:col-span-5 lg:col-span-5'
+        : 'md:col-span-4 lg:col-span-4';
   const detailClass =
     detailCols === 8
-      ? 'lg:col-span-8'
+      ? 'md:col-span-8 lg:col-span-8'
       : detailCols === 7
-        ? 'lg:col-span-7'
-        : 'lg:col-span-8';
+        ? 'md:col-span-7 lg:col-span-7'
+        : 'md:col-span-8 lg:col-span-8';
 
   if (scrollable) {
     return (
       <div
         className={clsx(
-          'grid grid-cols-1 lg:grid-cols-12 gap-4 min-w-0',
-          'lg:h-[calc(100dvh-13.5rem)] lg:min-h-[28rem]',
+          'grid grid-cols-1 md:grid-cols-12 gap-3 lg:gap-4 min-w-0',
+          'md:h-[calc(100dvh-12rem)] md:min-h-[26rem] lg:h-[calc(100dvh-13.5rem)] lg:min-h-[28rem]',
           className
         )}
       >
@@ -52,8 +52,8 @@ export default function AdminSplitView({
             listClass,
             'min-w-0 min-h-0 overflow-y-auto overscroll-contain space-y-2 pr-0.5',
             mobileDetailOpen
-              ? 'hidden lg:block lg:max-h-none'
-              : 'max-h-[min(70vh,calc(100dvh-14rem))] lg:max-h-none'
+              ? 'hidden md:block lg:max-h-none'
+              : 'max-h-[min(70vh,calc(100dvh-14rem))] md:max-h-none lg:max-h-none'
           )}
         >
           {list}
@@ -63,8 +63,8 @@ export default function AdminSplitView({
             detailClass,
             'min-w-0 min-h-0 overflow-y-auto overscroll-contain',
             mobileDetailOpen
-              ? 'max-h-[calc(100dvh-12rem)] lg:max-h-none'
-              : 'hidden lg:block lg:max-h-none'
+              ? 'max-h-[calc(100dvh-12rem)] md:max-h-none lg:max-h-none'
+              : 'hidden md:block lg:max-h-none'
           )}
         >
           {detail}
@@ -74,12 +74,12 @@ export default function AdminSplitView({
   }
 
   return (
-    <div className={clsx('grid grid-cols-1 lg:grid-cols-12 gap-4 items-start min-w-0', className)}>
+    <div className={clsx('grid grid-cols-1 md:grid-cols-12 gap-3 lg:gap-4 items-start min-w-0', className)}>
       <div
         className={clsx(
           listClass,
           'min-w-0 space-y-2',
-          mobileDetailOpen && 'hidden lg:block'
+          mobileDetailOpen && 'hidden md:block'
         )}
       >
         {list}
@@ -87,8 +87,8 @@ export default function AdminSplitView({
       <div
         className={clsx(
           detailClass,
-          'min-w-0 lg:sticky lg:top-3 self-start',
-          !mobileDetailOpen && 'hidden lg:block'
+          'min-w-0 md:sticky md:top-3 self-start',
+          !mobileDetailOpen && 'hidden md:block'
         )}
       >
         {detail}

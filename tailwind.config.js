@@ -81,6 +81,16 @@ module.exports = {
         '2xs': '0 1px 2px 0 rgba(0, 0, 0, 0.03)',
         'xs': '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
       },
+      zIndex: {
+        sticky: 'var(--z-sticky)',
+        header: 'var(--z-header)',
+        'bottom-nav': 'var(--z-bottom-nav)',
+        backdrop: 'var(--z-backdrop)',
+        drawer: 'var(--z-drawer)',
+        modal: 'var(--z-modal)',
+        popover: 'var(--z-popover)',
+        toast: 'var(--z-toast)',
+      },
       fontFamily: {
         sans: ['var(--font-inter)', 'system-ui', 'sans-serif'],
         heading: ['var(--font-instrument)', 'system-ui', 'sans-serif'],

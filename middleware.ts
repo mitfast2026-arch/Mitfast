@@ -109,33 +109,32 @@ export async function middleware(request: NextRequest) {
 
   const supabase = createServerClient<Database>(supabaseUrl, supabaseAnonKey, {
     cookies: {
-      get(name: string) {
-        return request.cookies.get(name)?.value;
+      getAll() {
+        return request.cookies.getAll();
       },
-      set(name: string, value: string, options: CookieOptions) {
-        request.cookies.set({ name, value, ...options });
+      setAll(cookiesToSet: Array<{ name: string; value: string; options: CookieOptions }>) {
+        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
         response = NextResponse.next({
           request: {
             headers: request.headers,
           },
         });
-        response.cookies.set({ name, value, ...options });
-      },
-      remove(name: string, options: CookieOptions) {
-        request.cookies.set({ name, value: '', ...options });
-        response = NextResponse.next({
-          request: {
-            headers: request.headers,
-          },
-        });
-        response.cookies.set({ name, value: '', ...options });
+        cookiesToSet.forEach(({ name, value, options }) =>
+          response.cookies.set(name, value, options)
+        );
       },
     },
   });
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user = null;
+  try {
+    const { data, error } = await supabase.auth.getUser();
+    if (!error && data?.user) {
+      user = data.user;
+    }
+  } catch {
+    user = null;
+  }
 
   // 1. Protected Route Guards
   if (isAdminRoute || isSupplierRoute || isCustomerRoute) {

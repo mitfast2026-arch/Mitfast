@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { X, Loader2, Trash2 } from 'lucide-react';
+import OverlayPortal from '@/components/ui/OverlayPortal';
 import type { CategoryListItem } from '@/types/category';
 
 type CategoryDeleteDialogProps = {
@@ -26,8 +27,13 @@ export default function CategoryDeleteDialog({
   const nameMatches = confirmName.trim() === category.name;
 
   return (
-    <div className="fixed inset-0 z-50 bg-portal-text/50 flex items-center justify-center p-4">
-      <div className="w-full max-w-md rounded-2xl bg-portal-panel shadow-2xl overflow-hidden">
+    <OverlayPortal
+      open
+      layer="modal"
+      onEscape={onClose}
+      className="flex items-center justify-center p-4 bg-portal-text/50"
+    >
+      <div className="relative w-full max-w-md rounded-2xl bg-portal-panel shadow-2xl max-h-[90dvh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-portal-border">
           <h3 className="text-base font-medium text-portal-text">Delete category</h3>
           <button type="button" onClick={onClose} className="p-1 rounded-full text-portal-muted hover:text-portal-text">
@@ -85,6 +91,6 @@ export default function CategoryDeleteDialog({
           </button>
         </div>
       </div>
-    </div>
+    </OverlayPortal>
   );
 }

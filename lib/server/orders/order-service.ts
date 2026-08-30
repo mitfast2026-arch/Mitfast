@@ -914,8 +914,72 @@ export async function getSupplierOrders(
     const contactedMap: Record<string, string> =
       (supplierRow?.notification_preferences as any)?.contactedOrders || {};
 
-    // 2. Query all matching orders for this supplier
-    let query = adminClient
+    // 2. Query matching order IDs for this supplier
+    let idQuery = adminClient
+      .from('orders')
+      .select('id, created_at, order_items!inner(supplier_id)')
+      .eq('order_items.supplier_id', supplierId)
+      .order('created_at', { ascending: false });
+
+    const search = params.search?.trim();
+    if (search) {
+      const q = sanitizeIlikePattern(search);
+      if (q) {
+        idQuery = idQuery.ilike('order_number', `%${q}%`);
+      }
+    }
+
+    const { data: idRows, error: idError } = await idQuery;
+
+    if (idError) {
+      return { success: false, error: { message: idError.message, code: 'DATABASE_ERROR' } };
+    }
+
+    // Deduplicate order IDs preserving descending order
+    const seenIds = new Set<string>();
+    const orderIdList: { id: string; created_at: string }[] = [];
+    for (const r of idRows || []) {
+      if (!seenIds.has(r.id)) {
+        seenIds.add(r.id);
+        orderIdList.push({ id: r.id, created_at: r.created_at });
+      }
+    }
+
+    const newOrderIds = orderIdList.filter((o) => !contactedMap[o.id]);
+    const contactedOrderIds = orderIdList.filter((o) => Boolean(contactedMap[o.id]));
+
+    const counts = {
+      new: newOrderIds.length,
+      contacted: contactedOrderIds.length,
+      total: orderIdList.length,
+    };
+
+    let targetIds = orderIdList;
+    if (params.filter === 'new') {
+      targetIds = newOrderIds;
+    } else if (params.filter === 'contacted') {
+      targetIds = contactedOrderIds;
+    }
+
+    const totalFiltered = targetIds.length;
+    const offset = (page - 1) * limit;
+    const pageIds = targetIds.slice(offset, offset + limit).map((o) => o.id);
+
+    if (pageIds.length === 0) {
+      return {
+        success: true,
+        data: {
+          orders: [],
+          counts,
+          total: totalFiltered,
+          page,
+          limit,
+        },
+      };
+    }
+
+    // 3. Hydrate only the page's order IDs
+    const { data: hydratedRows, error: hydrateError } = await adminClient
       .from('orders')
       .select(
         `
@@ -945,25 +1009,18 @@ export async function getSupplierOrders(
         )
       `
       )
-      .eq('order_items.supplier_id', supplierId)
+      .in('id', pageIds)
       .order('created_at', { ascending: false });
 
-    const search = params.search?.trim();
-    if (search) {
-      const q = sanitizeIlikePattern(search);
-      if (q) {
-        query = query.ilike('order_number', `%${q}%`);
-      }
+    if (hydrateError) {
+      return { success: false, error: { message: hydrateError.message, code: 'DATABASE_ERROR' } };
     }
 
-    const { data, error } = await query;
-
-    if (error) {
-      return { success: false, error: { message: error.message, code: 'DATABASE_ERROR' } };
-    }
+    const idOrderMap = new Map<string, number>();
+    pageIds.forEach((id, idx) => idOrderMap.set(id, idx));
 
     // Map rows into clean, redacted supplier orders
-    const allMapped = (data || []).map((row: any) => {
+    const allMapped = (hydratedRows || []).map((row: any) => {
       const rawItems = Array.isArray(row.order_items) ? row.order_items : [];
       const supplierItems = rawItems.filter((itm: any) => itm.supplier_id === supplierId);
       const totalQty = supplierItems.reduce((acc: number, itm: any) => acc + (Number(itm.quantity) || 0), 0);
@@ -1021,30 +1078,13 @@ export async function getSupplierOrders(
       };
     });
 
-    const newOrders = allMapped.filter((o) => !o.is_contacted);
-    const contactedOrders = allMapped.filter((o) => o.is_contacted);
-
-    const counts = {
-      new: newOrders.length,
-      contacted: contactedOrders.length,
-      total: allMapped.length,
-    };
-
-    let filtered = allMapped;
-    if (params.filter === 'new') {
-      filtered = newOrders;
-    } else if (params.filter === 'contacted') {
-      filtered = contactedOrders;
-    }
-
-    const totalFiltered = filtered.length;
-    const offset = (page - 1) * limit;
-    const paginated = filtered.slice(offset, offset + limit);
+    // Keep the exact pagination order of pageIds
+    allMapped.sort((a, b) => (idOrderMap.get(a.id) ?? 0) - (idOrderMap.get(b.id) ?? 0));
 
     return {
       success: true,
       data: {
-        orders: paginated,
+        orders: allMapped,
         counts,
         total: totalFiltered,
         page,

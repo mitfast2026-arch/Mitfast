@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowRight, X } from 'lucide-react';
 import gsap from 'gsap';
+import { useBodyScrollLock } from '@/lib/client/use-body-scroll-lock';
 import type { ServiceShowcaseItem } from '@/components/home/service-showcase/data';
 
 type Props = {
@@ -52,9 +53,6 @@ export default function ServiceDetailPanel({ item, onClose }: Props) {
   }, [onClose]);
 
   useEffect(() => {
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const panel = panelRef.current;
 
@@ -103,12 +101,13 @@ export default function ServiceDetailPanel({ item, onClose }: Props) {
     window.addEventListener('keydown', onFocusTrap);
 
     return () => {
-      document.body.style.overflow = prevOverflow;
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('keydown', onFocusTrap);
       tween?.kill();
     };
   }, [item.id, requestClose]);
+
+  useBodyScrollLock(true);
 
   return (
     <div ref={rootRef} className="svc-detail-root" role="presentation">

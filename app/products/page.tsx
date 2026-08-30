@@ -3,35 +3,62 @@ import {
   getCachedPublicCategories,
   getCachedStorefrontProducts,
 } from '@/lib/server/products/cached-storefront';
-import { siteUrl } from '@/lib/seo/product-json-ld';
+import { buildCatalogItemListJsonLd, siteUrl } from '@/lib/seo/product-json-ld';
 import ProductsCatalogClient from './ProductsCatalogClient';
 import { parseMoqFilterBounds } from '@/lib/storefront/moq-filter';
 
 export const revalidate = 60;
 
-export const metadata: Metadata = {
-  title: 'Products Catalog',
-  description:
-    'Browse industrial fasteners, CNC turned parts, titanium hardware, and precision engineered B2B products from MITFAST.',
-  alternates: {
-    canonical: `${siteUrl()}/products`,
-  },
-  openGraph: {
-    title: 'Products Catalog | MITFAST',
-    description:
-      'Browse industrial fasteners, CNC turned parts, titanium hardware, and precision engineered B2B products from MITFAST.',
-    url: `${siteUrl()}/products`,
-    type: 'website',
-  },
-};
-
 type PageProps = {
-  searchParams?: Record<string, string | string[] | undefined>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
 function firstParam(value: string | string[] | undefined): string {
   if (Array.isArray(value)) return value[0] || '';
   return value || '';
+}
+
+export async function generateMetadata(props: PageProps): Promise<Metadata> {
+  const searchParams = await props.searchParams;
+  const search = firstParam(searchParams?.search).trim();
+  const category =
+    firstParam(searchParams?.cats)?.split(',').filter(Boolean)[0] ||
+    firstParam(searchParams?.category);
+  const page = firstParam(searchParams?.page);
+
+  let title = 'Products Catalog | Industrial B2B Procurement';
+  let description =
+    'Browse industrial fasteners, CNC turned parts, titanium hardware, and precision engineered B2B products from MITFAST.';
+
+  if (search) {
+    title = `Search: "${search}" | Products Catalog | MITFAST`;
+    description = `Search results for "${search}" — precision fasteners, CNC machining, hardware and quotes on MITFAST.`;
+  } else if (category) {
+    title = `Products Catalog | MITFAST`;
+  }
+
+  const queryParams = new URLSearchParams();
+  if (search) queryParams.set('search', search);
+  if (category) queryParams.set('category', category);
+  if (page && page !== '1') queryParams.set('page', page);
+
+  const canonicalUrl = queryParams.toString()
+    ? `${siteUrl()}/products?${queryParams.toString()}`
+    : `${siteUrl()}/products`;
+
+  return {
+    title,
+    description,
+    alternates: {
+      canonical: canonicalUrl,
+    },
+    openGraph: {
+      title: `${title} | MITFAST`,
+      description,
+      url: canonicalUrl,
+      type: 'website',
+    },
+  };
 }
 
 export default async function ProductsPage(props: PageProps) {
@@ -84,9 +111,14 @@ export default async function ProductsPage(props: PageProps) {
     : [];
 
   const seedKey = [page, search, minPrice, maxPrice, sort, moq, category].join('|');
+  const itemListLd = buildCatalogItemListJsonLd(products);
 
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListLd) }}
+      />
       <nav aria-label="Product catalog" className="sr-only">
         <h1>MITFAST Products Catalog</h1>
         <ul>

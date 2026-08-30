@@ -45,12 +45,10 @@ function prefersReducedMotion() {
 function QuoteMark() {
   return (
     <svg
-      width="48"
-      height="38"
       viewBox="0 0 48 40"
       fill="none"
       aria-hidden
-      className="text-[#D7D9DC]"
+      className="text-[#D7D9DC] w-8 h-7 sm:w-10 sm:h-8 lg:w-12 lg:h-10"
     >
       <path
         d="M0 40V22.4C0 10.08 6.72 2.24 18.24 0L21.12 6.72C14.4 8.96 11.52 13.44 11.52 20.16H21.12V40H0ZM26.88 40V22.4C26.88 10.08 33.6 2.24 45.12 0L48 6.72C41.28 8.96 38.4 13.44 38.4 20.16H48V40H26.88Z"
@@ -83,7 +81,7 @@ function TestimonialAvatar({ item }: { item: TestimonialItem }) {
   if (!usePhoto) {
     return (
       <div
-        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[#E2E4E8] bg-[#ECEEF0] text-xs font-semibold tracking-wide text-[#111315]"
+        className="flex h-10 w-10 sm:h-11 sm:w-11 lg:h-12 lg:w-12 shrink-0 items-center justify-center rounded-full border border-[#E2E4E8] bg-[#ECEEF0] text-xs font-semibold tracking-wide text-[#111315]"
         aria-hidden
       >
         {initials}
@@ -92,7 +90,7 @@ function TestimonialAvatar({ item }: { item: TestimonialItem }) {
   }
 
   return (
-    <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-full border border-[#E2E4E8] bg-[#ECEEF0]">
+    <div className="relative h-10 w-10 sm:h-11 sm:w-11 lg:h-12 lg:w-12 shrink-0 overflow-hidden rounded-full border border-[#E2E4E8] bg-[#ECEEF0]">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={item.photo} alt="" className="h-full w-full object-cover" />
     </div>
@@ -106,13 +104,13 @@ function TestimonialCard({ item }: { item: TestimonialItem }) {
 
   return (
     <article className={widthClass}>
-      <div className="flex h-full min-h-[320px] flex-col rounded-2xl border border-[#E2E4E8] bg-white p-8">
-        <p className="flex-1 text-[17px] leading-[1.6] text-[#111315] sm:text-lg sm:leading-[1.6]">
+      <div className="flex h-full min-h-[260px] sm:min-h-[280px] lg:min-h-[320px] flex-col rounded-2xl border border-[#E2E4E8] bg-white p-6 sm:p-7 lg:p-8">
+        <p className="flex-1 text-[14.5px] sm:text-[15px] lg:text-[17px] leading-[1.6] lg:leading-[1.6] text-[#111315]">
           {item.quote}
         </p>
 
         <div
-          className="mt-6 flex items-center gap-1"
+          className="mt-5 sm:mt-5 lg:mt-6 flex items-center gap-1"
           aria-label={`${item.rating} out of 5 stars`}
         >
           {Array.from({ length: 5 }).map((_, i) => (
@@ -120,18 +118,18 @@ function TestimonialCard({ item }: { item: TestimonialItem }) {
               key={i}
               className={
                 i < item.rating
-                  ? 'h-[18px] w-[18px] fill-[#15803D] text-[#15803D]'
-                  : 'h-[18px] w-[18px] fill-transparent text-[#D7D9DC]'
+                  ? 'h-4 w-4 lg:h-[18px] lg:w-[18px] fill-[#15803D] text-[#15803D]'
+                  : 'h-4 w-4 lg:h-[18px] lg:w-[18px] fill-transparent text-[#D7D9DC]'
               }
             />
           ))}
         </div>
 
-        <div className="mt-6 flex items-center gap-3.5 border-t border-[#E2E4E8] pt-5">
+        <div className="mt-5 sm:mt-5 lg:mt-6 flex items-center gap-3 border-t border-[#E2E4E8] pt-4 sm:pt-4 lg:pt-5">
           <TestimonialAvatar item={item} />
           <div className="min-w-0">
-            <div className="truncate text-base font-semibold text-[#111315]">{item.name}</div>
-            <div className="mt-0.5 truncate text-sm leading-snug text-[#6B7280]">
+            <div className="truncate text-sm sm:text-[15px] lg:text-base font-semibold text-[#111315]">{item.name}</div>
+            <div className="mt-0.5 truncate text-xs sm:text-xs lg:text-sm leading-snug text-[#6B7280]">
               {item.role} · {item.relativeDate}
             </div>
           </div>
@@ -266,25 +264,25 @@ export default function FloatingTestimonials({
   return (
     <section
       id="testimonials"
-      className="relative z-10 w-full bg-[#F7F7F8] py-16 sm:py-20 lg:py-24"
+      className="relative z-10 w-full bg-[#F7F7F8] py-12 sm:py-16 lg:py-24"
       aria-label="Buyer testimonials"
     >
       {/* Full-width — only 40–60px side padding */}
-      <div className="w-full px-5 sm:px-10 lg:px-[60px]">
+      <div className="w-full px-5 sm:px-8 lg:px-[60px]">
         <header className="mx-auto max-w-3xl text-center">
-          <h2 className="text-3xl font-semibold tracking-tight text-[#111315] sm:text-4xl lg:text-[2.75rem] lg:leading-[1.12]">
+          <h2 className="text-2xl sm:text-3xl lg:text-[2.75rem] font-semibold tracking-tight text-[#111315] leading-tight lg:leading-[1.12]">
             {heading[0]}
             <br />
             {heading[1]}
           </h2>
 
-          <div className="mt-4 flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-sm text-[#6B7280] sm:text-[15px]">
-            <span className="text-base font-semibold tabular-nums text-[#111315]">
+          <div className="mt-3 sm:mt-3.5 lg:mt-4 flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-xs sm:text-sm lg:text-[15px] text-[#6B7280]">
+            <span className="text-sm sm:text-base font-semibold tabular-nums text-[#111315]">
               {ratingSummary.score}
             </span>
             <span className="inline-flex items-center gap-1" aria-hidden>
               {Array.from({ length: 5 }).map((_, i) => (
-                <Star key={i} className="h-4 w-4 fill-[#15803D] text-[#15803D]" />
+                <Star key={i} className="h-3.5 w-3.5 sm:h-4 sm:w-4 fill-[#15803D] text-[#15803D]" />
               ))}
             </span>
             <span>{ratingSummary.label}</span>
@@ -292,24 +290,24 @@ export default function FloatingTestimonials({
         </header>
 
         {/* 25% intro · 75% three-card carousel */}
-        <div className="mt-12 grid grid-cols-1 gap-10 lg:mt-14 lg:grid-cols-[25%_minmax(0,1fr)] lg:items-center lg:gap-10">
+        <div className="mt-8 sm:mt-10 lg:mt-14 grid grid-cols-1 gap-7 sm:gap-8 lg:grid-cols-[25%_minmax(0,1fr)] lg:items-center lg:gap-10">
           <div className="flex flex-col lg:pr-2">
             <QuoteMark />
-            <h3 className="mt-5 text-2xl font-semibold leading-snug tracking-tight text-[#111315]">
+            <h3 className="mt-3 sm:mt-4 lg:mt-5 text-xl sm:text-2xl font-semibold leading-snug tracking-tight text-[#111315]">
               What procurement teams are saying
             </h3>
-            <p className="mt-4 text-[15px] leading-relaxed text-[#6B7280]">
+            <p className="mt-2.5 sm:mt-3 lg:mt-4 text-xs sm:text-sm lg:text-[15px] leading-relaxed text-[#6B7280]">
               Buyer feedback from manufacturing and precision engineering teams who
               buy and source through MITFAST.
             </p>
 
-            <div className="mt-8 flex items-center gap-3">
+            <div className="mt-5 sm:mt-6 lg:mt-8 flex items-center gap-2.5 sm:gap-3">
               <button
                 type="button"
                 onClick={() => scrollByCards(-1)}
                 disabled={!canPrev}
                 aria-label="Previous testimonials"
-                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#E2E4E8] bg-white text-[#111315] shadow-sm transition-colors hover:border-[#111315] disabled:cursor-not-allowed disabled:opacity-30"
+                className="inline-flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-full border border-[#E2E4E8] bg-white text-[#111315] shadow-sm transition-colors hover:border-[#111315] disabled:cursor-not-allowed disabled:opacity-30"
               >
                 <ArrowLeft className="h-4 w-4" strokeWidth={2} />
               </button>
@@ -333,7 +331,7 @@ export default function FloatingTestimonials({
                 onClick={() => scrollByCards(1)}
                 disabled={!canNext}
                 aria-label="Next testimonials"
-                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#E2E4E8] bg-white text-[#111315] shadow-sm transition-colors hover:border-[#111315] disabled:cursor-not-allowed disabled:opacity-30"
+                className="inline-flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-full border border-[#E2E4E8] bg-white text-[#111315] shadow-sm transition-colors hover:border-[#111315] disabled:cursor-not-allowed disabled:opacity-30"
               >
                 <ArrowRight className="h-4 w-4" strokeWidth={2} />
               </button>

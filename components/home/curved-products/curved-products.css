@@ -10,8 +10,22 @@
   user-select: none;
   -webkit-user-select: none;
   background-color: transparent;
-  padding-top: 1.5rem;
-  padding-bottom: 2rem;
+  padding-top: 0.5rem;
+  padding-bottom: 0.75rem;
+}
+
+@media (min-width: 768px) {
+  .arc-fan-root {
+    padding-top: 0.75rem;
+    padding-bottom: 1rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .arc-fan-root {
+    padding-top: 1.5rem;
+    padding-bottom: 2rem;
+  }
 }
 
 /* 3D Perspective Stage Container — Generous Height to Prevent ANY Vertical Clipping */
@@ -24,7 +38,7 @@
 .arc-fan-stage {
   position: relative;
   width: 100%;
-  height: clamp(540px, 64vh, 660px);
+  height: clamp(320px, 48vh, 360px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -37,9 +51,15 @@
   overflow: visible;
 }
 
-@media (max-width: 767px) {
+@media (min-width: 768px) {
   .arc-fan-stage {
-    height: clamp(380px, 58vh, 480px);
+    height: clamp(380px, 46vh, 420px);
+  }
+}
+
+@media (min-width: 1024px) {
+  .arc-fan-stage {
+    height: clamp(540px, 64vh, 660px);
   }
 }
 
@@ -64,10 +84,10 @@
   position: absolute;
   left: 0;
   top: 0;
-  width: 285px;
-  height: 410px;
-  margin-left: -142.5px;
-  margin-top: -205px;
+  width: 200px;
+  height: 288px;
+  margin-left: -100px;
+  margin-top: -144px;
   transform-style: preserve-3d;
   -webkit-transform-style: preserve-3d;
   transform-origin: center center;
@@ -79,12 +99,21 @@
   contain: layout paint style;
 }
 
-@media (max-width: 767px) {
+@media (min-width: 768px) {
   .arc-fan-card {
-    width: 200px;
-    height: 288px;
-    margin-left: -100px;
-    margin-top: -144px;
+    width: 240px;
+    height: 345px;
+    margin-left: -120px;
+    margin-top: -172.5px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .arc-fan-card {
+    width: 285px;
+    height: 410px;
+    margin-left: -142.5px;
+    margin-top: -205px;
   }
 }
 
@@ -151,7 +180,7 @@
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 16px 18px;
+  padding: 12px 14px;
   background: linear-gradient(
     180deg,
     rgba(17, 19, 21, 0.45) 0%,
@@ -162,6 +191,18 @@
   z-index: 3;
   opacity: 0.9;
   transition: opacity 0.3s ease;
+}
+
+@media (min-width: 768px) {
+  .arc-fan-card-meta {
+    padding: 14px 16px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .arc-fan-card-meta {
+    padding: 16px 18px;
+  }
 }
 
 .arc-fan-card:hover .arc-fan-card-meta {

@@ -16,12 +16,19 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
     const supabase = createAdminClient();
     const { id } = params;
 
+    const { searchParams } = new URL(request.url);
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '100', 10)));
+    const offset = (page - 1) * limit;
+
     const [supplierResult, productsResult] = await Promise.all([
       supabase.from('suppliers').select('*').eq('id', id).single(),
       supabase
         .from('products')
-        .select('*, category:categories(id, name)')
-        .eq('supplier_id', id),
+        .select('id, name, supplier_price, moq, approval_status, category_id, category:categories(id, name)', { count: 'exact' })
+        .eq('supplier_id', id)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1),
     ]);
 
     const { data: supplier, error: supError } = supplierResult;
@@ -38,7 +45,10 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
       success: true,
       data: {
         supplier,
-        products: products || []
+        products: products || [],
+        total: productsResult.count ?? (products?.length || 0),
+        page,
+        limit,
       }
     });
   } catch (err: any) {

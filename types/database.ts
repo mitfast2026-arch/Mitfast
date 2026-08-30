@@ -900,6 +900,51 @@ export type Database = {
           },
         ]
       }
+      product_reviews: {
+        Row: {
+          created_at: string
+          customer_id: string
+          id: string
+          product_id: string
+          rating: number
+          review_text: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          customer_id: string
+          id?: string
+          product_id: string
+          rating: number
+          review_text?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          customer_id?: string
+          id?: string
+          product_id?: string
+          rating?: number
+          review_text?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_reviews_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_reviews_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       product_versions: {
         Row: {
           created_at: string
@@ -1301,6 +1346,13 @@ export type Database = {
           product_count: number
         }[]
       }
+      check_customer_review_eligibility: {
+        Args: {
+          p_customer_id: string
+          p_product_id: string
+        }
+        Returns: boolean
+      }
       claim_guest_session_for_merge: {
         Args: { p_guest_session_id: string }
         Returns: {
@@ -1530,6 +1582,18 @@ export type Database = {
           p_window_seconds: number
         }
         Returns: boolean
+      }
+      upsert_product_review: {
+        Args: {
+          p_customer_id: string
+          p_product_id: string
+          p_rating: number
+          p_review_text?: string
+        }
+        Returns: {
+          is_updated: boolean
+          review_id: string
+        }[]
       }
     }
     Enums: {

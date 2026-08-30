@@ -222,9 +222,6 @@ export default function CustomerWishlistPage() {
                   >
                     {item.name}
                   </Link>
-                  {item.sku && (
-                    <div className="text-[11px] font-mono text-[#6B7280]">SKU: {item.sku}</div>
-                  )}
                   <div className="flex items-center justify-between pt-1">
                     <div>
                       <span className="text-[10px] uppercase text-[#6B7280] font-semibold block">

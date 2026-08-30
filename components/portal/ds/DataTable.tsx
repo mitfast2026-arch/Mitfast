@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import OverlayPortal from '@/components/ui/OverlayPortal';
 import { ChevronLeft, ChevronRight, MoreVertical } from 'lucide-react';
 import { clsx } from 'clsx';
 import { EmptyState } from './EmptyState';
@@ -60,10 +60,11 @@ function RowActionsMenu({
     };
   }, [onClose]);
 
-  return createPortal(
+  return (
+    <OverlayPortal open layer="popover" lockScroll={false}>
     <div
       ref={menuRef}
-      className="fixed z-[80] min-w-[140px] rounded-2xl border border-portal-border bg-portal-panel py-1 shadow-lg"
+      className="fixed z-popover min-w-[140px] rounded-2xl border border-portal-border bg-portal-panel py-1 shadow-lg"
       style={{ top: position.top, left: position.left }}
       role="menu"
     >
@@ -84,8 +85,8 @@ function RowActionsMenu({
           {action.label}
         </button>
       ))}
-    </div>,
-    document.body
+    </div>
+    </OverlayPortal>
   );
 }
 
@@ -240,74 +241,76 @@ export function DataTable<T extends { id: string }>({
       </div>
 
       {/* Desktop table */}
-      <table className="saas-table hidden md:table">
-        <thead>
-          <tr>
-            {selectable ? (
-              <th className="w-10">
-                <input
-                  type="checkbox"
-                  checked={!!allSelected}
-                  onChange={(e) => onToggleAll?.(e.target.checked)}
-                  aria-label="Select all rows"
-                  className="rounded border-portal-border bg-portal-inset"
-                />
-              </th>
-            ) : null}
-            {columns.map((col) => (
-              <th key={col.key} className={col.className}>
-                {col.header}
-              </th>
-            ))}
-            {rowActions ? <th className="w-12"><span className="sr-only">Actions</span></th> : null}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr
-              key={row.id}
-              className={onRowClick ? 'cursor-pointer' : undefined}
-              onClick={() => onRowClick?.(row)}
-            >
+      <div className="overflow-x-auto w-full hidden md:block">
+        <table className="saas-table w-full">
+          <thead>
+            <tr>
               {selectable ? (
-                <td onClick={(e) => e.stopPropagation()}>
+                <th className="w-10">
                   <input
                     type="checkbox"
-                    checked={!!selectedIds?.has(row.id)}
-                    onChange={() => onToggleRow?.(row.id)}
-                    aria-label={`Select row ${row.id}`}
+                    checked={!!allSelected}
+                    onChange={(e) => onToggleAll?.(e.target.checked)}
+                    aria-label="Select all rows"
                     className="rounded border-portal-border bg-portal-inset"
                   />
-                </td>
+                </th>
               ) : null}
               {columns.map((col) => (
-                <td key={col.key} className={col.className}>
-                  {col.render(row)}
-                </td>
+                <th key={col.key} className={col.className}>
+                  {col.header}
+                </th>
               ))}
-              {rowActions ? (
-                <td className="relative" onClick={(e) => e.stopPropagation()}>
-                  <button
-                    type="button"
-                    className="saas-btn-ghost h-8 w-8"
-                    aria-label="Row actions"
-                    aria-expanded={openMenuId === row.id}
-                    onClick={(e) => {
-                      if (openMenuId === row.id) {
-                        closeMenu();
-                      } else {
-                        openMenuFor(row.id, e.currentTarget);
-                      }
-                    }}
-                  >
-                    <MoreVertical className="w-4 h-4" />
-                  </button>
-                </td>
-              ) : null}
+              {rowActions ? <th className="w-12"><span className="sr-only">Actions</span></th> : null}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr
+                key={row.id}
+                className={onRowClick ? 'cursor-pointer' : undefined}
+                onClick={() => onRowClick?.(row)}
+              >
+                {selectable ? (
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={!!selectedIds?.has(row.id)}
+                      onChange={() => onToggleRow?.(row.id)}
+                      aria-label={`Select row ${row.id}`}
+                      className="rounded border-portal-border bg-portal-inset"
+                    />
+                  </td>
+                ) : null}
+                {columns.map((col) => (
+                  <td key={col.key} className={col.className}>
+                    {col.render(row)}
+                  </td>
+                ))}
+                {rowActions ? (
+                  <td className="relative" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      className="saas-btn-ghost h-8 w-8"
+                      aria-label="Row actions"
+                      aria-expanded={openMenuId === row.id}
+                      onClick={(e) => {
+                        if (openMenuId === row.id) {
+                          closeMenu();
+                        } else {
+                          openMenuFor(row.id, e.currentTarget);
+                        }
+                      }}
+                    >
+                      <MoreVertical className="w-4 h-4" />
+                    </button>
+                  </td>
+                ) : null}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       {openMenuId && openActions && menuPosition ? (
         <RowActionsMenu

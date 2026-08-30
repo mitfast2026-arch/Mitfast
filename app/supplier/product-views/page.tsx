@@ -96,7 +96,7 @@ export default function SupplierProductViewsPage() {
         </div>
       )}
 
-      <div className="saas-panel p-6 sm:p-7 space-y-5">
+      <div className="saas-panel p-4 sm:p-6 lg:p-7 space-y-4 sm:space-y-5">
         <div className="flex items-center justify-between">
           <h3 className="type-section">Views by product</h3>
           <span className="type-meta bg-portal-inset px-2.5 py-1 rounded-full border border-portal-border">
@@ -104,8 +104,8 @@ export default function SupplierProductViewsPage() {
           </span>
         </div>
 
-        <div className="saas-table-container">
-          <table className="saas-table">
+        <div className="saas-table-container overflow-x-auto">
+          <table className="saas-table min-w-[34rem]">
             <thead>
               <tr>
                 <th>Product</th>

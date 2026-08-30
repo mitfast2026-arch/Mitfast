@@ -24,6 +24,7 @@ import {
 import { apiPost } from '@/lib/client/api-client';
 import { toast } from 'sonner';
 import { notifyApprovalsChanged } from '@/components/portal/ApprovalsCountContext';
+import OverlayPortal from '@/components/ui/OverlayPortal';
 
 export default function AdminSupplierDetailPage() {
   const params = useParams();
@@ -32,6 +33,8 @@ export default function AdminSupplierDetailPage() {
 
   const [supplier, setSupplier] = useState<any>(null);
   const [products, setProducts] = useState<any[]>([]);
+  const [productsPage, setProductsPage] = useState(1);
+  const [productsTotal, setProductsTotal] = useState(0);
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -49,11 +52,11 @@ export default function AdminSupplierDetailPage() {
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
 
-  async function loadSupplierData() {
+  async function loadSupplierData(prodPage = 1) {
     setLoading(true);
     try {
       const [supRes, statsRes] = await Promise.all([
-        fetch(`/api/suppliers/${supplierId}`).then(r => r.json()),
+        fetch(`/api/suppliers/${supplierId}?page=${prodPage}&limit=100`).then(r => r.json()),
         fetch(`/api/suppliers/${supplierId}/stats`).then(r => r.json())
       ]);
 
@@ -61,6 +64,8 @@ export default function AdminSupplierDetailPage() {
         const s = supRes.data.supplier;
         setSupplier(s);
         setProducts(supRes.data.products || []);
+        setProductsTotal(supRes.data.total || supRes.data.products?.length || 0);
+        setProductsPage(supRes.data.page || prodPage);
         setCompanyName(s.company_name || '');
         setContactPerson(s.contact_person || '');
         setEmail(s.email || '');
@@ -262,7 +267,7 @@ export default function AdminSupplierDetailPage() {
             <span>{supplier.status === 'archived' ? 'Restore Supplier' : 'Archive Partner'}</span>
           </button>
           <button 
-            onClick={loadSupplierData}
+            onClick={() => loadSupplierData()}
             className="saas-neu-button text-xs py-2 px-3"
             title="Refresh"
           >
@@ -459,12 +464,45 @@ export default function AdminSupplierDetailPage() {
                 )}
               </tbody>
             </table>
+            {productsTotal > 100 && (
+              <div className="flex items-center justify-between px-3 py-2 border-t border-portal-border text-xs text-portal-muted">
+                <span>
+                  Showing {(productsPage - 1) * 100 + 1}–{Math.min(productsPage * 100, productsTotal)} of {productsTotal}
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={productsPage <= 1 || loading}
+                    onClick={() => loadSupplierData(productsPage - 1)}
+                    className="saas-btn-ghost h-7 px-2 text-xs"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    disabled={productsPage * 100 >= productsTotal || loading}
+                    onClick={() => loadSupplierData(productsPage + 1)}
+                    className="saas-btn-ghost h-7 px-2 text-xs"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
       {rejectOpen && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+        <OverlayPortal
+          open
+          layer="modal"
+          onEscape={() => {
+            setRejectOpen(false);
+            setRejectReason('');
+          }}
+          className="flex items-center justify-center p-4"
+        >
           <button
             type="button"
             aria-label="Close"
@@ -474,7 +512,7 @@ export default function AdminSupplierDetailPage() {
               setRejectReason('');
             }}
           />
-          <div className="relative w-full max-w-md bg-portal-panel rounded-xl border border-portal-border p-5 space-y-3">
+          <div className="relative w-full max-w-md bg-portal-panel rounded-xl border border-portal-border p-5 space-y-3 max-h-[90dvh] overflow-y-auto">
             <h3 className="text-sm font-semibold text-portal-text">Reject supplier application</h3>
             <textarea
               rows={3}
@@ -508,7 +546,7 @@ export default function AdminSupplierDetailPage() {
               </button>
             </div>
           </div>
-        </div>
+        </OverlayPortal>
       )}
     </div>
   );

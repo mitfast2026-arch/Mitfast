@@ -12,7 +12,7 @@ import { RemoteImage } from '@/components/ui/RemoteImage';
 import type { CurvedProduct } from './productData';
 import './curved-products.css';
 
-/** Desktop (≥ md / 768px) — unchanged from original CONFIG */
+/** Desktop (≥ 1024px) — unchanged from original CONFIG */
 const DESKTOP_CONFIG = {
   radius: 820,
   cardWidth: 285,
@@ -25,12 +25,25 @@ const DESKTOP_CONFIG = {
   driftSpeed: 0.0035,
 } as const;
 
-/** Below md — matches curved-products.css mobile card / stage sizing */
+/** Tablet (768px – 1023px) — balanced scale for tablet viewports */
+const TABLET_CONFIG = {
+  radius: 660,
+  cardWidth: 240,
+  cardHeight: 345,
+  cardGap: 22,
+  perspective: 1000,
+  damping: 0.93,
+  fogStrength: 0.88,
+  autoDrift: true,
+  driftSpeed: 0.0035,
+} as const;
+
+/** Mobile (< 768px) — matches curved-products.css mobile card / stage sizing */
 const MOBILE_CONFIG = {
-  radius: 520,
+  radius: 540,
   cardWidth: 200,
   cardHeight: 288,
-  cardGap: 16,
+  cardGap: 20,
   perspective: 900,
   damping: 0.93,
   fogStrength: 0.90,
@@ -38,13 +51,16 @@ const MOBILE_CONFIG = {
   driftSpeed: 0.0035,
 } as const;
 
-type CarouselConfig = typeof DESKTOP_CONFIG | typeof MOBILE_CONFIG;
+type CarouselConfig = typeof DESKTOP_CONFIG | typeof TABLET_CONFIG | typeof MOBILE_CONFIG;
 
+const LG_MQ = '(min-width: 1024px)';
 const MD_MQ = '(min-width: 768px)';
 
 function getCarouselConfig(): CarouselConfig {
   if (typeof window === 'undefined') return DESKTOP_CONFIG;
-  return window.matchMedia(MD_MQ).matches ? DESKTOP_CONFIG : MOBILE_CONFIG;
+  if (window.matchMedia(LG_MQ).matches) return DESKTOP_CONFIG;
+  if (window.matchMedia(MD_MQ).matches) return TABLET_CONFIG;
+  return MOBILE_CONFIG;
 }
 
 type CurvedProductCarouselProps = {
@@ -86,10 +102,15 @@ export default function CurvedProductCarousel({ products }: CurvedProductCarouse
       setConfig(next);
     };
     apply();
-    const mql = window.matchMedia(MD_MQ);
+    const lgMql = window.matchMedia(LG_MQ);
+    const mdMql = window.matchMedia(MD_MQ);
     const onChange = () => apply();
-    mql.addEventListener('change', onChange);
-    return () => mql.removeEventListener('change', onChange);
+    lgMql.addEventListener('change', onChange);
+    mdMql.addEventListener('change', onChange);
+    return () => {
+      lgMql.removeEventListener('change', onChange);
+      mdMql.removeEventListener('change', onChange);
+    };
   }, []);
 
   const updateFanTransform = useCallback(() => {
@@ -104,6 +125,10 @@ export default function CurvedProductCarousel({ products }: CurvedProductCarouse
     const stretch = 1 + Math.min(0.03, Math.abs(v) * 0.08);
     const lean = Math.max(-1.5, Math.min(1.5, -v * 5.0));
 
+    const isMobile = cfg === MOBILE_CONFIG;
+    const isTablet = cfg === TABLET_CONFIG;
+    const maxVisibleDiff = isMobile ? 3.2 : (isTablet ? 3.8 : 4.6);
+
     for (let i = 0; i < totalItems; i++) {
       const cardEl = cardRefs.current[i];
       if (!cardEl) continue;
@@ -114,7 +139,7 @@ export default function CurvedProductCarousel({ products }: CurvedProductCarouse
 
       const absDiff = Math.abs(diff);
 
-      if (absDiff > 4.6) {
+      if (absDiff > maxVisibleDiff) {
         cardEl.style.visibility = 'hidden';
         continue;
       }
@@ -133,8 +158,10 @@ export default function CurvedProductCarousel({ products }: CurvedProductCarouse
       const fogEl = fogRefs.current[i];
       if (fogEl) {
         let fog = 0;
-        if (absDiff > 1.25) {
-          fog = Math.min(1, (absDiff - 1.25) / 2.4) * fogStrength;
+        const fogThreshold = isMobile ? 1.0 : (isTablet ? 1.15 : 1.25);
+        const fogRange = isMobile ? 1.8 : (isTablet ? 2.0 : 2.4);
+        if (absDiff > fogThreshold) {
+          fog = Math.min(1, (absDiff - fogThreshold) / fogRange) * fogStrength;
         }
         fogEl.style.opacity = String(Math.max(0, Math.min(0.92, fog)));
       }
@@ -210,10 +237,6 @@ export default function CurvedProductCarousel({ products }: CurvedProductCarouse
     lastTimestampRef.current = performance.now();
     totalDragDistanceRef.current = 0;
     velocityRef.current = 0;
-
-    if (stageRef.current && e.pointerType === 'mouse') {
-      stageRef.current.setPointerCapture(e.pointerId);
-    }
   }, []);
 
   const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -230,8 +253,12 @@ export default function CurvedProductCarousel({ products }: CurvedProductCarouse
         isHorizontalDragRef.current = true;
         setIsDragging(true);
         setHasInteracted(true);
-        if (stageRef.current && e.pointerType === 'touch') {
-          stageRef.current.setPointerCapture(e.pointerId);
+        if (stageRef.current) {
+          try {
+            stageRef.current.setPointerCapture(e.pointerId);
+          } catch {
+            // ignore
+          }
         }
       } else if (Math.abs(dy) > 10 && Math.abs(dy) > totalDx) {
         isPointerDownRef.current = false;
@@ -359,14 +386,15 @@ export default function CurvedProductCarousel({ products }: CurvedProductCarouse
                 <Link
                   href={product.href}
                   onClick={(e) => {
-                    if (totalDragDistanceRef.current > 6) {
+                    if (totalDragDistanceRef.current > 8) {
                       e.preventDefault();
                     }
                   }}
-                  className="block w-full h-full"
+                  className="block w-full h-full cursor-pointer select-none"
                   tabIndex={0}
+                  aria-label={`View ${product.title}`}
                 >
-                  <div className="arc-fan-card-inner group">
+                  <div className="arc-fan-card-inner group cursor-pointer">
                     <div className="arc-fan-image-wrap">
                       {product.image ? (
                         <RemoteImage

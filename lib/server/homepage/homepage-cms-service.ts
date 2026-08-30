@@ -155,9 +155,36 @@ async function deleteHomepageAsset(storagePath: string | null | undefined) {
   await deleteFromBucket('business-assets', storagePath);
 }
 
-async function loadPublishedProductOptions(): Promise<CarouselProductOption[]> {
+function mapProductToOption(p: any): CarouselProductOption {
+  const images = (p.images || []) as {
+    image_url: string;
+    is_primary?: boolean;
+    sort_order?: number;
+  }[];
+  const sorted = [...images].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  const thumb =
+    sorted.find((img) => img.is_primary)?.image_url || sorted[0]?.image_url || null;
+  const categoryRaw = p.category as { name?: string } | { name?: string }[] | null;
+  const category = Array.isArray(categoryRaw) ? categoryRaw[0] : categoryRaw;
+  return {
+    id: p.id,
+    name: p.name,
+    categoryName: category?.name ?? null,
+    thumbnailUrl: thumb,
+  };
+}
+
+async function loadPublishedProductOptions(selectedProductIds: string[] = []): Promise<CarouselProductOption[]> {
   const adminClient = createAdminClient();
-  const { data, error } = await adminClient
+  const { count } = await adminClient
+    .from('products')
+    .select('id', { count: 'exact', head: true })
+    .eq('publication_status', 'published')
+    .eq('archive_status', 'active')
+    .eq('approval_status', 'approved');
+
+  const totalCount = count ?? 0;
+  let query = adminClient
     .from('products')
     .select(
       `
@@ -175,33 +202,46 @@ async function loadPublishedProductOptions(): Promise<CarouselProductOption[]> {
     .order('sort_order', { ascending: true, foreignTable: 'product_images' })
     .limit(1, { foreignTable: 'product_images' });
 
+  if (totalCount > 100) {
+    query = query.limit(100);
+  }
+
+  const { data, error } = await query;
   if (error || !data) return [];
 
-  return data.map((p) => {
-    const images = (p.images || []) as {
-      image_url: string;
-      is_primary?: boolean;
-      sort_order?: number;
-    }[];
-    const sorted = [...images].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-    const thumb =
-      sorted.find((img) => img.is_primary)?.image_url || sorted[0]?.image_url || null;
-    const categoryRaw = p.category as { name?: string } | { name?: string }[] | null;
-    const category = Array.isArray(categoryRaw) ? categoryRaw[0] : categoryRaw;
-    return {
-      id: p.id,
-      name: p.name,
-      categoryName: category?.name ?? null,
-      thumbnailUrl: thumb,
-    };
-  });
+  let options = data.map(mapProductToOption);
+
+  if (totalCount > 100 && selectedProductIds.length > 0) {
+    const existingIds = new Set(options.map((o) => o.id));
+    const missingIds = selectedProductIds.filter((id) => id && !existingIds.has(id));
+    if (missingIds.length > 0) {
+      const { data: missingData } = await adminClient
+        .from('products')
+        .select(
+          `
+          id,
+          name,
+          category:categories(name),
+          images:product_images(image_url, is_primary, sort_order)
+        `
+        )
+        .in('id', missingIds)
+        .limit(1, { foreignTable: 'product_images' });
+
+      if (missingData && missingData.length > 0) {
+        options = [...options, ...missingData.map(mapProductToOption)];
+      }
+    }
+  }
+
+  return options;
 }
 
 export async function getHomepageAdminBundle(): Promise<ServerResult<HomepageAdminBundle>> {
   try {
     const adminClient = createAdminClient();
 
-    const [slidesRes, assetsRes, slotsRes, productOptions] = await Promise.all([
+    const [slidesRes, assetsRes, slotsRes] = await Promise.all([
       adminClient
         .from('homepage_hero_slides')
         .select(
@@ -232,8 +272,13 @@ export async function getHomepageAdminBundle(): Promise<ServerResult<HomepageAdm
         `
         )
         .order('sort_order', { ascending: true }),
-      loadPublishedProductOptions(),
     ]);
+
+    const slotProductIds = (slotsRes.data || [])
+      .map((row) => row.product_id)
+      .filter(Boolean) as string[];
+
+    const productOptions = await loadPublishedProductOptions(slotProductIds);
 
     if (slidesRes.error) {
       return {

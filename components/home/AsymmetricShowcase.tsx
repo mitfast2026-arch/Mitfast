@@ -12,7 +12,7 @@ export default function AsymmetricShowcase({
   return (
     <section
       id="asymmetric-showcase"
-      className="relative w-full min-h-[90vh] sm:min-h-[85vh] bg-transparent pt-20 sm:pt-28 lg:pt-36 pb-20 sm:pb-28 lg:pb-36 overflow-hidden z-10"
+      className="relative w-full min-h-0 lg:min-h-[85vh] bg-transparent pt-12 pb-14 sm:pt-16 sm:pb-20 lg:pt-36 lg:pb-36 overflow-hidden z-10"
     >
       <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden flex items-center justify-center">
         <div className="absolute w-[800px] h-[400px] bg-gradient-to-tr from-[#D7D9DC]/35 via-[#ECEEF0]/20 to-transparent rounded-full blur-3xl -top-10 opacity-60" />
@@ -97,32 +97,27 @@ export default function AsymmetricShowcase({
         </svg>
       </div>
 
-      <div className="w-full max-w-[1560px] mx-auto px-6 sm:px-10 lg:px-16 relative z-10">
-        <div className="text-center max-w-3xl mx-auto space-y-5 sm:space-y-6 lg:space-y-7">
-          <div className="inline-flex items-center gap-2 text-xs font-bold tracking-[0.2em] text-[#111315] uppercase bg-[#FFFFFF] px-4 py-1.5 rounded-full border border-[#E2E4E8] shadow-2xs">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#111315]" />
-            <span>GLOBAL B2B SOURCING &amp; PROCUREMENT</span>
-          </div>
-
-          <h2 className="text-3xl sm:text-4xl lg:text-[54px] font-bold tracking-tight text-[#111315] leading-[1.1]">
+      <div className="w-full max-w-[1560px] mx-auto px-5 sm:px-8 lg:px-16 relative z-10">
+        <div className="text-center max-w-3xl mx-auto space-y-3.5 sm:space-y-4 lg:space-y-7">
+          <h2 className="text-[28px] sm:text-4xl lg:text-[54px] font-bold tracking-tight text-[#111315] leading-[1.15] lg:leading-[1.1]">
             Source Products
             <br />
-            <span className="inline-flex items-center justify-center gap-3 pt-1">
-              <span className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-[#ECEEF0] border border-[#D7D9DC] inline-flex items-center justify-center text-[#111315] shadow-xs">
-                <Globe className="w-4 h-4 sm:w-5 sm:h-5 animate-[spin_24s_linear_infinite]" />
+            <span className="inline-flex items-center justify-center gap-2 sm:gap-3 pt-1">
+              <span className="w-7 h-7 sm:w-9 sm:h-9 lg:w-11 lg:h-11 rounded-full bg-[#ECEEF0] border border-[#D7D9DC] inline-flex items-center justify-center text-[#111315] shadow-xs">
+                <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4 lg:w-5 lg:h-5 animate-[spin_24s_linear_infinite]" />
               </span>
               <span className="text-[#111315]">Nationwide</span>
             </span>
           </h2>
 
-          <p className="text-sm sm:text-base text-[#4B5563] max-w-xl mx-auto leading-relaxed pt-1">
+          <p className="text-xs sm:text-sm lg:text-base text-[#4B5563] max-w-xl mx-auto leading-relaxed pt-0.5 sm:pt-1">
             Buy precision CNC parts, aerospace fasteners, and hydraulic products
             from verified suppliers with transparent pricing and MOQ.
           </p>
         </div>
 
-        <div className="mt-14 sm:mt-16 lg:mt-24 relative flex justify-center items-center py-4 sm:py-6">
-          <div className="relative z-20 w-full max-w-[620px] sm:max-w-[740px] lg:max-w-[840px] drop-shadow-[0_30px_50px_rgba(0,0,0,0.22)] transition-transform duration-500 hover:scale-[1.01]">
+        <div className="mt-8 sm:mt-10 lg:mt-24 relative flex justify-center items-center py-2 sm:py-4 lg:py-6">
+          <div className="relative z-20 w-full max-w-[360px] sm:max-w-[580px] lg:max-w-[840px] drop-shadow-[0_30px_50px_rgba(0,0,0,0.22)] transition-transform duration-500 hover:scale-[1.01]">
             {imageSrc.startsWith('http') ? (
               // Remote CMS uploads (Tigris) — use native img for contain without crop
               // eslint-disable-next-line @next/next/no-img-element

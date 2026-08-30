@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { sendOtpEmail } from '@/lib/server/email/send-otp-mail';
 import { getConfiguredEmailProviders } from '@/lib/server/email/send-transactional-mail';
 import { allowUnsafeDbFallback, isRpcMissing } from '@/lib/server/db/production-guards';
+import { getPortalMismatchError, type PortalRole } from '@/lib/auth/portal-role';
 
 const OTP_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 const OTP_RATE_LIMIT_WINDOW_SECONDS = 15 * 60;
@@ -103,6 +104,26 @@ export async function POST(request: NextRequest) {
         },
         { status: 503 }
       );
+    }
+
+    const { data: existingProfile } = await (admin as any)
+      .from('profiles')
+      .select('id, role')
+      .ilike('email', email)
+      .maybeSingle();
+
+    if (existingProfile?.role) {
+      const intendedPortal: PortalRole = role === 'supplier' ? 'supplier' : 'buyer';
+      const mismatch = getPortalMismatchError(intendedPortal, existingProfile.role);
+      if (mismatch) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: { message: mismatch, code: 'ROLE_LOCKED' },
+          },
+          { status: 403 }
+        );
+      }
     }
 
     const { data: allowed, error: limitError } = await (admin as any).rpc('try_record_otp_send', {
@@ -210,8 +231,13 @@ export async function POST(request: NextRequest) {
       });
 
       let userFriendlyMessage = 'Unable to send verification code. Please check your email configuration or try again later.';
-      if (sendResult.errorDetails?.includes('only send testing emails')) {
+      const errLower = (sendResult.errorDetails || '').toLowerCase();
+      if (errLower.includes('not verified') || errLower.includes('unverified')) {
+        userFriendlyMessage = 'Email sending domain is awaiting DNS verification in Resend. Please verify your custom domain DNS records.';
+      } else if (errLower.includes('only send testing emails')) {
         userFriendlyMessage = 'Email sending is in test mode. Please verify your custom domain in Resend or use your registered test email.';
+      } else if (errLower.includes('unauthorised_ips') || errLower.includes('unrecognised ip')) {
+        userFriendlyMessage = 'Email provider IP authorization required. Please check your provider settings.';
       }
 
       return NextResponse.json(

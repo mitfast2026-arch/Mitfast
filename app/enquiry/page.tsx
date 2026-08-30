@@ -6,30 +6,55 @@ import { useSearchParams } from "next/navigation";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { createBrowserClient } from "@/lib/supabase/client";
+import { getCountryOptions, matchCountryLabel } from "@/lib/country-origin";
 import "./enquiry.css";
+
+const COUNTRY_OPTIONS = getCountryOptions();
+const OTHER_COUNTRY_VALUE = "__other__";
 
 const ENQUIRY_TYPE_COPY: Record<
   string,
   { heading: string; metaLabel: string; metaValue: string; message: string }
 > = {
   sourcing: {
-    heading: "Sourcing enquiry",
-    metaLabel: "Sourcing",
-    metaValue: "Sourcing development for parts, alloys, and certified mills.",
+    heading: "Sourcing development enquiry",
+    metaLabel: "Sourcing Development",
+    metaValue: "Bespoke CNC & precision tooling, parts development, alloys, and certified mills.",
     message:
       "Sourcing request: describe the parts, materials, target volumes, and any preferred origin or certification requirements.",
   },
   procurement: {
-    heading: "Procurement enquiry",
-    metaLabel: "Procurement",
-    metaValue: "Off-catalog procurement requests, volumes, and factory-direct terms.",
+    heading: "Off-catalog procurement enquiry",
+    metaLabel: "Off-Catalog Procurement",
+    metaValue: "Off-catalog procurement requests, specialized materials, and factory-direct terms.",
     message:
       "Procurement request: describe required SKUs, quantity, and any quality or packing requirements.",
   },
+  product: {
+    heading: "Quote for product enquiry",
+    metaLabel: "Catalog Pricing",
+    metaValue: "High-volume competitive pricing, locked production batches, and catalog RFQs.",
+    message:
+      "Product quote request: specify target part numbers/SKUs, required quantity/batches, and delivery timeline.",
+  },
+  dispatch: {
+    heading: "Delivery & shipping quote",
+    metaLabel: "Delivery & Shipping",
+    metaValue: "Bulk orders, export deliveries, freight schedules, and shipping quotes.",
+    message:
+      "Shipping/delivery quote request: describe shipment destination, target volume/weight, delivery timeline, and incoterms.",
+  },
+  low_moq: {
+    heading: "Low MOQ & small batch enquiry",
+    metaLabel: "Low MOQ / Lower Value",
+    metaValue: "Small batch runs, prototype quantities, lower order values, and trial orders.",
+    message:
+      "Low MOQ enquiry: describe the required quantity, budget/value target, and whether this is a sample/prototype or recurring small batch.",
+  },
   custom: {
-    heading: "Send an enquiry",
-    metaLabel: "Scope",
-    metaValue: "Custom specification, engineering inquiries, and volume production quotes.",
+    heading: "Custom specification enquiry",
+    metaLabel: "Custom Specification",
+    metaValue: "Custom specification, CNC machining, drawings, and bespoke manufacturing quotes.",
     message: "",
   },
   cart: {
@@ -42,9 +67,12 @@ const ENQUIRY_TYPE_COPY: Record<
 };
 
 const SERVICE_OPTIONS = [
-  { value: "custom", label: "Custom specification" },
-  { value: "sourcing", label: "Sourcing development" },
-  { value: "procurement", label: "Off-catalog procurement" },
+  { value: "sourcing", label: "01. Sourcing Development (CNC & Tooling)" },
+  { value: "procurement", label: "02. Off-Catalog Procurement" },
+  { value: "product", label: "03. Quote for Product (Catalog Pricing)" },
+  { value: "dispatch", label: "04. Delivery & Shipping Quote" },
+  { value: "low_moq", label: "Low MOQ / Lower Order Value Inquiry" },
+  { value: "custom", label: "Custom Specification & Engineering Drawing" },
 ] as const;
 
 type ServiceValue = (typeof SERVICE_OPTIONS)[number]["value"];
@@ -83,14 +111,16 @@ function EnquiryContent() {
       ? "custom"
       : ENQUIRY_TYPE_COPY[initialType]
         ? (initialType as ServiceValue)
-        : "custom";
+        : preselectedProductId
+          ? "product"
+          : "custom";
 
   const [product, setProduct] = useState<{ id: string; name: string } | null>(
     null,
   );
   const [cartLines, setCartLines] = useState<CartLinePreview[]>([]);
   const [cartLoading, setCartLoading] = useState(isCartEnquiry);
-  const [profile, setProfile] = useState<{ id: string; full_name?: string } | null>(
+  const [profile, setProfile] = useState<{ id: string; full_name?: string; country?: string } | null>(
     null,
   );
 
@@ -99,7 +129,9 @@ function EnquiryContent() {
   const [serviceType, setServiceType] = useState<ServiceValue>(initialService);
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [country, setCountry] = useState("");
+  const [country, setCountry] = useState("India");
+  const [countryMode, setCountryMode] = useState("India");
+  const [customCountry, setCustomCountry] = useState("");
   const [message, setMessage] = useState(
     isCartEnquiry
       ? formatCartMessage([])
@@ -111,11 +143,25 @@ function EnquiryContent() {
   const [submitted, setSubmitted] = useState(false);
   const [trackingToken, setTrackingToken] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
-  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
 
   const typeCopy = isCartEnquiry
     ? ENQUIRY_TYPE_COPY.cart
     : ENQUIRY_TYPE_COPY[serviceType] || ENQUIRY_TYPE_COPY.custom;
+
+  function handleCountrySelect(val: string) {
+    setCountryMode(val);
+    if (val === OTHER_COUNTRY_VALUE) {
+      setCountry(customCountry.trim());
+    } else {
+      setCountry(val);
+      setCustomCountry("");
+    }
+  }
+
+  function handleCustomCountryChange(val: string) {
+    setCustomCountry(val);
+    setCountry(val.trim());
+  }
 
   useEffect(() => {
     async function init() {
@@ -137,6 +183,17 @@ function EnquiryContent() {
           setLastName(names.lastName);
           setEmail(prof.email || "");
           setPhone(prof.phone || "");
+          if (prof.country) {
+            const matched = matchCountryLabel(prof.country);
+            if (matched) {
+              setCountryMode(matched);
+              setCountry(matched);
+            } else {
+              setCountryMode(OTHER_COUNTRY_VALUE);
+              setCustomCountry(prof.country);
+              setCountry(prof.country);
+            }
+          }
         }
       }
 
@@ -242,9 +299,6 @@ function EnquiryContent() {
             })),
           ),
         );
-      }
-      if (attachmentFile) {
-        formData.set("attachment", attachmentFile);
       }
 
       toast.loading("Sending enquiry...", { id: "enquiry-submit" });
@@ -366,158 +420,155 @@ function EnquiryContent() {
                 <Link href="/products">Browse products</Link> or continue with a general message.
               </p>
             )}
-            <div className="contact-form__group">
-              <p className="contact-form__legend" id="enquiry-name-legend">
-                Contact name
-              </p>
-              <div className="name-row" role="group" aria-labelledby="enquiry-name-legend">
-                <div className="field">
-                  <label className="field__label" htmlFor="enquiry-first-name">
-                    First name *
-                  </label>
-                  <input
-                    id="enquiry-first-name"
-                    className="field__input"
-                    type="text"
-                    name="firstName"
-                    autoComplete="given-name"
-                    required
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                  />
-                </div>
-                <div className="field">
-                  <label className="field__label" htmlFor="enquiry-last-name">
-                    Last name
-                  </label>
-                  <input
-                    id="enquiry-last-name"
-                    className="field__input"
-                    type="text"
-                    name="lastName"
-                    autoComplete="family-name"
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                  />
-                </div>
+
+            <div className="contact-form__row contact-form__row--2">
+              <div className="field">
+                <label className="field__label" htmlFor="enquiry-first-name">
+                  First name *
+                </label>
+                <input
+                  id="enquiry-first-name"
+                  className="field__input"
+                  type="text"
+                  name="firstName"
+                  autoComplete="given-name"
+                  required
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                />
+              </div>
+              <div className="field">
+                <label className="field__label" htmlFor="enquiry-last-name">
+                  Last name
+                </label>
+                <input
+                  id="enquiry-last-name"
+                  className="field__input"
+                  type="text"
+                  name="lastName"
+                  autoComplete="family-name"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                />
               </div>
             </div>
 
-            {!isCartEnquiry && (
+            <div className="contact-form__row contact-form__row--2">
               <div className="field">
-                <label className="field__label" htmlFor="enquiry-service">
-                  Enquiry type
+                <label className="field__label" htmlFor="enquiry-email">
+                  Work email *
+                </label>
+                <input
+                  id="enquiry-email"
+                  className="field__input"
+                  type="email"
+                  name="email"
+                  autoComplete="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+
+              <div className="field">
+                <label className="field__label" htmlFor="enquiry-phone">
+                  Phone *
+                </label>
+                <input
+                  id="enquiry-phone"
+                  className="field__input"
+                  type="tel"
+                  name="phone"
+                  autoComplete="tel"
+                  required
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className={`contact-form__row ${!isCartEnquiry ? "contact-form__row--2" : ""}`}>
+              {!isCartEnquiry && (
+                <div className="field">
+                  <label className="field__label" htmlFor="enquiry-service">
+                    Enquiry type
+                  </label>
+                  <div className="field__control">
+                    <select
+                      id="enquiry-service"
+                      className="field__select"
+                      name="service"
+                      value={serviceType}
+                      onChange={(e) =>
+                        handleServiceChange(e.target.value as ServiceValue)
+                      }
+                    >
+                      {SERVICE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="field__chevron" aria-hidden="true" />
+                  </div>
+                </div>
+              )}
+
+              <div className="field">
+                <label className="field__label" htmlFor="enquiry-country">
+                  Country *
                 </label>
                 <div className="field__control">
                   <select
-                    id="enquiry-service"
+                    id="enquiry-country"
                     className="field__select"
-                    name="service"
-                    value={serviceType}
-                    onChange={(e) =>
-                      handleServiceChange(e.target.value as ServiceValue)
-                    }
+                    name="country"
+                    autoComplete="country-name"
+                    required={countryMode !== OTHER_COUNTRY_VALUE}
+                    value={countryMode}
+                    onChange={(e) => handleCountrySelect(e.target.value)}
                   >
-                    {SERVICE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
+                    <option value="">Select country…</option>
+                    {COUNTRY_OPTIONS.map((option) => (
+                      <option key={option.code} value={option.label}>
                         {option.label}
                       </option>
                     ))}
+                    <option value={OTHER_COUNTRY_VALUE}>Other (custom region)</option>
                   </select>
                   <ChevronDown className="field__chevron" aria-hidden="true" />
                 </div>
+                {countryMode === OTHER_COUNTRY_VALUE && (
+                  <input
+                    type="text"
+                    required
+                    className="field__input"
+                    style={{ marginTop: "8px" }}
+                    placeholder="Enter country or region"
+                    value={customCountry}
+                    onChange={(e) => handleCustomCountryChange(e.target.value)}
+                  />
+                )}
               </div>
-            )}
-
-            <div className="field">
-              <label className="field__label" htmlFor="enquiry-email">
-                Work email *
-              </label>
-              <input
-                id="enquiry-email"
-                className="field__input"
-                type="email"
-                name="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-
-            <div className="field">
-              <label className="field__label" htmlFor="enquiry-phone">
-                Phone *
-              </label>
-              <input
-                id="enquiry-phone"
-                className="field__input"
-                type="tel"
-                name="phone"
-                autoComplete="tel"
-                required
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-              />
-            </div>
-
-            <div className="field">
-              <label className="field__label" htmlFor="enquiry-country">
-                Country
-              </label>
-              <input
-                id="enquiry-country"
-                className="field__input"
-                type="text"
-                name="country"
-                autoComplete="country-name"
-                required
-                value={country}
-                onChange={(e) => setCountry(e.target.value)}
-              />
             </div>
 
             <div className="textarea-field">
               <label className="field__label" htmlFor="enquiry-message">
-                Specifications
+                Specifications *
               </label>
               <textarea
                 id="enquiry-message"
                 className="field__textarea"
                 name="message"
+                rows={3}
                 required
+                placeholder="Describe parts, specs, materials, quantities..."
                 value={message}
                 onChange={(e) => {
                   setMessage(e.target.value);
                   setMessageDirty(true);
                 }}
               />
-            </div>
-
-            <div className="field">
-              <label className="field__label" htmlFor="enquiry-attachment">
-                Attachment (optional)
-              </label>
-              <input
-                id="enquiry-attachment"
-                className="field__input"
-                type="file"
-                accept=".pdf,.doc,.docx,.xls,.xlsx,image/jpeg,image/png,image/webp"
-                onChange={(e) => {
-                  const file = e.target.files?.[0] || null;
-                  if (file && file.size > 10 * 1024 * 1024) {
-                    setErrorMsg("Attachment must be 10 MB or smaller");
-                    e.target.value = "";
-                    setAttachmentFile(null);
-                    return;
-                  }
-                  setErrorMsg("");
-                  setAttachmentFile(file);
-                }}
-              />
-              <p className="contact-form__hint">
-                PDF, Word, Excel, or images · max 10 MB
-              </p>
             </div>
 
             {errorMsg && (

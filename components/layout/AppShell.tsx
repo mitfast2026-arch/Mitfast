@@ -44,6 +44,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             closeButton
             duration={2500}
             theme="system"
+            className="z-toast"
+            style={{ zIndex: 'var(--z-toast)' }}
             toastOptions={{
               style: {
                 background: 'var(--portal-panel)',
@@ -79,6 +81,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           richColors
           closeButton
           duration={2500}
+          className="z-toast"
+          style={{ zIndex: 'var(--z-toast)' }}
         />
         <Suspense fallback={null}>
           <AccessDeniedNotice />

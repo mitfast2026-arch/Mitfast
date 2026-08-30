@@ -282,17 +282,16 @@ export async function removeGuestCartItem(
 ): Promise<ServerResult<{ removed: boolean }>> {
   try {
     const admin = createAdminClient();
-    const { data: row } = await admin
+    const { error: delErr } = await admin
       .from('guest_cart_items')
-      .select('id, guest_session_id')
+      .delete()
       .eq('id', cartItemId)
-      .maybeSingle();
+      .eq('guest_session_id', guestSessionId);
 
-    if (!row || row.guest_session_id !== guestSessionId) {
-      return { success: false, error: { message: 'Cart item not found', code: 'NOT_FOUND' } };
+    if (delErr) {
+      return { success: false, error: { message: delErr.message, code: 'DATABASE_ERROR' } };
     }
 
-    await admin.from('guest_cart_items').delete().eq('id', cartItemId);
     return { success: true, data: { removed: true } };
   } catch (error) {
     console.error('[removeGuestCartItem]', error);

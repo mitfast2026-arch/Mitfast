@@ -47,7 +47,7 @@ type ProfileConfig = {
 const PROFILE_CONFIG: Record<ImageUploadProfile, ProfileConfig> = {
   product: {
     maxInputBytes: 5 * 1024 * 1024,
-    maxStoredBytes: 500 * 1024,
+    maxStoredBytes: 300 * 1024,
     maxDimension: 1600,
     quality: 82,
     fit: 'inside',
@@ -233,12 +233,34 @@ export async function processImageForUpload(
       );
     }
 
-    const hardCap = profile === 'product' ? 500 * 1024 : 2 * 1024 * 1024;
+    if (encoded.buffer.byteLength > config.maxStoredBytes && profile === 'product') {
+      encoded = await encodeWebp(
+        sharp(input, { animated: false }).rotate().resize(1200, 1200, {
+          fit: 'inside',
+          withoutEnlargement: true,
+        }),
+        60,
+        encodeEffort
+      );
+    }
+
+    if (encoded.buffer.byteLength > config.maxStoredBytes && profile === 'product') {
+      encoded = await encodeWebp(
+        sharp(input, { animated: false }).rotate().resize(960, 960, {
+          fit: 'inside',
+          withoutEnlargement: true,
+        }),
+        50,
+        encodeEffort
+      );
+    }
+
+    const hardCap = profile === 'product' ? 300 * 1024 : 2 * 1024 * 1024;
     if (encoded.buffer.byteLength > hardCap) {
       return {
         success: false,
         error: {
-          message: 'Image too large after optimization; use a smaller source file',
+          message: 'Image too large after optimization (max 300 KB); use a smaller source file',
           code: 'PAYLOAD_TOO_LARGE',
         },
       };

@@ -244,15 +244,9 @@ export async function DELETE(request: NextRequest) {
     if (actor.kind === 'forbidden') return forbiddenCartResponse(actor.role);
     if (actor.kind === 'anonymous') {
       if (clearAll === '1' || clearAll === 'true') {
-        return NextResponse.json(
-          { success: false, error: { message: 'No cart session', code: 'NOT_FOUND' } },
-          { status: 404 }
-        );
+        return NextResponse.json({ success: true, data: { cleared: true } });
       }
-      return NextResponse.json(
-        { success: false, error: { message: 'No cart session', code: 'NOT_FOUND' } },
-        { status: 404 }
-      );
+      return NextResponse.json({ success: true, data: { removed: true } });
     }
 
     if (cartItemId) {

@@ -505,7 +505,7 @@ function AdminProductsPageContent() {
           <select
             value={selectedCategory}
             onChange={(e) => handleCategoryChange(e.target.value)}
-            className="saas-input text-xs py-1.5 pl-3 pr-8 min-w-[130px] w-auto max-w-[200px]"
+            className="saas-input text-xs py-1.5 pl-3 pr-8 w-full sm:w-auto sm:min-w-[130px] sm:max-w-[200px]"
             aria-label="Filter by category"
           >
             <option value="">All Categories</option>
@@ -520,7 +520,7 @@ function AdminProductsPageContent() {
           <select
             value={selectedSupplier}
             onChange={(e) => handleSupplierChange(e.target.value)}
-            className="saas-input text-xs py-1.5 pl-3 pr-8 min-w-[130px] w-auto max-w-[200px]"
+            className="saas-input text-xs py-1.5 pl-3 pr-8 w-full sm:w-auto sm:min-w-[130px] sm:max-w-[200px]"
             aria-label="Filter by supplier"
           >
             <option value="">All Suppliers</option>
@@ -535,7 +535,7 @@ function AdminProductsPageContent() {
           <select
             value={selectedApproval}
             onChange={(e) => handleApprovalChange(e.target.value)}
-            className="saas-input text-xs py-1.5 pl-3 pr-8 min-w-[125px] w-auto max-w-[180px]"
+            className="saas-input text-xs py-1.5 pl-3 pr-8 w-full sm:w-auto sm:min-w-[125px] sm:max-w-[180px]"
             aria-label="Filter by approval status"
           >
             <option value="">All Approvals</option>
@@ -549,7 +549,7 @@ function AdminProductsPageContent() {
           <select
             value={selectedPublication}
             onChange={(e) => handlePublicationChange(e.target.value)}
-            className="saas-input text-xs py-1.5 pl-3 pr-8 min-w-[120px] w-auto max-w-[170px]"
+            className="saas-input text-xs py-1.5 pl-3 pr-8 w-full sm:w-auto sm:min-w-[120px] sm:max-w-[170px]"
             aria-label="Filter by publication status"
           >
             <option value="">All Statuses</option>
@@ -558,12 +558,12 @@ function AdminProductsPageContent() {
           </select>
 
           {/* Sort Selector */}
-          <div className="ml-auto flex items-center gap-2">
-            <span className="text-xs font-semibold text-portal-muted">Sort:</span>
+          <div className="w-full sm:w-auto sm:ml-auto flex items-center justify-between sm:justify-start gap-2 pt-1 sm:pt-0">
+            <span className="text-xs font-semibold text-portal-muted shrink-0">Sort:</span>
             <select
               value={sortBy}
               onChange={(e) => handleSortChange(e.target.value as SortOption)}
-              className="saas-input text-xs py-1.5 pl-3 pr-8 font-medium min-w-[130px] w-auto"
+              className="saas-input text-xs py-1.5 pl-3 pr-8 font-medium flex-1 sm:flex-initial sm:min-w-[130px] w-auto"
               aria-label="Sort products"
             >
               <option value="newest">Newest First</option>
@@ -578,7 +578,7 @@ function AdminProductsPageContent() {
               <button
                 type="button"
                 onClick={clearAllFilters}
-                className="inline-flex items-center justify-center text-xs py-1.5 px-2.5 rounded-full border border-portal-border bg-portal-panel text-portal-danger hover:bg-portal-danger-soft gap-1 transition-colors"
+                className="inline-flex items-center justify-center text-xs py-1.5 px-2.5 rounded-full border border-portal-border bg-portal-panel text-portal-danger hover:bg-portal-danger-soft gap-1 transition-colors shrink-0"
                 title="Reset all filters"
               >
                 <X className="w-3.5 h-3.5" />

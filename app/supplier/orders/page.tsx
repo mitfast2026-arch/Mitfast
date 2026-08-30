@@ -187,11 +187,11 @@ export default function SupplierOrdersPage() {
 
       {/* Primary Workflow Tabs & Search */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-2 bg-portal-inset p-1 rounded-xl border border-portal-border">
+        <div className="flex items-center gap-2 bg-portal-inset p-1 rounded-xl border border-portal-border overflow-x-auto max-w-full shrink-0">
           <button
             type="button"
             onClick={() => setActiveTab('new')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all ${
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all whitespace-nowrap ${
               activeTab === 'new'
                 ? 'bg-portal-primary text-white shadow-sm'
                 : 'text-portal-muted hover:text-portal-text'
@@ -214,7 +214,7 @@ export default function SupplierOrdersPage() {
           <button
             type="button"
             onClick={() => setActiveTab('contacted')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all ${
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all whitespace-nowrap ${
               activeTab === 'contacted'
                 ? 'bg-portal-primary text-white shadow-sm'
                 : 'text-portal-muted hover:text-portal-text'
@@ -237,7 +237,7 @@ export default function SupplierOrdersPage() {
           <button
             type="button"
             onClick={() => setActiveTab('all')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
               activeTab === 'all'
                 ? 'bg-portal-primary text-white shadow-sm'
                 : 'text-portal-muted hover:text-portal-text'
@@ -247,7 +247,7 @@ export default function SupplierOrdersPage() {
           </button>
         </div>
 
-        <div className="relative flex-1 sm:max-w-xs">
+        <div className="relative flex-1 sm:max-w-xs w-full">
           <input
             type="text"
             placeholder="Search by order number…"

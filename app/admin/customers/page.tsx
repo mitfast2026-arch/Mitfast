@@ -41,7 +41,8 @@ function AdminCustomersPageContent() {
 
   const loadCustomers = useCallback(
     async (showLoading = true, opts?: { force?: boolean }) => {
-      const url = `/api/customers?page=${page}&limit=${PORTAL_PAGE_LIMIT}`;
+      const searchParam = debouncedSearch.length >= 2 ? `&search=${encodeURIComponent(debouncedSearch)}` : '';
+      const url = `/api/customers?page=${page}&limit=${PORTAL_PAGE_LIMIT}${searchParam}`;
       const force = Boolean(opts?.force);
       const existing = force ? null : peekPortalCache<CustomersResponse>(url);
 
@@ -58,17 +59,7 @@ function AdminCustomersPageContent() {
           force: force || (showLoading && !existing),
         });
         if (result.ok) {
-          let list = result.data.customers || [];
-          if (debouncedSearch) {
-            const q = debouncedSearch.toLowerCase();
-            list = list.filter(
-              (c) =>
-                (c.full_name || '').toLowerCase().includes(q) ||
-                c.email.toLowerCase().includes(q) ||
-                (c.phone || '').includes(q)
-            );
-          }
-          setCustomers(list);
+          setCustomers(result.data.customers || []);
           setTotal(result.data.total || 0);
           markPortalContentReady('/admin/customers');
         }
@@ -154,7 +145,7 @@ function AdminCustomersPageContent() {
           <Search className="saas-search-icon" />
           <input
             type="text"
-            placeholder="Filter loaded page by name, email, phone…"
+            placeholder="Search customers by name, email, phone…"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="saas-input w-full"

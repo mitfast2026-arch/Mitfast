@@ -104,7 +104,8 @@ export async function getGuestWishlist(
     .eq('guest_session_id', guestSessionId)
     // Primary image is picked in JS — do not order/limit on product_images
     // via foreignTable here (PostgREST rejects embeds nested under guest_wishlist_items).
-    .order('added_at', { ascending: false });
+    .order('added_at', { ascending: false })
+    .limit(100);
 
   if (error) {
     return { success: false, error: { message: error.message, code: 'DATABASE_ERROR' } };

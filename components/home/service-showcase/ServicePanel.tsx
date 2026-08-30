@@ -2,8 +2,6 @@
 
 import React, { forwardRef } from 'react';
 import Image from 'next/image';
-import Link from 'next/link';
-import { ArrowRight } from 'lucide-react';
 import type { ServiceShowcaseItem } from './data';
 
 interface ServicePanelProps {
@@ -49,13 +47,6 @@ const ServicePanel = forwardRef<HTMLDivElement, ServicePanelProps>(
           </h3>
           <p className="service-panel__subtitle">{service.subtitle}</p>
           <p className="service-panel__description">{service.description}</p>
-          <Link
-            href={service.ctaHref}
-            className="inline-flex items-center gap-3 text-xs sm:text-[13px] font-bold uppercase tracking-wider text-white bg-white/10 hover:bg-white hover:text-[#111315] border border-white/20 hover:border-white px-6 py-3.5 rounded-xl transition-all duration-300 shadow-md group"
-          >
-            <span>{service.ctaText}</span>
-            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform duration-200" />
-          </Link>
         </div>
       </article>
     );
