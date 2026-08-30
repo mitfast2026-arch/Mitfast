@@ -17,11 +17,15 @@
 
 .svc-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: 1fr;
   gap: 0;
   min-height: calc(100dvh - 4rem);
   width: 100%;
+}
+
+.svc-cell:not(:last-child) {
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .svc-grid.is-interacting .svc-cell:not(.is-hovered):not(:focus-visible) {
@@ -390,6 +394,11 @@
   .svc-grid {
     grid-template-columns: 1fr;
     grid-template-rows: none;
+  }
+
+  .svc-cell:not(:last-child) {
+    border-right: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   }
 
   .svc-grid.is-interacting .svc-cell:not(.is-hovered):not(:focus-visible) {

@@ -46,7 +46,7 @@ import {
   Plus,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { isEmptyRichText } from '@/lib/html/sanitize-rich-text.server';
+import { isEmptyRichText } from '@/lib/html/rich-text-utils';
 import './rich-text-editor.css';
 
 // ── Custom FontSize TipTap Extension ──────────────────────────────
