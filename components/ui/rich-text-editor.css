@@ -1,21 +1,62 @@
+/* ==========================================================================
+   MITFAST B2B — Modern TipTap Rich Text Editor Styles
+   ========================================================================== */
+
 .rte-editor {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 0.5rem;
-  background: rgba(0, 0, 0, 0.2);
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.625rem;
+  background: rgba(18, 18, 20, 0.85);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+  position: relative;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
+
+.rte-editor:focus-within {
+  border-color: rgba(230, 81, 0, 0.6);
+  box-shadow: 0 0 0 1px rgba(230, 81, 0, 0.25), inset 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
 .rte-editor--disabled {
-  opacity: 0.7;
+  opacity: 0.6;
+  pointer-events: none;
 }
+
+.rte-editor--loading {
+  min-height: 200px;
+}
+
+/* ── Toolbar ─────────────────────────────────────────────────────────────── */
+
 .rte-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 2px;
-  padding: 6px 8px;
+  gap: 4px;
+  padding: 6px 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(0, 0, 0, 0.15);
+  background: rgba(26, 26, 30, 0.95);
+  border-top-left-radius: 0.625rem;
+  border-top-right-radius: 0.625rem;
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
+
+.rte-toolbar-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.rte-divider {
+  width: 1px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.12);
+  margin: 0 4px;
+}
+
 .rte-toolbar-btn {
   display: inline-flex;
   align-items: center;
@@ -23,114 +64,446 @@
   width: 28px;
   height: 28px;
   border-radius: 4px;
-  color: rgba(255, 255, 255, 0.65);
-  transition: background 0.15s, color 0.15s;
+  color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
-@media (max-width: 639px) {
-  .rte-toolbar {
-    gap: 4px;
-    padding: 8px;
-  }
-  .rte-toolbar-btn {
-    width: 40px;
-    height: 40px;
-  }
-  .rte-font-size {
-    height: 40px;
-    font-size: 12px;
-    padding: 0 8px;
-  }
-  .rte-emoji-btn {
-    width: 36px;
-    height: 36px;
-  }
-}
+
 .rte-toolbar-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.95);
-}
-.rte-toolbar-btn--active {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.1);
   color: #fff;
+  border-color: rgba(255, 255, 255, 0.15);
 }
+
+.rte-toolbar-btn--active {
+  background: rgba(230, 81, 0, 0.25) !important;
+  color: #ff9800 !important;
+  border-color: rgba(230, 81, 0, 0.5) !important;
+}
+
 .rte-toolbar-btn:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: not-allowed;
 }
-.rte-font-size {
+
+/* ── Dropdowns / Selects ─────────────────────────────────────────────────── */
+
+.rte-select {
   height: 28px;
-  margin-left: 4px;
-  padding: 0 6px;
+  padding: 0 8px;
   font-size: 11px;
+  font-weight: 500;
   border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.25);
-  color: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(36, 36, 42, 0.95);
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s;
 }
-.rte-body {
-  min-height: 160px;
-  max-height: 320px;
-  overflow-y: auto;
-  padding: 10px 12px;
+
+.rte-select:hover {
+  border-color: rgba(255, 255, 255, 0.25);
 }
-.rte-body--placeholder {
-  padding: 10px 12px;
+
+.rte-select:focus {
+  border-color: rgba(230, 81, 0, 0.6);
+}
+
+.rte-select--heading {
+  width: 102px;
+}
+
+.rte-select--fontsize {
+  width: 110px;
+}
+
+/* ── AI Assistant Button ─────────────────────────────────────────────────── */
+
+.rte-ai-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 4px;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(217, 119, 6, 0.1));
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.rte-ai-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.25), rgba(217, 119, 6, 0.2));
+  border-color: rgba(245, 158, 11, 0.7);
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.25);
+}
+
+.rte-ai-btn--loading {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+/* ── Popovers (Link, Image, AI, Emoji) ───────────────────────────────────── */
+
+.rte-popover {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 60;
+  margin-top: 6px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: #1e1e24;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.4);
+  animation: rteFadeIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes rteFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.rte-popover-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.rte-link-popover {
+  width: 320px;
+}
+
+.rte-image-popover {
+  width: 300px;
+}
+
+.rte-ai-popover {
+  right: 0;
+  left: auto;
+  width: 310px;
+}
+
+.rte-ai-option {
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.rte-ai-option:hover {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.rte-input {
+  height: 30px;
+  padding: 0 8px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.4);
-}
-.rte-body .ProseMirror {
-  min-height: 140px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: rgba(255, 255, 255, 0.9);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.3);
+  color: #fff;
   outline: none;
 }
+
+.rte-input:focus {
+  border-color: rgba(230, 81, 0, 0.8);
+}
+
+.rte-btn-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: none;
+  transition: opacity 0.15s;
+}
+
+.rte-btn-action--primary {
+  background: #e65100;
+  color: #fff;
+}
+
+.rte-btn-action--primary:hover:not(:disabled) {
+  background: #f57c00;
+}
+
+.rte-btn-action--danger {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.rte-btn-action--danger:hover {
+  background: rgba(239, 68, 68, 0.35);
+}
+
+.rte-upload-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.rte-upload-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(230, 81, 0, 0.6);
+  color: #fff;
+}
+
+.rte-emoji-picker {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 60;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 3px;
+  margin-top: 6px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: #1e1e24;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+}
+
+.rte-emoji-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.rte-emoji-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* ── Editor Body & ProseMirror Content ───────────────────────────────────── */
+
+.rte-body {
+  min-height: 180px;
+  max-height: 480px;
+  overflow-y: auto;
+  padding: 14px 16px;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.rte-body .ProseMirror {
+  min-height: 150px;
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: rgba(255, 255, 255, 0.92);
+  outline: none;
+}
+
+/* Placeholder */
 .rte-body .ProseMirror p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   float: left;
   color: rgba(255, 255, 255, 0.35);
   pointer-events: none;
   height: 0;
+  font-style: italic;
 }
-.rte-body .ProseMirror h2 {
-  font-size: 1.1rem;
+
+/* Typography Inside Editor */
+.rte-body .ProseMirror h1 {
+  font-size: 1.4rem;
   font-weight: 700;
-  margin: 0.5em 0 0.25em;
+  line-height: 1.3;
+  margin: 1.1em 0 0.4em;
+  color: #fff;
 }
+
+.rte-body .ProseMirror h2 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 1.35;
+  margin: 0.9em 0 0.35em;
+  color: #f3f4f6;
+}
+
 .rte-body .ProseMirror h3 {
-  font-size: 0.95rem;
+  font-size: 1.05rem;
   font-weight: 600;
-  margin: 0.4em 0 0.2em;
+  line-height: 1.4;
+  margin: 0.7em 0 0.3em;
+  color: #e5e7eb;
 }
+
+.rte-body .ProseMirror p {
+  margin: 0.5em 0;
+}
+
+.rte-body .ProseMirror ul.rte-bullet-list,
 .rte-body .ProseMirror ul {
-  list-style: disc;
-  padding-left: 1.25rem;
-  margin: 0.25em 0;
+  list-style-type: disc;
+  padding-left: 1.5rem;
+  margin: 0.5em 0;
 }
-.rte-emoji-picker {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  z-index: 50;
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 2px;
-  margin-top: 4px;
-  padding: 6px;
+
+.rte-body .ProseMirror ol.rte-ordered-list,
+.rte-body .ProseMirror ol {
+  list-style-type: decimal;
+  padding-left: 1.5rem;
+  margin: 0.5em 0;
+}
+
+.rte-body .ProseMirror li {
+  margin: 0.2em 0;
+}
+
+.rte-body .ProseMirror li > p {
+  margin: 0;
+}
+
+.rte-body .ProseMirror ul ul,
+.rte-body .ProseMirror ol ul {
+  list-style-type: circle;
+  margin: 0.2em 0;
+}
+
+.rte-body .ProseMirror ol ol,
+.rte-body .ProseMirror ul ol {
+  list-style-type: lower-alpha;
+  margin: 0.2em 0;
+}
+
+.rte-body .ProseMirror blockquote.rte-blockquote,
+.rte-body .ProseMirror blockquote {
+  border-left: 3px solid #e65100;
+  padding-left: 12px;
+  margin: 0.8em 0;
+  color: rgba(255, 255, 255, 0.75);
+  font-style: italic;
+  background: rgba(230, 81, 0, 0.04);
+  padding-top: 4px;
+  padding-bottom: 4px;
+  border-radius: 0 4px 4px 0;
+}
+
+.rte-body .ProseMirror hr.rte-hr,
+.rte-body .ProseMirror hr {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  margin: 1.2em 0;
+}
+
+.rte-body .ProseMirror a.rte-link,
+.rte-body .ProseMirror a {
+  color: #ff9800;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.rte-body .ProseMirror img.rte-img,
+.rte-body .ProseMirror img {
+  max-width: 100%;
+  height: auto;
   border-radius: 6px;
+  margin: 0.8em 0;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  background: #1a1a1a;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
-.rte-emoji-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 4px;
-  font-size: 16px;
+
+.rte-body .ProseMirror table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  font-size: 12px;
+}
+
+.rte-body .ProseMirror th,
+.rte-body .ProseMirror td {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.rte-body .ProseMirror th {
+  background: rgba(255, 255, 255, 0.08);
+  font-weight: 600;
+}
+
+/* ── Status Bar ──────────────────────────────────────────────────────────── */
+
+.rte-statusbar {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(20, 20, 24, 0.8);
+  border-bottom-left-radius: 0.625rem;
+  border-bottom-right-radius: 0.625rem;
 }
-.rte-emoji-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+
+/* ── Mobile Usability ────────────────────────────────────────────────────── */
+
+@media (max-width: 639px) {
+  .rte-toolbar {
+    gap: 3px;
+    padding: 6px;
+  }
+  .rte-toolbar-btn {
+    width: 32px;
+    height: 32px;
+  }
+  .rte-select {
+    height: 32px;
+    font-size: 11px;
+  }
+  .rte-select--heading {
+    width: 90px;
+  }
+  .rte-select--fontsize {
+    width: 95px;
+  }
+  .rte-ai-btn {
+    height: 32px;
+    padding: 0 8px;
+  }
+  .rte-ai-popover,
+  .rte-link-popover,
+  .rte-image-popover {
+    width: calc(100vw - 32px);
+    max-width: 300px;
+  }
 }

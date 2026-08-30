@@ -109,12 +109,64 @@ export async function GET(request: NextRequest) {
 
   const role = profile?.role as string | undefined;
 
-  // 1. Supplier Handling
-  if (role === 'supplier' || onboardingWantsSupplier(next)) {
-    // Ensure profile has supplier role
-    if (profile && profile.role !== 'supplier') {
-      await admin.from('profiles').update({ role: 'supplier' }).eq('user_id', user.id);
+  // 1. Admin Handling
+  if (role === 'admin') {
+    const target = next && isSafeInternalPath(next) && next.startsWith('/admin')
+      ? next
+      : '/admin/dashboard';
+    return NextResponse.redirect(`${origin}${target}`);
+  }
+
+  // 2. Customer / Buyer Handling
+  if (role === 'customer' || !role) {
+    const { data: customerProfile } = await admin
+      .from('profiles')
+      .select('id, full_name, phone, email')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (customerProfile?.id) {
+      const mergeResult = await mergeGuestStateIntoCustomer(customerProfile.id);
+      if (!mergeResult.success) {
+        console.error('[auth/callback] guest merge failed', {
+          customerId: customerProfile.id,
+          code: mergeResult.error?.code,
+          message: mergeResult.error?.message,
+        });
+      }
     }
+
+    const nameOk = (customerProfile?.full_name || '').trim().length >= 2;
+    const phoneOk = (customerProfile?.phone || '').trim().length >= 7;
+    const emailOk = (customerProfile?.email || user.email || '').trim().includes('@');
+
+    if (!nameOk || !phoneOk || !emailOk) {
+      const redirectSuffix = next && isSafeInternalPath(next) && roleAllowsPath('customer', next)
+        ? `&redirect=${encodeURIComponent(next)}`
+        : '';
+      return NextResponse.redirect(`${origin}/auth/complete-profile?role=buyer${redirectSuffix}`);
+    }
+
+    if (next && isSafeInternalPath(next) && roleAllowsPath('customer', next)) {
+      if (!next.startsWith('/auth/supplier') && !next.startsWith('/admin')) {
+        return NextResponse.redirect(`${origin}${next}`);
+      }
+    }
+
+    return NextResponse.redirect(`${origin}/customer/dashboard`);
+  }
+
+  // 3. Supplier Handling
+  if (role === 'supplier') {
+    const { data: supplierProfile } = await admin
+      .from('profiles')
+      .select('id, full_name, phone, email')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    const nameOk = (supplierProfile?.full_name || '').trim().length >= 2;
+    const phoneOk = (supplierProfile?.phone || '').trim().length >= 7;
+    const emailOk = (supplierProfile?.email || user.email || '').trim().includes('@');
 
     const { data: supplier } = await admin
       .from('suppliers')
@@ -123,8 +175,11 @@ export async function GET(request: NextRequest) {
       .maybeSingle();
 
     if (!supplier) {
-      // New supplier -> direct straight to existing supplier application form
       return NextResponse.redirect(`${origin}/auth/supplier/apply`);
+    }
+
+    if (!nameOk || !phoneOk || !emailOk) {
+      return NextResponse.redirect(`${origin}/auth/complete-profile?role=supplier`);
     }
 
     if (supplier.status === 'active') {
@@ -140,42 +195,6 @@ export async function GET(request: NextRequest) {
 
     const pendingQs = supplier.status === 'archived' ? '?status=archived' : '';
     return NextResponse.redirect(`${origin}/auth/supplier/pending${pendingQs}`);
-  }
-
-  // 2. Buyer (Customer) Handling
-  if (role === 'customer' || !role) {
-    const { data: customerProfile } = await admin
-      .from('profiles')
-      .select('id')
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    if (customerProfile?.id) {
-      const mergeResult = await mergeGuestStateIntoCustomer(customerProfile.id);
-      if (!mergeResult.success) {
-        console.error('[auth/callback] guest merge failed', {
-          customerId: customerProfile.id,
-          code: mergeResult.error?.code,
-          message: mergeResult.error?.message,
-        });
-      }
-    }
-
-    if (next && isSafeInternalPath(next) && roleAllowsPath('customer', next)) {
-      if (!next.startsWith('/auth/supplier') && !next.startsWith('/admin')) {
-        return NextResponse.redirect(`${origin}${next}`);
-      }
-    }
-
-    return NextResponse.redirect(`${origin}/customer/dashboard`);
-  }
-
-  // 3. Admin Handling
-  if (role === 'admin') {
-    const target = next && isSafeInternalPath(next) && next.startsWith('/admin')
-      ? next
-      : '/admin/dashboard';
-    return NextResponse.redirect(`${origin}${target}`);
   }
 
   return NextResponse.redirect(`${origin}/customer/dashboard`);

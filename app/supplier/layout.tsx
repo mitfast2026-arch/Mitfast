@@ -76,8 +76,6 @@ function SupplierLayoutInner({ children }: { children: React.ReactNode }) {
       icon: Eye,
       badge: totalViews,
     },
-    { label: 'Enquiries', href: '/supplier/enquiries', icon: MessageSquare },
-    { label: 'RFQs', href: '/supplier/rfqs', icon: FileText },
     { label: 'Orders', href: '/supplier/orders', icon: ShoppingBag },
     { label: 'Profile', href: '/supplier/profile', icon: User },
     { label: 'Settings', href: '/supplier/settings', icon: Settings },
@@ -91,7 +89,7 @@ function SupplierLayoutInner({ children }: { children: React.ReactNode }) {
       brandHref="/supplier/profile"
       avatarLabel={supplier?.company_name || 'S'}
       settingsHref="/supplier/settings"
-      notificationsHref="/supplier/rfqs"
+      notificationsHref="/supplier/orders"
       onSearchSubmit={(query) => {
         if (!query) return;
         router.push(`/supplier/products?search=${encodeURIComponent(query)}`);

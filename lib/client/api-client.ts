@@ -66,6 +66,12 @@ export async function apiRequest<T>(
       };
     }
 
+    if (init?.method && init.method !== 'GET') {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('portal-mutation-success', { detail: { url, method: init.method } }));
+      }
+    }
+
     return { ok: true, data: json.data };
   } catch (err) {
     console.error('[apiRequest]', url, err);

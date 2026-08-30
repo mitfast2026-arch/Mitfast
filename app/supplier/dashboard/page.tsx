@@ -55,7 +55,7 @@ export default function SupplierDashboardPage() {
   const quickLinks = [
     { href: '/supplier/products?action=create', icon: Plus, label: 'Add product' },
     { href: '/supplier/orders', icon: ShoppingCart, label: 'Orders' },
-    { href: '/supplier/rfqs', icon: FileText, label: 'RFQs' },
+    { href: '/supplier/product-views', icon: Eye, label: 'Product views' },
   ];
 
   return (
@@ -64,7 +64,7 @@ export default function SupplierDashboardPage() {
         <div className="min-w-0">
           <h1 className="type-page">Supplier dashboard</h1>
           <p className="type-subtitle mt-0.5">
-            Product views, enquiries, RFQs, and orders for your catalog.
+            Product catalog performance, impressions, and confirmed purchase orders.
           </p>
         </div>
 

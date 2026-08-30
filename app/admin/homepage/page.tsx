@@ -646,32 +646,32 @@ export default function AdminHomepagePage() {
                 </div>
               </div>
 
-              <div className="flex lg:flex-col items-center gap-2 lg:gap-2.5 lg:pt-1">
+              <div className="flex lg:flex-col items-center justify-end lg:justify-center gap-1.5 shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-portal-border/40">
                 <button
                   type="button"
                   title="Move up"
-                  className="saas-btn-secondary p-2.5 disabled:opacity-40"
+                  className="w-8 h-8 rounded-full border border-portal-border bg-portal-panel flex items-center justify-center text-portal-muted hover:text-portal-text hover:bg-portal-hover transition-colors disabled:opacity-30 disabled:pointer-events-none"
                   onClick={() => moveHero(index, -1)}
                   disabled={index === 0}
                 >
-                  <ArrowUp className="w-4 h-4" />
+                  <ArrowUp className="w-3.5 h-3.5" />
                 </button>
                 <button
                   type="button"
                   title="Move down"
-                  className="saas-btn-secondary p-2.5 disabled:opacity-40"
+                  className="w-8 h-8 rounded-full border border-portal-border bg-portal-panel flex items-center justify-center text-portal-muted hover:text-portal-text hover:bg-portal-hover transition-colors disabled:opacity-30 disabled:pointer-events-none"
                   onClick={() => moveHero(index, 1)}
                   disabled={index === heroSlides.length - 1}
                 >
-                  <ArrowDown className="w-4 h-4" />
+                  <ArrowDown className="w-3.5 h-3.5" />
                 </button>
                 <button
                   type="button"
                   title="Delete slide"
-                  className="saas-btn-secondary p-2.5 text-portal-danger hover:bg-portal-danger-soft"
+                  className="w-8 h-8 rounded-full border border-portal-border bg-portal-panel flex items-center justify-center text-portal-danger hover:bg-portal-danger-soft transition-colors"
                   onClick={() => removeHeroSlide(index)}
                 >
-                  <Trash2 className="w-4 h-4" />
+                  <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
@@ -891,7 +891,7 @@ export default function AdminHomepagePage() {
                 return (
                   <div
                     key={slot.id || `slot-${index}`}
-                    className="rounded-xl border border-portal-border p-4 grid grid-cols-1 sm:grid-cols-[72px_minmax(0,1fr)_auto] gap-4 items-center"
+                    className="rounded-xl border border-portal-border bg-portal-panel/30 p-3.5 sm:p-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-4"
                   >
                     <div className="w-[72px] h-[96px] rounded-lg overflow-hidden bg-[#ECEEF0] border border-portal-border shrink-0 mx-auto sm:mx-0">
                       {thumb ? (
@@ -904,10 +904,10 @@ export default function AdminHomepagePage() {
                       )}
                     </div>
 
-                    <div className="min-w-0 space-y-2">
+                    <div className="flex-1 min-w-0 space-y-2">
                       <label className="saas-label">Product #{index + 1}</label>
                       <select
-                        className="saas-input text-xs"
+                        className="saas-input text-xs w-full truncate"
                         value={slot.productId}
                         onChange={(e) => {
                           const productId = e.target.value;
@@ -938,10 +938,10 @@ export default function AdminHomepagePage() {
                         ))}
                       </select>
                       <div className="flex flex-wrap items-center gap-3 pt-1">
-                        <label className="inline-flex items-center gap-2 text-xs text-portal-muted">
+                        <label className="inline-flex items-center gap-2 text-xs text-portal-muted cursor-pointer">
                           <input
                             type="checkbox"
-                            className="rounded"
+                            className="rounded accent-portal-accent"
                             checked={slot.isActive}
                             onChange={(e) =>
                               setCarouselSlots((prev) =>
@@ -953,7 +953,7 @@ export default function AdminHomepagePage() {
                           />
                           Active
                         </label>
-                        <label className="saas-btn-secondary text-xs py-2 px-3 cursor-pointer inline-flex items-center gap-2">
+                        <label className="saas-btn-secondary text-xs py-1.5 px-3 cursor-pointer inline-flex items-center gap-1.5">
                           {uploading === `override-${index}` ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           ) : null}
@@ -973,34 +973,34 @@ export default function AdminHomepagePage() {
                       </div>
                     </div>
 
-                    <div className="flex sm:flex-col items-center justify-center gap-2">
+                    <div className="flex sm:flex-col items-center justify-end sm:justify-center gap-1.5 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-portal-border/40">
                       <button
                         type="button"
                         title="Move up"
-                        className="saas-btn-secondary p-2.5 disabled:opacity-40"
+                        className="w-8 h-8 rounded-full border border-portal-border bg-portal-panel flex items-center justify-center text-portal-muted hover:text-portal-text hover:bg-portal-hover transition-colors disabled:opacity-30 disabled:pointer-events-none"
                         onClick={() => moveCarousel(index, -1)}
                         disabled={index === 0}
                       >
-                        <ArrowUp className="w-4 h-4" />
+                        <ArrowUp className="w-3.5 h-3.5" />
                       </button>
                       <button
                         type="button"
                         title="Move down"
-                        className="saas-btn-secondary p-2.5 disabled:opacity-40"
+                        className="w-8 h-8 rounded-full border border-portal-border bg-portal-panel flex items-center justify-center text-portal-muted hover:text-portal-text hover:bg-portal-hover transition-colors disabled:opacity-30 disabled:pointer-events-none"
                         onClick={() => moveCarousel(index, 1)}
                         disabled={index === carouselSlots.length - 1}
                       >
-                        <ArrowDown className="w-4 h-4" />
+                        <ArrowDown className="w-3.5 h-3.5" />
                       </button>
                       <button
                         type="button"
                         title="Remove"
-                        className="saas-btn-secondary p-2.5 text-portal-danger hover:bg-portal-danger-soft"
+                        className="w-8 h-8 rounded-full border border-portal-border bg-portal-panel flex items-center justify-center text-portal-danger hover:bg-portal-danger-soft transition-colors"
                         onClick={() =>
                           setCarouselSlots((prev) => prev.filter((_, i) => i !== index))
                         }
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>

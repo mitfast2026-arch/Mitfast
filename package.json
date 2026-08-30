@@ -16,6 +16,7 @@
     "test:supplier-http-load": "tsx scripts/supplier-http-load-test.ts",
     "test:supplier-image-load": "tsx scripts/supplier-image-load-test.ts",
     "test:remediation-smoke": "tsx scripts/test-remediation-smoke.ts",
+    "test:pricing": "tsx scripts/test-pricing-and-gst.ts",
     "verify:storage": "tsx scripts/verify-storage-legacy.ts"
   },
   "dependencies": {
@@ -24,7 +25,11 @@
     "@gsap/react": "^2.1.2",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.49.1",
+    "@tiptap/extension-character-count": "^3.30.5",
+    "@tiptap/extension-image": "^3.30.5",
+    "@tiptap/extension-link": "^3.30.5",
     "@tiptap/extension-placeholder": "^3.30.5",
+    "@tiptap/extension-text-align": "^3.30.5",
     "@tiptap/extension-text-style": "^3.30.5",
     "@tiptap/extension-underline": "^3.30.5",
     "@tiptap/pm": "^3.30.5",

@@ -17,7 +17,9 @@ export async function GET(request: NextRequest) {
       Math.max(1, parseInt(searchParams.get('limit') || String(SUPPLIER_PORTAL_LIST_LIMIT), 10))
     );
 
-    const result = await getSupplierOrders(supplierId, { page, limit, search });
+    const filter = (searchParams.get('filter') as 'new' | 'contacted' | 'all') || undefined;
+
+    const result = await getSupplierOrders(supplierId, { page, limit, search, filter });
 
     if (!result.success) {
       return NextResponse.json(

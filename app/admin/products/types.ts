@@ -91,6 +91,9 @@ export function shortId(id: string): string {
   return `${id.slice(0, 8)}…${id.slice(-4)}`;
 }
 
+import { calculatePricing, roundCurrency, safeNumber } from '@/lib/server/pricing/calculate-price';
+export { calculatePricing, roundCurrency, safeNumber };
+
 export type ProfitType = 'percentage' | 'fixed';
 
 export function computeListPrice(supplierPrice: number, profitPct: number): number {
@@ -102,15 +105,17 @@ export function computeListPriceFromProfit(
   profitType: ProfitType,
   profitValue: number
 ): number {
-  const base = Math.max(0, supplierPrice);
-  const value = Math.max(0, profitValue);
-  const profitAmount =
-    profitType === 'percentage'
-      ? Math.round(base * (value / 100) * 100) / 100
-      : Math.round(value * 100) / 100;
-  return Math.round((base + profitAmount) * 100) / 100;
+  const pricing = calculatePricing({
+    supplier_price: supplierPrice,
+    profit_type: profitType,
+    profit_value: profitValue,
+    discount: 0,
+    gst_rate: 0,
+    gst_included: false,
+  });
+  return pricing.selling_price;
 }
 
 export function computeCustomerPrice(listPrice: number, discount: number): number {
-  return Math.max(0, Math.round((listPrice - discount) * 100) / 100);
+  return Math.max(0, roundCurrency(listPrice - discount));
 }

@@ -50,7 +50,6 @@ export default function AdminApprovalsPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [categories, setCategories] = useState<any[]>([]);
   const [supplierOptions, setSupplierOptions] = useState<any[]>([]);
-  const [defaultGstRate, setDefaultGstRate] = useState(18);
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelMode, setPanelMode] = useState<ProductFormMode>('review-admin');
   const [panelProduct, setPanelProduct] = useState<ProductFormProduct | null>(null);
@@ -84,16 +83,12 @@ export default function AdminApprovalsPage() {
   useEffect(() => {
     loadApprovals();
     void (async () => {
-      const [catsRes, supsRes, settingsRes] = await Promise.all([
+      const [catsRes, supsRes] = await Promise.all([
         cachedApiGet<{ categories: any[] }>('/api/categories?mode=admin&status=active'),
         cachedApiGet<{ suppliers: any[] }>('/api/suppliers?status=active&limit=100'),
-        cachedApiGet<{ defaultGstRate?: number }>('/api/settings'),
       ]);
       if (catsRes.ok) setCategories(catsRes.data.categories || []);
       if (supsRes.ok) setSupplierOptions(supsRes.data.suppliers || []);
-      if (settingsRes.ok && settingsRes.data?.defaultGstRate != null) {
-        setDefaultGstRate(Number(settingsRes.data.defaultGstRate) || 18);
-      }
     })();
   }, [loadApprovals]);
 
@@ -487,7 +482,6 @@ export default function AdminApprovalsPage() {
         product={panelProduct}
         categories={categories}
         suppliers={supplierOptions}
-        defaultGstRate={defaultGstRate}
         detailLoading={detailLoading}
         onClose={closeReviewPanel}
         onSuccess={() => {

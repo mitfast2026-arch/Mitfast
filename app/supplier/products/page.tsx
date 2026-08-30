@@ -32,7 +32,6 @@ function SupplierProductsInner() {
   const [total, setTotal] = useState(0);
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [defaultGstRate, setDefaultGstRate] = useState(18);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [panelOpen, setPanelOpen] = useState(false);
@@ -74,12 +73,11 @@ function SupplierProductsInner() {
         setLoading(true);
       }
       try {
-        const [prodsRes, catsRes, settingsRes] = await Promise.all([
+        const [prodsRes, catsRes] = await Promise.all([
           cachedApiGet<{ products: any[]; total: number }>(productsUrl, {
             force: force || (showLoading && !existing),
           }),
           cachedApiGet<{ categories: any[] }>('/api/categories?status=active'),
-          cachedApiGet<{ defaultGstRate?: number }>('/api/settings'),
         ]);
 
         if (prodsRes.ok) {
@@ -88,9 +86,6 @@ function SupplierProductsInner() {
           markPortalContentReady('/supplier/products');
         }
         if (catsRes.ok) setCategories(catsRes.data.categories || []);
-        if (settingsRes.ok && settingsRes.data?.defaultGstRate != null) {
-          setDefaultGstRate(Number(settingsRes.data.defaultGstRate) || 18);
-        }
       } catch (err) {
         console.error('Supplier products load error:', err);
       } finally {
@@ -375,7 +370,6 @@ function SupplierProductsInner() {
         mode={panelMode}
         product={panelProduct}
         categories={categories}
-        defaultGstRate={defaultGstRate}
         detailLoading={detailLoading}
         onClose={closePanel}
         onSuccess={() => {

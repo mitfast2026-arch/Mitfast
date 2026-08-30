@@ -10,8 +10,10 @@ import {
   Trash2,
   ArrowRight,
   ChevronLeft,
+  Plus,
+  Package,
 } from 'lucide-react';
-import { apiPut, apiPost, apiDelete } from '@/lib/client/api-client';
+import { apiPut, apiDelete } from '@/lib/client/api-client';
 import {
   cachedApiGet,
   invalidatePortalCache,
@@ -60,10 +62,19 @@ export default function AdminEnquiriesPage() {
   const [responseSaving, setResponseSaving] = useState(false);
   const [responseError, setResponseError] = useState('');
 
+  // Products & Line items state
+  const [lineItemsDraft, setLineItemsDraft] = useState<Array<{ productId?: string; name?: string; quantity: number }>>([]);
+  const [itemsSaving, setItemsSaving] = useState(false);
+  const [itemsError, setItemsError] = useState('');
+
   const [rfqQty, setRfqQty] = useState(1);
   const [rfqProductId, setRfqProductId] = useState('');
   const [catalogProducts, setCatalogProducts] = useState<any[]>([]);
   const [catalogSearch, setCatalogSearch] = useState('');
+  const [addCatalogSearch, setAddCatalogSearch] = useState('');
+  const [addCatalogProducts, setAddCatalogProducts] = useState<any[]>([]);
+  const [selectedAddProductId, setSelectedAddProductId] = useState('');
+  const [addQty, setAddQty] = useState(1);
   const [rfqLoading, setRfqLoading] = useState(false);
   const [rfqError, setRfqError] = useState('');
   const [createdRfqId, setCreatedRfqId] = useState('');
@@ -84,7 +95,6 @@ export default function AdminEnquiriesPage() {
         if (prev) {
           const updated = list.find((e: any) => e.id === prev.id);
           if (updated) {
-            // Keep draft fields unless selection changed identity
             return { ...prev, ...updated };
           }
         }
@@ -114,7 +124,6 @@ export default function AdminEnquiriesPage() {
             if (updated) {
               return { ...prev, ...updated, response_message: updated.response_message };
             }
-            // Filtered out after status change — keep selection with last known patch
             return prev;
           }
           if (list[0]) {
@@ -176,6 +185,7 @@ export default function AdminEnquiriesPage() {
     loadEnquiries();
   }, [loadEnquiries]);
 
+  // Catalog search for RFQ creation
   useEffect(() => {
     const q = catalogSearch.trim();
     const ac = new AbortController();
@@ -195,6 +205,26 @@ export default function AdminEnquiriesPage() {
     };
   }, [catalogSearch]);
 
+  // Catalog search for adding products to enquiry
+  useEffect(() => {
+    const q = addCatalogSearch.trim();
+    const ac = new AbortController();
+    const timer = setTimeout(() => {
+      fetch(`/api/products?mode=admin&limit=50&search=${encodeURIComponent(q)}`, {
+        signal: ac.signal,
+      })
+        .then((r) => r.json())
+        .then((json) => {
+          if (json.success) setAddCatalogProducts(json.data.products || []);
+        })
+        .catch(() => {});
+    }, 300);
+    return () => {
+      clearTimeout(timer);
+      ac.abort();
+    };
+  }, [addCatalogSearch]);
+
   function syncDetailForm(enq: any) {
     setEditName(enq.guest_name || enq.customer?.full_name || '');
     setEditEmail(enq.guest_email || enq.customer?.email || '');
@@ -202,12 +232,32 @@ export default function AdminEnquiriesPage() {
     setEditCountry(enq.country || '');
     setEditCompany(enq.company_name || '');
     setResponseDraft(enq.response_message || '');
-    setRfqQty(1);
+
+    // Sync line items
+    let items: Array<{ productId?: string; name?: string; quantity: number }> = [];
+    if (Array.isArray(enq.line_items) && enq.line_items.length > 0) {
+      items = enq.line_items.map((li: any) => ({
+        productId: li.product_id || li.productId,
+        name: li.name || 'Product',
+        quantity: Math.max(1, Number(li.quantity) || 1),
+      }));
+    } else if (enq.product_id || enq.product?.id) {
+      items = [{
+        productId: enq.product_id || enq.product?.id,
+        name: enq.product?.name || 'Product',
+        quantity: 1,
+      }];
+    }
+    setLineItemsDraft(items);
+
+    const initialQty = Math.max(1, enq.product?.moq || enq.product?.suggested_moq || 1);
+    setRfqQty(initialQty);
     setRfqProductId(enq.product_id || enq.product?.id || '');
     setRfqError('');
     setCreatedRfqId('');
     setContactError('');
     setResponseError('');
+    setItemsError('');
   }
 
   function selectEnquiry(enq: any) {
@@ -271,6 +321,63 @@ export default function AdminEnquiriesPage() {
     }
   }
 
+  async function handleSaveLineItems() {
+    if (!selectedEnquiry) return;
+    setItemsSaving(true);
+    setItemsError('');
+    try {
+      const res = await fetch(`/api/enquiries/${selectedEnquiry.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lineItems: lineItemsDraft,
+          productId: lineItemsDraft[0]?.productId || null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        setItemsError(json.error?.message || 'Failed to update items');
+        return;
+      }
+      patchEnquiry(selectedEnquiry.id, {
+        line_items: lineItemsDraft.length ? lineItemsDraft : null,
+        product_id: lineItemsDraft[0]?.productId || null,
+      });
+      await refreshEnquiries();
+    } catch {
+      setItemsError('Failed to update line items');
+    } finally {
+      setItemsSaving(false);
+    }
+  }
+
+  function handleAddProductToEnquiry() {
+    if (!selectedAddProductId) return;
+    const prod = addCatalogProducts.find((p) => p.id === selectedAddProductId);
+    if (!prod) return;
+
+    setLineItemsDraft((prev) => [
+      ...prev,
+      {
+        productId: prod.id,
+        name: prod.name,
+        quantity: Math.max(1, addQty || prod.moq || 1),
+      },
+    ]);
+    setSelectedAddProductId('');
+    setAddQty(1);
+  }
+
+  function handleRemoveLineItem(idx: number) {
+    setLineItemsDraft((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  function handleUpdateLineQty(idx: number, qty: number) {
+    setLineItemsDraft((prev) =>
+      prev.map((item, i) => (i === idx ? { ...item, quantity: Math.max(1, qty) } : item))
+    );
+  }
+
   async function handleSaveResponse() {
     if (!selectedEnquiry) return;
     if (!responseDraft.trim()) {
@@ -311,12 +418,25 @@ export default function AdminEnquiriesPage() {
 
   async function handleCreateRfq() {
     if (!selectedEnquiry) return;
-    const productId = selectedEnquiry.product_id || selectedEnquiry.product?.id || rfqProductId.trim();
     setRfqError('');
-    if (!productId) {
+
+    // Prepare payload
+    const hasDraftLines = lineItemsDraft.length > 0;
+    const itemsPayload = hasDraftLines
+      ? lineItemsDraft
+          .filter((li) => Boolean(li.productId))
+          .map((li) => ({
+            productId: li.productId!,
+            quantity: li.quantity,
+          }))
+      : [];
+
+    const productId = selectedEnquiry.product_id || selectedEnquiry.product?.id || rfqProductId.trim();
+    if (!hasDraftLines && !productId) {
       setRfqError('Link or select a product before creating an RFQ.');
       return;
     }
+
     setRfqLoading(true);
     try {
       const res = await fetch(`/api/enquiries/${selectedEnquiry.id}/convert-to-rfq`, {
@@ -326,8 +446,9 @@ export default function AdminEnquiriesPage() {
           'Idempotency-Key': createIdempotencyKey(),
         },
         body: JSON.stringify({
-          quantity: rfqQty,
-          productId: selectedEnquiry.product_id ? undefined : productId,
+          items: itemsPayload.length > 0 ? itemsPayload : undefined,
+          quantity: itemsPayload.length === 0 ? rfqQty : undefined,
+          productId: itemsPayload.length === 0 && !selectedEnquiry.product_id ? productId : undefined,
           deliveryAddress: editCountry.trim()
             ? {
                 address_line_1: 'To be confirmed',
@@ -378,7 +499,7 @@ export default function AdminEnquiriesPage() {
     <div className="space-y-4 w-full min-w-0 flex flex-col">
       <AdminPageHeader
         title="Enquiries"
-        description="All inbound leads — contact us, product enquiries, and send-enquiry requests."
+        description="All inbound leads — general help, services, and product enquiries."
         actions={
           <button onClick={() => void refreshEnquiries()} className="saas-btn-secondary gap-2">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -454,7 +575,7 @@ export default function AdminEnquiriesPage() {
                     </span>
                   </div>
                   <div className="text-xs text-portal-muted font-mono">
-                    {enquiryTypeLabel(enq.enquiry_type, !!enq.product_id)} ·{' '}
+                    {enquiryTypeLabel(enq.enquiry_type, !!enq.product_id || (Array.isArray(enq.line_items) && enq.line_items.length > 0))} ·{' '}
                     {new Date(enq.created_at).toLocaleDateString()}
                   </div>
                   <div className="text-sm text-portal-muted truncate">
@@ -484,7 +605,7 @@ export default function AdminEnquiriesPage() {
                       {formatStatusLabel(selectedEnquiry.status)}
                     </span>
                     <span className="saas-badge-neutral text-[10px]">
-                      {enquiryTypeLabel(selectedEnquiry.enquiry_type, !!selectedEnquiry.product_id)}
+                      {enquiryTypeLabel(selectedEnquiry.enquiry_type, !!selectedEnquiry.product_id || (Array.isArray(selectedEnquiry.line_items) && selectedEnquiry.line_items.length > 0))}
                     </span>
                   </div>
                   <p className="text-xs text-portal-muted mt-1">
@@ -553,47 +674,111 @@ export default function AdminEnquiriesPage() {
               </div>
 
               <div>
-                <span className="type-meta text-portal-muted">Product / subject</span>
-                <div className="text-sm font-medium text-portal-text mt-0.5">
-                  {selectedEnquiry.product?.name || 'General enquiry'}
-                </div>
-              </div>
-
-              <div>
                 <span className="type-meta text-portal-muted">Message</span>
                 <div className="text-xs text-portal-text bg-portal-inset p-3 rounded-xl mt-1 whitespace-pre-wrap">
                   {selectedEnquiry.message}
                 </div>
               </div>
 
-              {Array.isArray(selectedEnquiry.line_items) &&
-                selectedEnquiry.line_items.length > 0 && (
-                  <div>
-                    <span className="type-meta text-portal-muted">Cart lines</span>
-                    <ul className="mt-1 space-y-1 text-xs text-portal-text">
-                      {selectedEnquiry.line_items.map(
-                        (
-                          line: {
-                            product_id?: string;
-                            name?: string | null;
-                            quantity?: number;
-                          },
-                          idx: number,
-                        ) => (
-                          <li
-                            key={line.product_id || idx}
-                            className="flex justify-between gap-2 bg-portal-inset px-3 py-2 rounded-lg"
+              {/* Products & Line items manager */}
+              <div className="space-y-3 pt-3 border-t border-portal-border">
+                <div className="flex items-center justify-between">
+                  <span className="type-meta text-portal-muted flex items-center gap-1.5">
+                    <Package className="w-3.5 h-3.5" />
+                    Products & Line Items ({lineItemsDraft.length})
+                  </span>
+                  {lineItemsDraft.length === 0 && (
+                    <span className="text-[11px] text-portal-muted italic">
+                      General enquiry (no products)
+                    </span>
+                  )}
+                </div>
+
+                {lineItemsDraft.length > 0 && (
+                  <div className="space-y-2">
+                    {lineItemsDraft.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between gap-2 bg-portal-inset p-2.5 rounded-xl text-xs"
+                      >
+                        <span className="font-medium text-portal-text flex-1 truncate">
+                          {item.name || 'Product'}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <label className="text-[11px] text-portal-muted">Qty:</label>
+                          <input
+                            type="number"
+                            min={1}
+                            value={item.quantity}
+                            onChange={(e) => handleUpdateLineQty(idx, parseInt(e.target.value, 10) || 1)}
+                            className="saas-input text-xs w-20 py-1 px-2"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveLineItem(idx)}
+                            className="p-1 text-portal-muted hover:text-portal-danger rounded"
                           >
-                            <span>{line.name || line.product_id || 'Product'}</span>
-                            <span className="font-mono text-portal-muted">
-                              × {line.quantity ?? 1}
-                            </span>
-                          </li>
-                        ),
-                      )}
-                    </ul>
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
+
+                {/* Add product from catalog */}
+                <div className="p-3 rounded-xl bg-portal-inset/50 border border-portal-border space-y-2">
+                  <span className="text-[11px] font-medium text-portal-text">Add product to enquiry</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <input
+                      className="saas-input text-xs"
+                      placeholder="Search catalog…"
+                      value={addCatalogSearch}
+                      onChange={(e) => setAddCatalogSearch(e.target.value)}
+                    />
+                    <select
+                      className="saas-input text-xs"
+                      value={selectedAddProductId}
+                      onChange={(e) => setSelectedAddProductId(e.target.value)}
+                    >
+                      <option value="">Select product</option>
+                      {addCatalogProducts.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} (MOQ: {p.moq || 1})
+                        </option>
+                      ))}
+                    </select>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={1}
+                        placeholder="Qty"
+                        value={addQty}
+                        onChange={(e) => setAddQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                        className="saas-input text-xs w-20"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddProductToEnquiry}
+                        disabled={!selectedAddProductId}
+                        className="saas-btn-secondary text-xs py-1.5 px-3 flex items-center gap-1"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Add
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {itemsError && <p className="text-xs text-portal-danger">{itemsError}</p>}
+                <button
+                  type="button"
+                  onClick={handleSaveLineItems}
+                  disabled={itemsSaving}
+                  className="saas-btn-secondary text-xs py-1.5 px-3"
+                >
+                  {itemsSaving ? 'Saving…' : 'Save line items'}
+                </button>
+              </div>
 
               {selectedEnquiry.attachment_url && (
                 <a
@@ -627,7 +812,7 @@ export default function AdminEnquiriesPage() {
                     <span className="type-meta text-portal-muted">Next step — create RFQ</span>
                     <ArrowRight className="w-3.5 h-3.5 text-portal-muted" />
                   </div>
-                  {!selectedEnquiry.product_id && !selectedEnquiry.product?.id && (
+                  {lineItemsDraft.length === 0 && !selectedEnquiry.product_id && !selectedEnquiry.product?.id && (
                     <>
                       <input
                         className="saas-input text-xs"
@@ -641,25 +826,27 @@ export default function AdminEnquiriesPage() {
                         onChange={(e) => setRfqProductId(e.target.value)}
                       >
                         <option value="">Select product</option>
-                        {catalogProducts.map((p: { id: string; name: string }) => (
-                          <option key={p.id} value={p.id}>{p.name}</option>
+                        {catalogProducts.map((p: { id: string; name: string; moq?: number }) => (
+                          <option key={p.id} value={p.id}>{p.name} (MOQ: {p.moq || 1})</option>
                         ))}
                       </select>
                     </>
                   )}
                   <div className="flex flex-wrap items-end gap-2">
-                    <div className="space-y-1">
-                      <label className="type-meta text-portal-muted">Qty</label>
-                      <input
-                        type="number"
-                        min={1}
-                        className="saas-input text-xs w-24"
-                        value={rfqQty}
-                        onChange={(e) => setRfqQty(Math.max(1, Number(e.target.value) || 1))}
-                      />
-                    </div>
+                    {lineItemsDraft.length === 0 && (
+                      <div className="space-y-1">
+                        <label className="type-meta text-portal-muted">Qty</label>
+                        <input
+                          type="number"
+                          min={1}
+                          className="saas-input text-xs w-24"
+                          value={rfqQty}
+                          onChange={(e) => setRfqQty(Math.max(1, Number(e.target.value) || 1))}
+                        />
+                      </div>
+                    )}
                     <button type="button" className="saas-btn-gold text-xs py-2 px-4" disabled={rfqLoading} onClick={handleCreateRfq}>
-                      {rfqLoading ? 'Creating…' : 'Create RFQ'}
+                      {rfqLoading ? 'Creating…' : lineItemsDraft.length > 1 ? `Create RFQ (${lineItemsDraft.length} items)` : 'Create RFQ'}
                     </button>
                   </div>
                   {rfqError && <p className="text-xs text-portal-danger">{rfqError}</p>}

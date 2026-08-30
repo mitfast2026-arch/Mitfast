@@ -98,6 +98,7 @@ function CartRFQPageInner() {
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [editingContact, setEditingContact] = useState(false);
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [successToast, setSuccessToast] = useState("");
@@ -168,29 +169,16 @@ function CartRFQPageInner() {
       const prefillProduct = searchParams.get("product");
       const prefillQty = Number(searchParams.get("qty") || "1");
 
-      // Independent work in parallel (merge + addresses + settings).
-      // Prefill POST must finish before cart GET when present.
-      const sideWork: Promise<unknown>[] = [getSettings()];
+      // 1. If buyer, merge guest cart FIRST so fetch('/api/cart') includes all merged items
       if (isBuyer) {
-        sideWork.push(mergeGuestStateOnce());
-        sideWork.push(
-          (async () => {
-            try {
-              const addrRes = await fetch("/api/customer/addresses");
-              const addrJson = await addrRes.json();
-              if (addrRes.ok && addrJson.success) {
-                const addrs = addrJson.data?.addresses || [];
-                setAddresses(addrs);
-                const primary = addrs[0];
-                if (primary) setSelectedAddressId(primary.id);
-              }
-            } catch {
-              /* optional */
-            }
-          })()
-        );
+        try {
+          await mergeGuestStateOnce();
+        } catch {
+          /* best-effort */
+        }
       }
 
+      // 2. Process prefill query params if present
       if (prefillProduct) {
         try {
           await fetch("/api/cart", {
@@ -207,17 +195,31 @@ function CartRFQPageInner() {
         }
       }
 
-      const [s, cartRes] = await Promise.allSettled([
-        Promise.allSettled(sideWork).then((results) => {
-          const settingsResult = results[0];
-          return settingsResult.status === "fulfilled" ? settingsResult.value : null;
-        }),
+      // 3. Fetch settings, addresses, and cart state
+      const [settingsRes, cartRes] = await Promise.allSettled([
+        getSettings(),
         fetch("/api/cart"),
+        isBuyer
+          ? (async () => {
+              try {
+                const addrRes = await fetch("/api/customer/addresses");
+                const addrJson = await addrRes.json();
+                if (addrRes.ok && addrJson.success) {
+                  const addrs = addrJson.data?.addresses || [];
+                  setAddresses(addrs);
+                  const primary = addrs[0];
+                  if (primary) setSelectedAddressId(primary.id);
+                }
+              } catch {
+                /* optional */
+              }
+            })()
+          : Promise.resolve(),
       ]);
 
-      // Apply settings (getSettings return value)
-      if (s.status === "fulfilled" && s.value) {
-        const settings = s.value as Awaited<ReturnType<typeof getSettings>>;
+      // Apply settings
+      if (settingsRes.status === "fulfilled" && settingsRes.value) {
+        const settings = settingsRes.value as Awaited<ReturnType<typeof getSettings>>;
         if (settings) {
           if (typeof settings.minimumRfqValue === "number")
             setMinimumRfqValue(settings.minimumRfqValue);
@@ -1225,10 +1227,21 @@ function CartRFQPageInner() {
 
                 {/* Buyer / Contact Details Summary */}
                 <div className="pt-4 border-t border-[#E2E4E8] space-y-2.5">
-                  <div className="font-bold text-sm text-[#111315] uppercase tracking-wider">
-                    Buyer Details
+                  <div className="flex items-center justify-between">
+                    <div className="font-bold text-sm text-[#111315] uppercase tracking-wider">
+                      Buyer Details
+                    </div>
+                    {customer?.id && (contactName && contactPhone && !editingContact) && (
+                      <button
+                        type="button"
+                        onClick={() => setEditingContact(true)}
+                        className="text-xs text-[#6B7280] hover:text-[#111315] font-semibold underline"
+                      >
+                        Edit
+                      </button>
+                    )}
                   </div>
-                  {customer?.id ? (
+                  {customer?.id && !editingContact && (contactName && contactPhone) ? (
                     <div className="space-y-1 text-sm text-[#6B7280]">
                       <div className="font-bold text-base text-[#111315]">{contactName || "Verified Buyer"}</div>
                       <div>{contactEmail} • {contactPhone}</div>
@@ -1259,6 +1272,17 @@ function CartRFQPageInner() {
                         value={contactPhone}
                         onChange={(e) => setContactPhone(e.target.value)}
                       />
+                      {customer?.id && editingContact && (
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => setEditingContact(false)}
+                            className="text-xs text-[#111315] font-semibold px-2 py-1 bg-[#F1F3F5] rounded-lg hover:bg-[#E2E4E8]"
+                          >
+                            Done
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

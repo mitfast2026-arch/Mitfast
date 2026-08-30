@@ -71,6 +71,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
       .from('products')
       .update({
         approval_status: 'rejected',
+        publication_status: 'unpublished',
         rejection_reason: rejectionReason,
         updated_at: new Date().toISOString(),
       })

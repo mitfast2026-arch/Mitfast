@@ -12,7 +12,6 @@ export interface BusinessSettingsData {
   businessAddress: string | null;
   website: string | null;
   minimumRfqValue: number;
-  defaultGstRate: number;
   currency: string;
   maxProductImages: number;
   supplierApprovalRequired: boolean;
@@ -44,7 +43,7 @@ export async function getBusinessSettings(force = false): Promise<ServerResult<B
     const { data: settings, error } = await adminClient
       .from('business_settings')
       .select(
-        'id, company_name, logo_url, products_banner_url, business_email, business_phone, business_address, website, minimum_rfq_value, default_gst_rate, currency, max_product_images, supplier_approval_required, product_approval_required, google_login_enabled',
+        'id, company_name, logo_url, products_banner_url, business_email, business_phone, business_address, website, minimum_rfq_value, currency, max_product_images, supplier_approval_required, product_approval_required, google_login_enabled',
       )
       .limit(1)
       .single();
@@ -63,7 +62,6 @@ export async function getBusinessSettings(force = false): Promise<ServerResult<B
       businessAddress: settings.business_address,
       website: settings.website,
       minimumRfqValue: settings.minimum_rfq_value,
-      defaultGstRate: settings.default_gst_rate,
       currency: settings.currency,
       maxProductImages: settings.max_product_images,
       supplierApprovalRequired: settings.supplier_approval_required,
@@ -113,7 +111,6 @@ export async function updateBusinessSettings(
     if (d.businessAddress !== undefined) updatePayload.business_address = d.businessAddress;
     if (d.website !== undefined) updatePayload.website = d.website;
     if (d.minimumRfqValue !== undefined) updatePayload.minimum_rfq_value = d.minimumRfqValue;
-    if (d.defaultGstRate !== undefined) updatePayload.default_gst_rate = d.defaultGstRate;
     if (d.currency !== undefined) updatePayload.currency = d.currency.toUpperCase();
     if (d.maxProductImages !== undefined) updatePayload.max_product_images = d.maxProductImages;
     if (d.supplierApprovalRequired !== undefined) updatePayload.supplier_approval_required = d.supplierApprovalRequired;

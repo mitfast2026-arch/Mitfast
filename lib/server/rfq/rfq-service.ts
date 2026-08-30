@@ -1,7 +1,12 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getCustomerCart, clearCustomerCart } from '@/lib/server/cart/cart-service';
 import { getBusinessSettings } from '@/lib/server/settings/settings-service';
-import { negotiateRfqSchema, rejectRfqSchema, submitRfqSchema } from '@/lib/validation/rfq.schema';
+import {
+  negotiateRfqSchema,
+  rejectRfqSchema,
+  submitRfqSchema,
+  editRfqSchema,
+} from '@/lib/validation/rfq.schema';
 import { convertEnquiryToRfqSchema } from '@/lib/validation/enquiry.schema';
 import { calculatePricing, roundCurrency } from '@/lib/server/pricing/calculate-price';
 import { ensureCustomerFromGuest } from '@/lib/server/auth/ensure-customer-from-guest';
@@ -12,7 +17,6 @@ import { mapRpcError } from '@/lib/server/db/rpc-errors';
 import { sanitizePostgrestSearch } from '@/lib/server/db/sanitize-search';
 import {
   allowedFrom,
-  ENQUIRY_TRANSITIONS,
   RFQ_TRANSITIONS,
   transitionStatus,
 } from '@/lib/server/db/conditional-update';
@@ -356,7 +360,7 @@ export async function submitRfqFromCart(
 
 /**
  * Admin converts a qualified enquiry into an RFQ for price negotiation.
- * Bypasses cart/minimum-RFQ rules — this is an internal sales step.
+ * Supports multi-line conversion without dropping extra line items.
  */
 export async function createRfqFromEnquiry(
   formData: unknown,
@@ -372,7 +376,13 @@ export async function createRfqFromEnquiry(
       };
     }
 
-    const { enquiryId, quantity, productId: clientProductId, deliveryAddress } = validated.data;
+    const {
+      enquiryId,
+      quantity,
+      productId: clientProductId,
+      items: clientItems,
+      deliveryAddress,
+    } = validated.data;
     const adminClient = createAdminClient();
 
     const { data: enquiry, error: enquiryError } = await adminClient
@@ -385,30 +395,86 @@ export async function createRfqFromEnquiry(
       return { success: false, error: { message: 'Enquiry not found', code: 'NOT_FOUND' } };
     }
 
-    const resolvedProductId = enquiry.product_id || clientProductId;
-    if (!resolvedProductId) {
+    // Determine items to convert
+    let rawItems: Array<{ productId: string; quantity: number }> = [];
+
+    if (clientItems && clientItems.length > 0) {
+      rawItems = clientItems;
+    } else if (Array.isArray(enquiry.line_items) && enquiry.line_items.length > 0) {
+      rawItems = enquiry.line_items
+        .filter((li: any) => Boolean(li.product_id || li.productId))
+        .map((li: any) => ({
+          productId: String(li.product_id || li.productId),
+          quantity: Math.max(1, Number(li.quantity) || quantity || 1),
+        }));
+    } else {
+      const resolvedProductId = enquiry.product_id || clientProductId;
+      if (!resolvedProductId) {
+        return {
+          success: false,
+          error: { message: 'Select a product before creating an RFQ from this enquiry', code: 'VALIDATION_ERROR' },
+        };
+      }
+      rawItems = [{ productId: resolvedProductId, quantity: quantity || 1 }];
+    }
+
+    if (rawItems.length === 0) {
       return {
         success: false,
-        error: { message: 'Select a product before creating an RFQ from this enquiry', code: 'VALIDATION_ERROR' },
+        error: { message: 'Select at least one product before creating an RFQ', code: 'VALIDATION_ERROR' },
       };
     }
 
-    const { data: product, error: prodError } = await adminClient
+    const productIds = rawItems.map((i) => i.productId);
+    const { data: products, error: prodError } = await adminClient
       .from('products')
       .select('id, name, selling_price, discount, gst_rate, gst_included, moq')
-      .eq('id', resolvedProductId)
-      .single();
+      .in('id', productIds);
 
-    if (prodError || !product) {
-      return { success: false, error: { message: 'Product not found', code: 'NOT_FOUND' } };
+    if (prodError || !products || products.length === 0) {
+      return { success: false, error: { message: 'One or more products not found', code: 'NOT_FOUND' } };
     }
 
-    if (quantity < (product.moq || 1)) {
-      return {
-        success: false,
-        error: { message: `Quantity must be at least MOQ (${product.moq})`, code: 'BELOW_MOQ' },
-      };
+    const productMap = new Map(products.map((p) => [p.id, p]));
+
+    let originalTotal = 0;
+    const processedItems: Array<{
+      product_id: string;
+      product_name_snapshot: string;
+      quantity: number;
+      unit_price: number;
+    }> = [];
+
+    for (const item of rawItems) {
+      const product = productMap.get(item.productId);
+      if (!product) {
+        return { success: false, error: { message: `Product ${item.productId} not found`, code: 'NOT_FOUND' } };
+      }
+
+      const effectiveQty = Math.max(item.quantity, product.moq || 1);
+      const priced = calculatePricing({
+        supplier_price: Number(product.selling_price || 0),
+        profit_type: 'fixed',
+        profit_value: 0,
+        discount: Number(product.discount || 0),
+        gst_rate: Number(product.gst_rate ?? 0),
+        gst_included: Boolean(product.gst_included ?? false),
+        quantity: effectiveQty,
+      });
+
+      const unitPrice = priced.discounted_unit_price;
+      const lineTotal = roundCurrency(effectiveQty * unitPrice);
+      originalTotal += lineTotal;
+
+      processedItems.push({
+        product_id: product.id,
+        product_name_snapshot: product.name,
+        quantity: effectiveQty,
+        unit_price: unitPrice,
+      });
     }
+
+    originalTotal = roundCurrency(originalTotal);
 
     let customerId = enquiry.customer_id;
     if (!customerId) {
@@ -429,18 +495,6 @@ export async function createRfqFromEnquiry(
       customerId = provisioned.data.customerId;
     }
 
-    const priced = calculatePricing({
-      supplier_price: Number(product.selling_price || 0),
-      profit_type: 'fixed',
-      profit_value: 0,
-      discount: Number(product.discount || 0),
-      gst_rate: Number(product.gst_rate ?? 18),
-      gst_included: Boolean(product.gst_included ?? false),
-      quantity,
-    });
-    const unitPrice = priced.discounted_unit_price;
-    const originalTotal = roundCurrency(quantity * unitPrice);
-
     const addressSnapshot = deliveryAddress || {
       address_line_1: 'To be confirmed',
       address_line_2: null,
@@ -452,6 +506,11 @@ export async function createRfqFromEnquiry(
 
     const rfqNumber = await getNextRfqNumber(adminClient);
 
+    // Try multi-item atomic RPC
+    let rpcSuccess = false;
+    let createdRfqId = '';
+    let createdRfqNumber = '';
+
     const { data: rpcRows, error: rpcError } = await (adminClient as any).rpc(
       'create_rfq_from_enquiry_atomic',
       {
@@ -461,29 +520,117 @@ export async function createRfqFromEnquiry(
         p_delivery_address: addressSnapshot,
         p_customer_message: enquiry.message,
         p_original_total: originalTotal,
-        p_product_id: product.id,
-        p_product_name_snapshot: product.name,
-        p_quantity: quantity,
-        p_unit_price: unitPrice,
+        p_items: processedItems,
       }
     );
 
-    if (rpcError) {
-      return { success: false, error: mapRpcError(rpcError) };
+    if (!rpcError) {
+      const row = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+      if (row?.rfq_id) {
+        rpcSuccess = true;
+        createdRfqId = row.rfq_id;
+        createdRfqNumber = row.rfq_number || rfqNumber;
+      }
+    } else if (processedItems.length === 1) {
+      // Try single-item RPC fallback for backward compatibility
+      const single = processedItems[0];
+      const { data: sRows, error: sErr } = await (adminClient as any).rpc(
+        'create_rfq_from_enquiry_atomic',
+        {
+          p_enquiry_id: enquiryId,
+          p_customer_id: customerId,
+          p_rfq_number: rfqNumber,
+          p_delivery_address: addressSnapshot,
+          p_customer_message: enquiry.message,
+          p_original_total: originalTotal,
+          p_product_id: single.product_id,
+          p_product_name_snapshot: single.product_name_snapshot,
+          p_quantity: single.quantity,
+          p_unit_price: single.unit_price,
+        }
+      );
+      if (!sErr) {
+        const sRow = Array.isArray(sRows) ? sRows[0] : sRows;
+        if (sRow?.rfq_id) {
+          rpcSuccess = true;
+          createdRfqId = sRow.rfq_id;
+          createdRfqNumber = sRow.rfq_number || rfqNumber;
+        }
+      }
     }
 
-    const row = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
-    if (!row?.rfq_id) {
-      return { success: false, error: { message: 'Failed to create RFQ', code: 'DATABASE_ERROR' } };
+    if (rpcSuccess && createdRfqId) {
+      invalidateAdminCaches();
+      void notifySuppliersForRfq(createdRfqId);
+
+      return {
+        success: true,
+        data: { rfqId: createdRfqId, rfqNumber: createdRfqNumber },
+      };
     }
 
-    invalidateAdminCaches();
-    void notifySuppliersForRfq(row.rfq_id);
+    const {
+      isRpcMissing,
+      allowUnsafeDbFallback,
+      databaseMisconfiguredError,
+    } = await import('@/lib/server/db/production-guards');
 
-    return {
-      success: true,
-      data: { rfqId: row.rfq_id, rfqNumber: row.rfq_number || rfqNumber },
-    };
+    if (isRpcMissing(rpcError, 'create_rfq_from_enquiry_atomic')) {
+      if (!allowUnsafeDbFallback()) {
+        return databaseMisconfiguredError('Enquiry to RFQ conversion');
+      }
+
+      // Dev-only fallback
+      const { data: rfq, error: rfqErr } = await adminClient
+        .from('rfqs')
+        .insert({
+          rfq_number: rfqNumber,
+          customer_id: customerId,
+          enquiry_id: enquiryId,
+          status: 'submitted',
+          delivery_address_snapshot: addressSnapshot,
+          customer_message: enquiry.message,
+          original_total: originalTotal,
+          final_total: null,
+        })
+        .select()
+        .single();
+
+      if (rfqErr || !rfq) {
+        return { success: false, error: { message: rfqErr?.message || 'Failed to create RFQ', code: 'DATABASE_ERROR' } };
+      }
+
+      const itemInserts = processedItems.map((item) => ({
+        rfq_id: rfq.id,
+        product_id: item.product_id,
+        product_name_snapshot: item.product_name_snapshot,
+        original_quantity: item.quantity,
+        original_unit_price: item.unit_price,
+        final_quantity: null,
+        final_unit_price: null,
+      }));
+
+      const { error: itemsErr } = await adminClient.from('rfq_items').insert(itemInserts);
+      if (itemsErr) {
+        await adminClient.from('rfqs').delete().eq('id', rfq.id);
+        return { success: false, error: { message: 'Failed to create RFQ items', code: 'DATABASE_ERROR' } };
+      }
+
+      await adminClient
+        .from('enquiries')
+        .update({ status: 'converted_to_rfq', updated_at: new Date().toISOString() })
+        .eq('id', enquiryId);
+
+      invalidateAdminCaches();
+      void notifySuppliersForRfq(rfq.id);
+
+      return {
+        success: true,
+        data: { rfqId: rfq.id, rfqNumber },
+      };
+    }
+
+    return { success: false, error: mapRpcError(rpcError) };
   } catch (error) {
     console.error('[createRfqFromEnquiry] Error:', error);
     return {
@@ -492,6 +639,269 @@ export async function createRfqFromEnquiry(
     };
   }
   });
+}
+
+/**
+ * Admin edits RFQ line items, adds/removes products, adjusts prices, and updates customer details.
+ * Atomically updates totals and enforces >= 1 line item rule.
+ */
+export async function adminEditRfq(
+  formData: unknown
+): Promise<ServerResult<{ updated: boolean; rfqId: string }>> {
+  try {
+    const validated = editRfqSchema.safeParse(formData);
+    if (!validated.success) {
+      return {
+        success: false,
+        error: { message: validated.error.errors[0].message, code: 'VALIDATION_ERROR' },
+      };
+    }
+
+    const { rfqId, items, deliveryAddress, customerMessage, contact } = validated.data;
+    const adminClient = createAdminClient();
+
+    const { data: rfq, error: rfqError } = await adminClient
+      .from('rfqs')
+      .select('id, customer_id, status, delivery_address_snapshot, customer_message, original_total, final_total')
+      .eq('id', rfqId)
+      .single();
+
+    if (rfqError || !rfq) {
+      return { success: false, error: { message: 'RFQ not found', code: 'NOT_FOUND' } };
+    }
+
+    if (rfq.status === 'converted_to_order' || rfq.status === 'rejected') {
+      return {
+        success: false,
+        error: { message: `RFQ cannot be edited in ${rfq.status} status`, code: 'INVALID_STATUS' },
+      };
+    }
+
+    if (!items || items.length === 0) {
+      return {
+        success: false,
+        error: { message: 'RFQ must contain at least one product line', code: 'VALIDATION_ERROR' },
+      };
+    }
+
+    // Update customer contact if provided
+    if (contact && rfq.customer_id) {
+      const profilePatch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      if (contact.fullName) profilePatch.full_name = contact.fullName.trim();
+      if (contact.email) profilePatch.email = contact.email.trim().toLowerCase();
+      if (contact.phone) profilePatch.phone = contact.phone.trim();
+      if ('companyName' in contact && (contact as any).companyName) {
+        profilePatch.company_name = (contact as any).companyName.trim();
+      }
+
+      await adminClient
+        .from('profiles')
+        .update(profilePatch as any)
+        .eq('id', rfq.customer_id);
+    }
+
+    // Batch fetch product info
+    const productIds = items.map((i) => i.productId).filter((id): id is string => Boolean(id));
+    let productMap = new Map<string, any>();
+    if (productIds.length > 0) {
+      const { data: products } = await adminClient
+        .from('products')
+        .select('id, name, selling_price, discount, gst_rate, gst_included, moq')
+        .in('id', productIds);
+      if (products) {
+        productMap = new Map(products.map((p) => [p.id, p]));
+      }
+    }
+
+    const processedItems = items.map((item) => {
+      const product = item.productId ? productMap.get(item.productId) : null;
+      const qty = item.quantity ?? item.originalQuantity ?? 1;
+      let unitPrice = item.unitPrice ?? item.originalUnitPrice;
+      if (unitPrice === undefined && product) {
+        const priced = calculatePricing({
+          supplier_price: Number(product.selling_price || 0),
+          profit_type: 'fixed',
+          profit_value: 0,
+          discount: Number(product.discount || 0),
+          gst_rate: Number(product.gst_rate ?? 0),
+          gst_included: Boolean(product.gst_included ?? false),
+          quantity: qty,
+        });
+        unitPrice = priced.discounted_unit_price;
+      }
+      return {
+        id: item.id || null,
+        product_id: item.productId || null,
+        product_name_snapshot: item.productNameSnapshot || product?.name || 'Product',
+        original_quantity: qty,
+        original_unit_price: roundCurrency(unitPrice ?? 0),
+        final_quantity: item.finalQuantity || null,
+        final_unit_price: item.finalUnitPrice !== undefined && item.finalUnitPrice !== null ? roundCurrency(item.finalUnitPrice) : null,
+      };
+    });
+
+    const { error: rpcError } = await (adminClient as any).rpc('edit_rfq_atomic', {
+      p_rfq_id: rfqId,
+      p_items: processedItems,
+      p_delivery_address: deliveryAddress ?? null,
+      p_customer_message: customerMessage ?? null,
+    });
+
+    if (!rpcError) {
+      invalidateAdminCaches();
+      return { success: true, data: { updated: true, rfqId } };
+    }
+
+    const { isRpcMissing, allowUnsafeDbFallback, databaseMisconfiguredError } = await import(
+      '@/lib/server/db/production-guards'
+    );
+
+    if (isRpcMissing(rpcError, 'edit_rfq_atomic')) {
+      if (!allowUnsafeDbFallback()) {
+        return databaseMisconfiguredError('RFQ editing');
+      }
+
+      // Dev-only fallback
+      const keepIds: string[] = [];
+      let origSubtotal = 0;
+      let finalSubtotal = 0;
+      let hasFinal = false;
+
+      for (const item of processedItems) {
+        const origPrice = Number(item.original_unit_price);
+        const origQty = Number(item.original_quantity);
+        const finalPrice = item.final_unit_price !== null ? Number(item.final_unit_price) : null;
+        const finalQty = item.final_quantity !== null ? Number(item.final_quantity) : null;
+
+        origSubtotal += origQty * origPrice;
+        if (finalPrice !== null) {
+          hasFinal = true;
+          finalSubtotal += (finalQty ?? origQty) * finalPrice;
+        } else {
+          finalSubtotal += (finalQty ?? origQty) * origPrice;
+        }
+
+        if (item.id) {
+          await adminClient
+            .from('rfq_items')
+            .update({
+              product_id: item.product_id,
+              product_name_snapshot: item.product_name_snapshot,
+              original_quantity: origQty,
+              original_unit_price: origPrice,
+              final_quantity: finalQty,
+              final_unit_price: finalPrice,
+            })
+            .eq('id', item.id)
+            .eq('rfq_id', rfqId);
+          keepIds.push(item.id);
+        } else {
+          const { data: inserted } = await adminClient
+            .from('rfq_items')
+            .insert({
+              rfq_id: rfqId,
+              product_id: item.product_id,
+              product_name_snapshot: item.product_name_snapshot,
+              original_quantity: origQty,
+              original_unit_price: origPrice,
+              final_quantity: finalQty,
+              final_unit_price: finalPrice,
+            })
+            .select('id')
+            .single();
+          if (inserted?.id) keepIds.push(inserted.id);
+        }
+      }
+
+      // Delete removed lines
+      if (keepIds.length > 0) {
+        await adminClient
+          .from('rfq_items')
+          .delete()
+          .eq('rfq_id', rfqId)
+          .not('id', 'in', `(${keepIds.join(',')})`);
+      }
+
+      const updateHeader: Record<string, unknown> = {
+        original_total: roundCurrency(origSubtotal),
+        final_total: hasFinal || rfq.final_total !== null ? roundCurrency(finalSubtotal) : null,
+        updated_at: new Date().toISOString(),
+      };
+      if (deliveryAddress) updateHeader.delivery_address_snapshot = deliveryAddress;
+      if (customerMessage !== undefined) updateHeader.customer_message = customerMessage;
+
+      await adminClient.from('rfqs').update(updateHeader as any).eq('id', rfqId);
+
+      invalidateAdminCaches();
+      return { success: true, data: { updated: true, rfqId } };
+    }
+
+    return { success: false, error: mapRpcError(rpcError) };
+  } catch (error) {
+    console.error('[adminEditRfq] Error:', error);
+    return { success: false, error: { message: 'Failed to edit RFQ', code: 'INTERNAL_ERROR' } };
+  }
+}
+
+/**
+ * Retrieve single RFQ detail with full items and authorization checks.
+ */
+export async function getRfqDetail(
+  rfqId: string,
+  options?: { customerId?: string; supplierId?: string; isAdmin?: boolean }
+): Promise<ServerResult<{ rfq: any }>> {
+  try {
+    const adminClient = createAdminClient();
+    const { data: rfq, error } = await adminClient
+      .from('rfqs')
+      .select(`
+        *,
+        customer:profiles!rfqs_customer_id_fkey(id, full_name, email, phone),
+        enquiry:enquiries(id, guest_name, guest_email, guest_phone, country, company_name, enquiry_type),
+        items:rfq_items(
+          id,
+          product_id,
+          product_name_snapshot,
+          original_quantity,
+          original_unit_price,
+          final_quantity,
+          final_unit_price,
+          product:products(
+            id,
+            sku,
+            name,
+            selling_price,
+            moq,
+            supplier_id
+          )
+        )
+      `)
+      .eq('id', rfqId)
+      .maybeSingle();
+
+    if (error || !rfq) {
+      return { success: false, error: { message: 'RFQ not found', code: 'NOT_FOUND' } };
+    }
+
+    if (!options?.isAdmin) {
+      if (options?.customerId && rfq.customer_id !== options.customerId) {
+        return { success: false, error: { message: 'Forbidden', code: 'FORBIDDEN' } };
+      }
+      if (options?.supplierId) {
+        const ownsAny = (rfq.items || []).some(
+          (itm: any) => (itm.product as any)?.supplier_id === options.supplierId
+        );
+        if (!ownsAny) {
+          return { success: false, error: { message: 'Forbidden', code: 'FORBIDDEN' } };
+        }
+      }
+    }
+
+    return { success: true, data: { rfq } };
+  } catch (error) {
+    console.error('[getRfqDetail] Error:', error);
+    return { success: false, error: { message: 'Failed to fetch RFQ detail', code: 'INTERNAL_ERROR' } };
+  }
 }
 
 /**
@@ -728,7 +1138,7 @@ export async function adminRejectRfq(formData: unknown): Promise<ServerResult<{ 
 }
 
 /**
- * Admin hard deletes an RFQ (per spec Sections 46 & 109).
+ * Admin hard deletes an RFQ.
  */
 export async function adminDeleteRfq(rfqId: string): Promise<ServerResult<{ deleted: boolean }>> {
   try {
@@ -739,6 +1149,7 @@ export async function adminDeleteRfq(rfqId: string): Promise<ServerResult<{ dele
       return { success: false, error: { message: error.message, code: 'DATABASE_ERROR' } };
     }
 
+    invalidateAdminCaches();
     return { success: true, data: { deleted: true } };
   } catch (error) {
     console.error('[adminDeleteRfq] Error:', error);
@@ -768,7 +1179,9 @@ export async function getCustomerRfqs(
         final_total,
         rejection_reason,
         delivery_address_snapshot,
+        customer_message,
         created_at,
+        updated_at,
         items:rfq_items(
           id,
           product_id,
@@ -832,6 +1245,7 @@ export async function getRfqsForAdmin(params: {
             sku,
             supplier_price,
             selling_price,
+            moq,
             supplier:suppliers(id, company_name)
           )
         )

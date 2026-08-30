@@ -8,6 +8,7 @@ import {
 import {
   normalizeStorefrontSupplier,
   incrementProductView,
+  trackStorefrontProductView,
   getStorefrontProductDetail,
 } from '@/lib/server/products/storefront-detail';
 import {
@@ -23,7 +24,7 @@ import {
   rejectProductSchema,
   requestChangesSchema,
 } from '@/lib/validation/product.schema';
-import { sanitizeRichTextHtml } from '@/lib/html/sanitize-rich-text.server';
+import { sanitizeRichTextHtml, isEmptyRichText } from '@/lib/html/sanitize-rich-text.server';
 import type { ServerResult } from '@/lib/server/auth/get-session';
 import type {
   ProductApprovalStatus,
@@ -39,7 +40,12 @@ import {
 } from '@/lib/server/db/conditional-update';
 import { invalidateAdminCaches } from '@/lib/server/db/invalidate-caches';
 
-export { getStorefrontProductDetail, incrementProductView, normalizeStorefrontSupplier };
+export {
+  getStorefrontProductDetail,
+  incrementProductView,
+  trackStorefrontProductView,
+  normalizeStorefrontSupplier,
+};
 
 async function getMaxProductImages(): Promise<number> {
   const settingsRes = await getBusinessSettings();
@@ -57,8 +63,11 @@ function buildImageRows(productId: string, imageUrls: string[], maxImages: numbe
 }
 
 function normalizeDescription(description?: string | null): string | null {
-  if (!description?.trim()) return null;
-  return sanitizeRichTextHtml(description);
+  if (!description || typeof description !== 'string' || isEmptyRichText(description)) {
+    return null;
+  }
+  const sanitized = sanitizeRichTextHtml(description);
+  return isEmptyRichText(sanitized) ? null : sanitized;
 }
 
 type ReplaceImagesResult = { success: true } | { success: false; message: string };
@@ -199,8 +208,13 @@ export async function syncPendingApprovalImageUrls(productId: string): Promise<v
 
   if (!request) return;
 
-  // Only sync live product_images into proposed_data for new product pending requests
-  if (request.status === 'pending' || request.request_type === 'new_product') {
+  // Sync live product_images into proposed_data for any open pending request
+  if (
+    request.status === 'pending' ||
+    request.status === 'update_pending' ||
+    request.request_type === 'new_product' ||
+    request.request_type === 'update'
+  ) {
     const { data: images } = await adminClient
       .from('product_images')
       .select('image_url')
@@ -260,7 +274,7 @@ export async function createProductBySupplier(
 
     const settingsRes = await getBusinessSettings();
     const settings = settingsRes.success ? settingsRes.data : null;
-    const gstRate = payloadGstRate ?? settings?.defaultGstRate ?? 18;
+    const gstRate = payloadGstRate ?? 0;
     const gstInc = gstIncluded ?? false;
     const discountAmt = discount ?? 0;
     const maxImages = settings?.maxProductImages ?? 8;
@@ -558,7 +572,7 @@ export async function createProductByAdmin(
 
     const settingsRes = await getBusinessSettings();
     const settings = settingsRes.success ? settingsRes.data : null;
-    const gstRate = payloadGstRate ?? settings?.defaultGstRate ?? 18;
+    const gstRate = payloadGstRate ?? 0;
     const gstInc = gstIncluded ?? false;
     const maxImages = settings?.maxProductImages ?? 8;
     const catalogMoq = moq ?? suggestedMoq ?? 100;
@@ -681,7 +695,7 @@ export async function saveProductDraft(
       profitType: data.profitType as ProfitType | undefined,
       profitValue: data.profitValue,
       discount: data.discount,
-      gstRate: data.gstRate ?? settings?.defaultGstRate ?? 18,
+      gstRate: data.gstRate ?? 0,
       gstIncluded: data.gstIncluded ?? false,
       minOrderValue: data.minOrderValue,
       ribbonLabel: data.ribbonLabel,
@@ -753,7 +767,7 @@ export async function submitProductUpdateBySupplier(
 
     const { data: existingProd, error: fetchError } = await adminClient
       .from('products')
-      .select('id, name, category_id, supplier_price, suggested_moq, supplier_id, publication_status, updated_at')
+      .select('id, name, sku, category_id, description, supplier_price, suggested_moq, supplier_id, publication_status, updated_at')
       .eq('id', productId)
       .eq('supplier_id', supplierId)
       .single();
@@ -768,11 +782,14 @@ export async function submitProductUpdateBySupplier(
       };
     }
 
+    const proposedDescription =
+      rawDescription !== undefined ? description : (existingProd.description ?? null);
+
     const proposed = {
       name: name ?? existingProd.name,
       category_id: categoryId ?? existingProd.category_id,
-      description,
-      sku,
+      description: proposedDescription,
+      sku: sku !== undefined ? sku : existingProd.sku,
       suggested_moq: suggestedMoq ?? existingProd.suggested_moq,
       supplier_price: supplierPrice ?? existingProd.supplier_price,
       specifications,
@@ -1101,7 +1118,15 @@ export async function approveProduct(requestId: string, adminUserId?: string): P
     };
     if (proposed.name) productUpdate.name = proposed.name;
     if (proposed.category_id) productUpdate.category_id = proposed.category_id;
-    if (proposed.description !== undefined) productUpdate.description = proposed.description;
+    if (proposed.description !== undefined) {
+      if (proposed.description !== null && !isEmptyRichText(proposed.description)) {
+        productUpdate.description = proposed.description;
+      } else if (proposed.description === null && proposed.clear_description === true) {
+        productUpdate.description = null;
+      } else if (!currentProduct.description) {
+        productUpdate.description = proposed.description;
+      }
+    }
     if (proposed.sku !== undefined) productUpdate.sku = proposed.sku;
     if (proposed.suggested_moq !== undefined) {
       productUpdate.suggested_moq = proposed.suggested_moq;
@@ -1316,12 +1341,17 @@ export async function rejectProduct(formData: unknown, adminUserId?: string): Pr
       };
     }
 
-    if (request.request_type === 'update') {
-      // Update rejection: keep live product approved; only close the request
+    const { data: currentProd } = await adminClient
+      .from('products')
+      .select('approval_status')
+      .eq('id', request.product_id)
+      .maybeSingle();
+
+    if (request.request_type === 'update' && currentProd?.approval_status === 'approved') {
+      // Update rejection on an already-approved live product: keep live product approved; only close the request
       await adminClient
         .from('products')
         .update({
-          approval_status: 'approved',
           rejection_reason: rejectionReason,
           updated_at: new Date().toISOString(),
         })
@@ -1331,6 +1361,7 @@ export async function rejectProduct(formData: unknown, adminUserId?: string): Pr
         .from('products')
         .update({
           approval_status: 'rejected',
+          publication_status: 'unpublished',
           rejection_reason: rejectionReason,
           updated_at: new Date().toISOString(),
         })
@@ -1395,11 +1426,16 @@ export async function requestProductChanges(
       .eq('id', requestId)
       .in('status', ['pending', 'update_pending']);
 
-    if (request.request_type === 'update') {
+    const { data: currentProd } = await adminClient
+      .from('products')
+      .select('approval_status')
+      .eq('id', request.product_id)
+      .maybeSingle();
+
+    if (request.request_type === 'update' && currentProd?.approval_status === 'approved') {
       await adminClient
         .from('products')
         .update({
-          approval_status: 'approved',
           rejection_reason: reviewNote,
           updated_at: new Date().toISOString(),
         })
@@ -1409,6 +1445,7 @@ export async function requestProductChanges(
         .from('products')
         .update({
           approval_status: 'rejected',
+          publication_status: 'unpublished',
           rejection_reason: reviewNote,
           updated_at: new Date().toISOString(),
         })
@@ -1642,7 +1679,15 @@ export async function getStorefrontProducts(params: {
       .limit(1, { foreignTable: 'product_images' });
 
     if (params.categoryId) {
-      query = query.eq('category_id', params.categoryId);
+      const catList = params.categoryId
+        .split(',')
+        .map((c) => c.trim())
+        .filter(Boolean);
+      if (catList.length === 1) {
+        query = query.eq('category_id', catList[0]);
+      } else if (catList.length > 1) {
+        query = query.in('category_id', catList);
+      }
     }
 
     if (params.search) {
@@ -1749,7 +1794,7 @@ export async function getProductsForAdmin(params: {
   approvalStatus?: ProductApprovalStatus;
   publicationStatus?: ProductPublicationStatus;
   archiveStatus?: ProductArchiveStatus;
-  sortBy?: 'newest' | 'oldest';
+  sortBy?: 'newest' | 'oldest' | 'price_asc' | 'price_desc' | 'name_asc' | 'name_desc';
 }): Promise<ServerResult<{ products: any[]; total: number; page: number; limit: number }>> {
   try {
     const adminClient = createAdminClient();
@@ -1773,6 +1818,7 @@ export async function getProductsForAdmin(params: {
         selling_price,
         discount,
         gst_rate,
+        gst_included,
         profit_type,
         profit_value,
         min_order_value,
@@ -1800,13 +1846,29 @@ export async function getProductsForAdmin(params: {
     if (params.archiveStatus) query = query.eq('archive_status', params.archiveStatus);
     if (params.search) {
       const q = sanitizeIlikePattern(params.search.trim());
-      if (q) query = query.ilike('name', `%${q}%`);
+      if (q) query = query.or(`name.ilike.%${q}%,sku.ilike.%${q}%`);
     }
 
-    if (params.sortBy === 'oldest') {
-      query = query.order('created_at', { ascending: true });
-    } else {
-      query = query.order('created_at', { ascending: false });
+    switch (params.sortBy) {
+      case 'oldest':
+        query = query.order('created_at', { ascending: true });
+        break;
+      case 'price_asc':
+        query = query.order('selling_price', { ascending: true });
+        break;
+      case 'price_desc':
+        query = query.order('selling_price', { ascending: false });
+        break;
+      case 'name_asc':
+        query = query.order('name', { ascending: true });
+        break;
+      case 'name_desc':
+        query = query.order('name', { ascending: false });
+        break;
+      case 'newest':
+      default:
+        query = query.order('created_at', { ascending: false });
+        break;
     }
 
     const { data: products, count, error } = await query.range(offset, offset + limit - 1);

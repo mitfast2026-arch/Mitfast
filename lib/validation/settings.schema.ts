@@ -11,7 +11,6 @@ export const updateBusinessSettingsSchema = z.object({
   businessAddress: z.preprocess(emptyToNull, z.string().nullable().optional()),
   website: z.preprocess(emptyToNull, z.string().url('Invalid website URL').nullable().optional()),
   minimumRfqValue: z.number().min(0, 'Minimum RFQ value must be non-negative').optional(),
-  defaultGstRate: z.number().min(0).max(100, 'GST rate must be between 0 and 100').optional(),
   currency: z.string().min(3).max(3, 'Currency code must be a 3-letter ISO code (e.g. INR, USD)').optional(),
   maxProductImages: z.number().int().min(1).max(20).optional(),
   supplierApprovalRequired: z.boolean().optional(),

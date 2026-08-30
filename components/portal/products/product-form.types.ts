@@ -105,7 +105,7 @@ export const EMPTY_PRODUCT_FORM: ProductFormValues = {
   profit: 15,
   discount: 0,
   discountEnabled: false,
-  gst: 18,
+  gst: 0,
   gstIncluded: false,
   minValue: 0,
   locationMode: '',

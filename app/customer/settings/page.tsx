@@ -9,6 +9,8 @@ import {
   AlertCircle,
   Fingerprint,
   Loader2,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { createBrowserClient } from '@/lib/supabase/client';
@@ -21,6 +23,8 @@ export default function CustomerSettingsPage() {
   const [user, setUser] = useState<any>(null);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(true);
   const [savingPassword, setSavingPassword] = useState(false);
   const [passwordSuccess, setPasswordSuccess] = useState('');
@@ -135,26 +139,52 @@ export default function CustomerSettingsPage() {
 
         <form onSubmit={handlePasswordUpdate} className="space-y-4">
           <div className="space-y-1.5">
-            <label className="block text-xs font-medium text-[#6B7280] mb-1">New password *</label>
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Minimum 6 characters"
-              className="w-full px-4 py-2.5 text-sm rounded-xl border border-[#D9DCE1] bg-[#F7F7F8] text-[#111315] focus:outline-none focus:border-[#111315] !rounded-xl"
-            />
+            <label className="block text-xs font-medium text-[#6B7280] mb-1" htmlFor="buyer-new-pw">New password *</label>
+            <div className="relative">
+              <input
+                id="buyer-new-pw"
+                type={showPassword ? 'text' : 'password'}
+                required
+                minLength={6}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Minimum 6 characters"
+                className="w-full px-4 pr-10 py-2.5 text-sm rounded-xl border border-[#D9DCE1] bg-[#F7F7F8] text-[#111315] focus:outline-none focus:border-[#111315] !rounded-xl"
+                autoComplete="new-password"
+              />
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6B7280] hover:text-[#111315] p-1 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-[#111315]"
+                onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
           <div className="space-y-1.5">
-            <label className="block text-xs font-medium text-[#6B7280] mb-1">Confirm password *</label>
-            <input
-              type="password"
-              required
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Repeat new password"
-              className="w-full px-4 py-2.5 text-sm rounded-xl border border-[#D9DCE1] bg-[#F7F7F8] text-[#111315] focus:outline-none focus:border-[#111315] !rounded-xl"
-            />
+            <label className="block text-xs font-medium text-[#6B7280] mb-1" htmlFor="buyer-confirm-pw">Confirm password *</label>
+            <div className="relative">
+              <input
+                id="buyer-confirm-pw"
+                type={showConfirmPassword ? 'text' : 'password'}
+                required
+                minLength={6}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Repeat new password"
+                className="w-full px-4 pr-10 py-2.5 text-sm rounded-xl border border-[#D9DCE1] bg-[#F7F7F8] text-[#111315] focus:outline-none focus:border-[#111315] !rounded-xl"
+                autoComplete="new-password"
+              />
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6B7280] hover:text-[#111315] p-1 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-[#111315]"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+              >
+                {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
           <button type="submit" disabled={savingPassword} className="buyer-cta">
             <KeyRound className="w-4 h-4" />

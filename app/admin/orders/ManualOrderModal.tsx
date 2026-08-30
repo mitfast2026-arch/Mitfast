@@ -18,6 +18,8 @@ type ProductOption = {
   name: string;
   selling_price: number;
   moq: number;
+  gst_rate?: number;
+  gst_included?: boolean;
 };
 
 type LineItem = {
@@ -110,14 +112,17 @@ export default function ManualOrderModal({ open, onClose, onCreated }: ManualOrd
           postal_code: address.postal_code.trim(),
           country: address.country.trim() || 'India',
         },
-        items: validItems.map((i) => ({
-          productId: i.productId,
-          quantity: i.quantity,
-          unitPrice: i.unitPrice,
-          gstRate: 18,
-          gstIncluded: false,
-          discount: 0,
-        })),
+        items: validItems.map((i) => {
+          const prod = products.find((p) => p.id === i.productId);
+          return {
+            productId: i.productId,
+            quantity: i.quantity,
+            unitPrice: i.unitPrice,
+            gstRate: prod?.gst_rate ?? 0,
+            gstIncluded: Boolean(prod?.gst_included),
+            discount: 0,
+          };
+        }),
       },
       { idempotencyKey: crypto.randomUUID() }
     );

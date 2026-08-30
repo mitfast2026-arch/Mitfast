@@ -8,6 +8,8 @@ import {
   Check,
   AlertCircle,
   Key,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
 
@@ -26,6 +28,8 @@ const DEFAULT_PREFS: NotificationPreferences = {
 export default function SupplierSettingsPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
   const [passwordSuccess, setPasswordSuccess] = useState('');
   const [passwordError, setPasswordError] = useState('');
@@ -174,27 +178,53 @@ export default function SupplierSettingsPage() {
 
           <div className="space-y-3">
             <div>
-              <label className="saas-label">New Password</label>
-              <input
-                type="password"
-                required
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="saas-input text-xs"
-              />
+              <label className="saas-label" htmlFor="sup-new-pw">New Password</label>
+              <div className="relative">
+                <input
+                  id="sup-new-pw"
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  minLength={6}
+                  placeholder="Minimum 6 characters"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="saas-input text-xs pr-9"
+                  autoComplete="new-password"
+                />
+                <button
+                  type="button"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-portal-muted hover:text-portal-fg p-1 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-portal-accent"
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
             </div>
 
             <div>
-              <label className="saas-label">Confirm New Password</label>
-              <input
-                type="password"
-                required
-                placeholder="••••••••"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className="saas-input text-xs"
-              />
+              <label className="saas-label" htmlFor="sup-confirm-pw">Confirm New Password</label>
+              <div className="relative">
+                <input
+                  id="sup-confirm-pw"
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  required
+                  minLength={6}
+                  placeholder="Repeat new password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="saas-input text-xs pr-9"
+                  autoComplete="new-password"
+                />
+                <button
+                  type="button"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-portal-muted hover:text-portal-fg p-1 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-portal-accent"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showConfirmPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
             </div>
           </div>
 

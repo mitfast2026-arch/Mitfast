@@ -27,23 +27,36 @@ export interface PricingOutput {
 }
 
 /**
+ * Safely parses any value into a finite number.
+ */
+export function safeNumber(val: unknown, fallback = 0): number {
+  if (typeof val === 'number') {
+    return Number.isFinite(val) ? val : fallback;
+  }
+  const parsed = Number(val);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/**
  * Rounds a number to exactly two decimal places avoiding floating-point inaccuracies.
  */
 export function roundCurrency(amount: number): number {
-  return Math.round((amount + Number.EPSILON) * 100) / 100;
+  const num = safeNumber(amount);
+  return Math.round((num + Number.EPSILON) * 100) / 100;
 }
 
 /**
  * Centralized pricing engine for the MITFAST platform.
  * Single source of truth for all product pricing, RFQ estimates, and order computations.
+ * Always operates on the product's own per-product GST rate and inclusion mode.
  */
 export function calculatePricing(input: PricingInput): PricingOutput {
-  const supplierPrice = Math.max(0, input.supplier_price);
-  const profitValue = Math.max(0, input.profit_value);
-  const discount = Math.max(0, input.discount ?? 0);
-  const gstRate = Math.max(0, Math.min(100, input.gst_rate));
+  const supplierPrice = Math.max(0, safeNumber(input.supplier_price));
+  const profitValue = Math.max(0, safeNumber(input.profit_value));
+  const discount = Math.max(0, safeNumber(input.discount, 0));
+  const gstRate = Math.max(0, Math.min(100, safeNumber(input.gst_rate, 0)));
   const gstIncluded = Boolean(input.gst_included);
-  const quantity = Math.max(1, input.quantity ?? 1);
+  const quantity = Math.max(1, Math.floor(safeNumber(input.quantity, 1)));
 
   // 1. Calculate profit amount & base selling price
   let profitAmount = 0;

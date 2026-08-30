@@ -46,7 +46,6 @@ export type ProductFormPanelProps = {
   categories: CategoryOption[];
   suppliers?: SupplierOption[];
   supplierName?: string;
-  defaultGstRate?: number;
   detailLoading?: boolean;
   onClose: () => void;
   onSuccess: () => void;
@@ -115,7 +114,6 @@ export default function ProductFormPanel({
   categories,
   suppliers = [],
   supplierName,
-  defaultGstRate = 18,
   detailLoading = false,
   onClose,
   onSuccess,
@@ -152,7 +150,7 @@ export default function ProductFormPanel({
         setValues(next);
         setInitialSnapshot(JSON.stringify(next));
       } else {
-        const next = { ...EMPTY_PRODUCT_FORM, gst: defaultGstRate };
+        const next = { ...EMPTY_PRODUCT_FORM };
         setValues(next);
         setInitialSnapshot(JSON.stringify(next));
       }
@@ -161,7 +159,7 @@ export default function ProductFormPanel({
       setUploadProgress(null);
       formSessionRef.current = createIdempotencyKey();
     },
-    [defaultGstRate]
+    []
   );
 
   useEffect(() => {
@@ -507,9 +505,13 @@ export default function ProductFormPanel({
     const requestId = product?.pendingRequest?.id;
     if (!requestId) {
       if (action === 'approve' && onApprove) {
-        onApprove();
-        onSuccess();
-        onClose();
+        try {
+          await Promise.resolve(onApprove());
+          onSuccess();
+          onClose();
+        } catch (err) {
+          setFormError(err instanceof Error ? err.message : 'Failed to approve product');
+        }
       }
       return;
     }
@@ -518,17 +520,20 @@ export default function ProductFormPanel({
     setFormError('');
     try {
       if (action === 'approve') {
-        if (product && mode === 'review-admin' && values.pendingImageFiles.length > 0) {
-          try {
-            await uploadImages(product.id);
-          } catch (err) {
-            setFormError(
-              err instanceof Error ? err.message : 'Failed to upload images before approval'
-            );
-            return;
+        if (product && mode === 'review-admin') {
+          if (values.pendingImageFiles.length > 0) {
+            try {
+              await uploadImages(product.id);
+            } catch (err) {
+              setFormError(
+                err instanceof Error ? err.message : 'Failed to upload images before approval'
+              );
+              return;
+            }
           }
-        }
-        if (product && mode === 'edit-admin') {
+          const saved = await handleSubmit(true);
+          if (!saved) return;
+        } else if (product && mode === 'edit-admin') {
           const saved = await handleSubmit(true);
           if (!saved) return;
         }

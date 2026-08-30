@@ -5,8 +5,8 @@ export const createManualOrderItemSchema = z.object({
   productId: z.string().uuid('Invalid product ID'),
   quantity: z.number().int().min(1, 'Quantity must be at least 1'),
   unitPrice: z.number().min(0, 'Unit price must be non-negative'),
-  gstRate: z.number().min(0).max(100).default(18),
-  gstIncluded: z.boolean().default(false),
+  gstRate: z.number().min(0).max(100).optional(),
+  gstIncluded: z.boolean().optional(),
   discount: z.number().min(0).default(0),
 });
 
@@ -38,8 +38,8 @@ export const editOrderSchema = z.object({
     productId: z.string().uuid('Invalid product ID').optional(),
     quantity: z.number().int().min(1),
     unitPrice: z.number().min(0),
-    gstRate: z.number().min(0).max(100).default(18),
-    gstIncluded: z.boolean().default(false),
+    gstRate: z.number().min(0).max(100).optional(),
+    gstIncluded: z.boolean().optional(),
     discount: z.number().min(0).default(0),
   })).min(1, 'At least one item required'),
 });

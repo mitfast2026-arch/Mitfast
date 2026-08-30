@@ -22,7 +22,7 @@ export const PORTAL_ROUTE_PREFETCH: Record<string, string[]> = {
   '/admin/enquiries': [`/api/enquiries?page=1&limit=${PORTAL_PAGE_LIMIT}`],
   '/admin/rfqs': [`/api/rfqs?page=1&limit=${PORTAL_PAGE_LIMIT}`],
   '/admin/orders': [
-    `/api/orders?convertedOnly=true&page=1&limit=${PORTAL_PAGE_LIMIT}&search=`,
+    `/api/orders?page=1&limit=${PORTAL_PAGE_LIMIT}&search=`,
   ],
   '/admin/categories': ['/api/categories?mode=admin&status=active'],
   '/admin/homepage': ['/api/admin/homepage'],

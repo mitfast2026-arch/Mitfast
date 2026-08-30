@@ -20,7 +20,6 @@ export type SiteSettings = {
   businessAddress: string | null;
   website: string | null;
   minimumRfqValue: number;
-  defaultGstRate: number;
   currency: string;
   googleLoginEnabled?: boolean;
 };

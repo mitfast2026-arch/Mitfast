@@ -24,7 +24,6 @@ import { invalidateSettings } from '@/lib/client/settings-cache';
 type SettingsData = {
   companyName: string;
   minimumRfqValue: number;
-  defaultGstRate: number;
   currency: string;
   maxProductImages: number;
   businessEmail: string | null;
@@ -44,7 +43,6 @@ export default function AdminSettingsPage() {
 
   const [companyName, setCompanyName] = useState(cached?.data.companyName || 'MITFAST');
   const [minimumRfqValue, setMinimumRfqValue] = useState(cached?.data.minimumRfqValue ?? 500000);
-  const [defaultGstRate, setDefaultGstRate] = useState(cached?.data.defaultGstRate ?? 18);
   const [currency, setCurrency] = useState(cached?.data.currency || 'INR');
   const [maxProductImages, setMaxProductImages] = useState(cached?.data.maxProductImages ?? 8);
   const [businessEmail, setBusinessEmail] = useState(cached?.data.businessEmail || '');
@@ -59,7 +57,6 @@ export default function AdminSettingsPage() {
   function applySettings(s: SettingsData) {
     setCompanyName(s.companyName || 'MITFAST');
     setMinimumRfqValue(s.minimumRfqValue ?? 500000);
-    setDefaultGstRate(s.defaultGstRate ?? 18);
     setCurrency(s.currency || 'INR');
     setMaxProductImages(s.maxProductImages ?? 8);
     setBusinessEmail(s.businessEmail || '');
@@ -113,7 +110,6 @@ export default function AdminSettingsPage() {
         body: JSON.stringify({
           companyName: companyName.trim(),
           minimumRfqValue,
-          defaultGstRate,
           currency: currency.trim().toUpperCase(),
           maxProductImages,
           businessEmail: businessEmail.trim() || null,
@@ -232,22 +228,6 @@ export default function AdminSettingsPage() {
               />
               <p className="text-[11px] text-portal-muted mt-1">
                 Cart and RFQ checkout block below this subtotal.
-              </p>
-            </div>
-
-            <div>
-              <label className="saas-label">Default GST rate (%)</label>
-              <input
-                type="number"
-                required
-                min={0}
-                max={100}
-                value={defaultGstRate}
-                onChange={(e) => setDefaultGstRate(parseFloat(e.target.value) || 0)}
-                className="saas-input type-metric text-xs"
-              />
-              <p className="text-[11px] text-portal-muted mt-1">
-                Pre-fills GST when suppliers create products.
               </p>
             </div>
 

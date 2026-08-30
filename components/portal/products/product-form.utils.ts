@@ -55,7 +55,7 @@ export function productToFormValues(product: ProductFormProduct): ProductFormVal
       '',
     supplierId: product.supplier_id || product.supplier?.id || '',
     description:
-      (isUpdatePending ? (proposed?.description as string | undefined) : undefined) ??
+      (proposed?.description as string | undefined) ??
       product.description ??
       '',
     sku: (proposed?.sku as string) ?? product.sku ?? '',
@@ -76,7 +76,7 @@ export function productToFormValues(product: ProductFormProduct): ProductFormVal
     profit: product.profit_value ?? 15,
     discount,
     discountEnabled: discount > 0,
-    gst: (proposed?.gst_rate as number) ?? product.gst_rate ?? 18,
+    gst: (proposed?.gst_rate as number) ?? product.gst_rate ?? 0,
     gstIncluded: (proposed?.gst_included as boolean) ?? product.gst_included ?? false,
     minValue: (proposed?.min_order_value as number) ?? product.min_order_value ?? 0,
     locationMode: loc.mode,

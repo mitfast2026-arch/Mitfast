@@ -45,7 +45,7 @@ function AdminOrdersPageContent() {
 
   const loadOrders = useCallback(async (showLoading = true, opts?: { force?: boolean }) => {
     const statusParam = statusFilter === 'all' ? '' : `&status=${statusFilter}`;
-    const url = `/api/orders?convertedOnly=true&page=${page}&limit=${PORTAL_PAGE_LIMIT}&search=${encodeURIComponent(debouncedSearch)}${statusParam}`;
+    const url = `/api/orders?page=${page}&limit=${PORTAL_PAGE_LIMIT}&search=${encodeURIComponent(debouncedSearch)}${statusParam}`;
     const force = Boolean(opts?.force);
     const existing = force ? null : peekPortalCache<{ orders: any[]; total: number }>(url);
     if (existing) {
@@ -122,7 +122,7 @@ function AdminOrdersPageContent() {
             productId: itm.product_id,
             quantity: Number(itm.quantity),
             unitPrice: Number(itm.unit_price),
-            gstRate: itm.gst_rate ?? 18,
+            gstRate: itm.gst_rate ?? 0,
             gstIncluded: itm.gst_included ?? false,
             discount: itm.discount ?? 0,
           })),

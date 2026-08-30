@@ -12,6 +12,7 @@ import {
   Check,
   Loader2,
   MoreVertical,
+  Building2,
 } from 'lucide-react';
 import { RemoteImage } from '@/components/ui/RemoteImage';
 import type { AdminProduct } from './types';
@@ -96,27 +97,38 @@ export default function ProductCard({
   const overflow = badges.length - visibleBadges.length;
 
   const categoryLabel = p.category?.name || '—';
-  const supplierLabel = p.supplier?.company_name || 'Unknown';
+  const supplierLabel = p.supplier?.company_name || 'Direct / Platform';
+  const gstRate = p.gst_rate ?? 0;
+  const gstIncluded = Boolean(p.gst_included);
 
   return (
     <div
       className={`saas-panel !p-0 overflow-hidden flex flex-col h-full ${isArchived ? 'opacity-60' : ''}`}
     >
-      <div className="px-4 pt-4 flex flex-nowrap items-center gap-1.5 overflow-hidden">
-        {visibleBadges.map((b) => (
-          <StatusPill key={b.key} label={b.label} tone={b.tone} />
-        ))}
-        {overflow > 0 ? (
-          <span
-            className="saas-badge-neutral shrink-0"
-            title={badges
-              .slice(2)
-              .map((b) => b.label)
-              .join(', ')}
-          >
-            +{overflow}
+      {/* Admin-Only Supplier Header */}
+      <div className="px-4 pt-3.5 pb-2 border-b border-portal-border/60 bg-portal-inset/40 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 min-w-0" title={`Supplier: ${supplierLabel}`}>
+          <Building2 className="w-3.5 h-3.5 shrink-0 text-portal-muted" />
+          <span className="text-xs font-semibold text-portal-text truncate">
+            {supplierLabel}
           </span>
-        ) : null}
+        </div>
+        <div className="flex flex-nowrap items-center gap-1 shrink-0">
+          {visibleBadges.map((b) => (
+            <StatusPill key={b.key} label={b.label} tone={b.tone} />
+          ))}
+          {overflow > 0 ? (
+            <span
+              className="saas-badge-neutral shrink-0 text-[10px]"
+              title={badges
+                .slice(2)
+                .map((b) => b.label)
+                .join(', ')}
+            >
+              +{overflow}
+            </span>
+          ) : null}
+        </div>
       </div>
 
       <div className="relative aspect-[4/3] bg-portal-inset mx-4 mt-3 rounded-2xl overflow-hidden">
@@ -130,7 +142,7 @@ export default function ProductCard({
       </div>
 
       <div className="p-4 flex flex-col flex-1 gap-3">
-        <div className="min-w-0">
+        <div className="min-w-0 space-y-1">
           <h3
             className="text-sm font-medium text-portal-text truncate leading-snug"
             title={p.name}
@@ -138,22 +150,36 @@ export default function ProductCard({
             {p.name}
           </h3>
           <p
-            className="text-sm text-portal-muted mt-0.5 truncate"
-            title={`${categoryLabel} · ${supplierLabel}`}
+            className="text-xs text-portal-muted truncate"
+            title={`${categoryLabel}${p.sku ? ` · SKU: ${p.sku}` : ''}`}
           >
-            {categoryLabel} · {supplierLabel}
+            {categoryLabel}{p.sku ? ` · ${p.sku}` : ''}
           </p>
-          <p className="text-sm text-portal-text mt-1 type-metric">
-            ₹{netPrice.toLocaleString('en-IN')} · MOQ {p.moq}
-          </p>
+
+          <div className="pt-1 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
+            <div className="text-sm font-semibold text-portal-text type-metric">
+              ₹{netPrice.toLocaleString('en-IN')}
+              <span className="text-xs font-normal text-portal-muted ml-1">· MOQ {p.moq || 1}</span>
+            </div>
+            <span className="text-[11px] font-medium text-portal-muted px-1.5 py-0.5 rounded bg-portal-inset border border-portal-border">
+              GST {gstRate}% {gstIncluded ? 'incl.' : 'excl.'}
+            </span>
+          </div>
+
+          {p.supplier_price != null && (
+            <div className="text-[11px] text-portal-muted">
+              Factory: ₹{p.supplier_price.toLocaleString('en-IN')}
+              {p.discount ? ` · Disc: ₹${p.discount}` : ''}
+            </div>
+          )}
         </div>
 
-        <div className="mt-auto flex items-center gap-2">
+        <div className="mt-auto flex items-center gap-2 pt-2">
           <button
             type="button"
             onClick={() => onEdit(p)}
             disabled={detailLoading && selectedProductId === p.id}
-            className="saas-btn-secondary flex-1 text-sm py-2 flex items-center justify-center gap-1.5 disabled:opacity-50"
+            className="saas-btn-secondary flex-1 text-xs py-2 flex items-center justify-center gap-1.5 disabled:opacity-50"
           >
             {detailLoading && selectedProductId === p.id ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -167,7 +193,7 @@ export default function ProductCard({
             onClick={() => onTogglePublish(p.id, p.publication_status || 'unpublished')}
             disabled={publishPending || (!isPublished && !isApproved)}
             title={!isPublished && !isApproved ? 'Product must be approved before publishing' : undefined}
-            className="saas-btn-secondary flex-1 text-sm py-2 flex items-center justify-center gap-1.5 disabled:opacity-50"
+            className="saas-btn-secondary flex-1 text-xs py-2 flex items-center justify-center gap-1.5 disabled:opacity-50"
             aria-busy={publishPending || undefined}
           >
             {publishPending ? (

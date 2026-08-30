@@ -27,6 +27,40 @@ function notifyCacheUpdate(key: string) {
   listeners.forEach((listener) => listener(key));
 }
 
+if (typeof window !== 'undefined') {
+  window.addEventListener('portal-mutation-success', (event: Event) => {
+    const custom = event as CustomEvent<{ url?: string }>;
+    const url = custom.detail?.url;
+    if (url) {
+      if (url.includes('/api/products') || url.includes('/api/supplier/products')) {
+        invalidatePortalCache('/api/products');
+        invalidatePortalCache('/api/supplier/products');
+        invalidatePortalCache('/api/admin/approvals');
+        invalidatePortalCache('/api/admin/dashboard');
+      } else if (url.includes('/api/rfqs') || url.includes('/api/supplier/rfqs')) {
+        invalidatePortalCache('/api/rfqs');
+        invalidatePortalCache('/api/supplier/rfqs');
+        invalidatePortalCache('/api/customer/quotes');
+        invalidatePortalCache('/api/admin/dashboard');
+      } else if (url.includes('/api/orders') || url.includes('/api/supplier/orders')) {
+        invalidatePortalCache('/api/orders');
+        invalidatePortalCache('/api/supplier/orders');
+        invalidatePortalCache('/api/admin/dashboard');
+      } else if (url.includes('/api/enquiries') || url.includes('/api/customer/enquiries') || url.includes('/api/supplier/enquiries')) {
+        invalidatePortalCache('/api/enquiries');
+        invalidatePortalCache('/api/customer/enquiries');
+        invalidatePortalCache('/api/supplier/enquiries');
+        invalidatePortalCache('/api/admin/dashboard');
+      } else if (url.includes('/api/categories')) {
+        invalidatePortalCache('/api/categories');
+      } else if (url.includes('/api/suppliers')) {
+        invalidatePortalCache('/api/suppliers');
+        invalidatePortalCache('/api/admin/dashboard');
+      }
+    }
+  });
+}
+
 /** Subscribe to cache writes (including background revalidation). */
 export function subscribePortalCache(listener: (key: string) => void): () => void {
   listeners.add(listener);

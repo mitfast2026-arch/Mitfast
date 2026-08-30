@@ -38,10 +38,10 @@ export function computeOptimisticLineTotal(item: CartLineLike, quantity: number)
 
 export function gstLabelFromItems(
   items: CartLineLike[],
-  fallbackRate = 18
+  fallbackRate = 0
 ): string {
   const available = items.filter((i) => i.product?.isAvailable !== false);
-  if (available.length === 0) return `Estimated GST (${fallbackRate}% B2B)`;
+  if (available.length === 0) return 'Estimated GST';
 
   const rates = new Set(
     available.map((i) => {
@@ -52,7 +52,7 @@ export function gstLabelFromItems(
 
   if (rates.size === 1) {
     const rate = [...rates][0];
-    return `Estimated GST (${rate}% B2B)`;
+    return rate > 0 ? `Estimated GST (${rate}% B2B)` : 'GST (0% Exempt)';
   }
   return 'Estimated GST';
 }

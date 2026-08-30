@@ -34,15 +34,39 @@ export async function mergeGuestStateIntoCustomer(
 
     const admin = createAdminClient();
 
-    const { data: claimedRows, error: claimError } = await (admin as any).rpc(
-      'claim_guest_session_for_merge',
-      { p_guest_session_id: guestSessionId }
-    );
+    // 1. Fetch guest cart and wishlist rows without prematurely deleting them
+    const [{ data: guestCartRows, error: cartFetchError }, { data: guestWishRows, error: wishFetchError }] =
+      await Promise.all([
+        admin
+          .from('guest_cart_items')
+          .select('id, product_id, quantity')
+          .eq('guest_session_id', guestSessionId),
+        admin
+          .from('guest_wishlist_items')
+          .select('id, product_id')
+          .eq('guest_session_id', guestSessionId),
+      ]);
 
-    if (claimError) {
+    if (cartFetchError || wishFetchError) {
       return {
         success: false,
-        error: { message: claimError.message, code: 'MERGE_ERROR' },
+        error: {
+          message: cartFetchError?.message || wishFetchError?.message || 'Failed to read guest items',
+          code: 'MERGE_ERROR',
+        },
+      };
+    }
+
+    if ((!guestCartRows || guestCartRows.length === 0) && (!guestWishRows || guestWishRows.length === 0)) {
+      await clearGuestCookie();
+      return {
+        success: true,
+        data: {
+          mergedCartLines: 0,
+          mergedWishlist: 0,
+          failedCartLines: 0,
+          failedWishlist: 0,
+        },
       };
     }
 
@@ -50,27 +74,43 @@ export async function mergeGuestStateIntoCustomer(
 
     let mergedCartLines = 0;
     let failedCartLines = 0;
-    const cartLines = (claimedRows || []).filter(
-      (row: { cart_product_id?: string | null; cart_quantity?: number | null }) =>
-        row.cart_product_id && row.cart_quantity
-    );
-    for (const line of cartLines) {
-      const result = await addToCart(customerId, line.cart_product_id, line.cart_quantity);
-      if (result.success) mergedCartLines += 1;
-      else failedCartLines += 1;
+    const successfulCartItemIds: string[] = [];
+
+    for (const line of guestCartRows || []) {
+      if (!line.product_id || !line.quantity) continue;
+      const result = await addToCart(customerId, line.product_id, line.quantity);
+      if (result.success) {
+        mergedCartLines += 1;
+        successfulCartItemIds.push(line.id);
+      } else {
+        failedCartLines += 1;
+      }
     }
 
     let mergedWishlist = 0;
     let failedWishlist = 0;
-    const wishLines = (claimedRows || []).filter(
-      (row: { wishlist_product_id?: string | null }) => row.wishlist_product_id
-    );
-    for (const line of wishLines) {
-      const result = await addToCustomerWishlist(customerId, line.wishlist_product_id);
-      if (result.success) mergedWishlist += 1;
-      else failedWishlist += 1;
+    const successfulWishItemIds: string[] = [];
+
+    for (const line of guestWishRows || []) {
+      if (!line.product_id) continue;
+      const result = await addToCustomerWishlist(customerId, line.product_id);
+      if (result.success) {
+        mergedWishlist += 1;
+        successfulWishItemIds.push(line.id);
+      } else {
+        failedWishlist += 1;
+      }
     }
 
+    // 2. Delete successfully merged items so retries don't duplicate them
+    if (successfulCartItemIds.length > 0) {
+      await admin.from('guest_cart_items').delete().in('id', successfulCartItemIds);
+    }
+    if (successfulWishItemIds.length > 0) {
+      await admin.from('guest_wishlist_items').delete().in('id', successfulWishItemIds);
+    }
+
+    // 3. If any item failed, keep guest cookie and remaining items
     if (failedCartLines > 0 || failedWishlist > 0) {
       console.error('[mergeGuestStateIntoCustomer] partial failure', {
         customerId,
@@ -87,6 +127,12 @@ export async function mergeGuestStateIntoCustomer(
         },
       };
     }
+
+    // 4. All items merged cleanly — expire guest session and clear cookie
+    await admin
+      .from('guest_sessions')
+      .update({ expires_at: new Date().toISOString() })
+      .eq('id', guestSessionId);
 
     await clearGuestCookie();
 

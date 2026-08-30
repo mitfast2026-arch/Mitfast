@@ -2,7 +2,7 @@
 
 import React from 'react';
 import ProductFormSection, { FormField, FormGrid } from '../ProductFormSection';
-import { computeCustomerPrice, computeListPriceFromProfit } from '@/app/admin/products/types';
+import { calculatePricing } from '@/lib/server/pricing/calculate-price';
 import type { ProductFormMode, ProductFormProduct, ProductFormValues } from '../product-form.types';
 
 type PricingCommercialsSectionProps = {
@@ -46,13 +46,15 @@ export default function PricingCommercialsSection({
   const proposedPrice = proposed?.supplier_price;
   const proposedSuggestedMoq = proposed?.suggested_moq;
 
-  const listPrice = computeListPriceFromProfit(
-    values.supplierPrice,
-    values.profitType,
-    values.profit
-  );
   const effectiveDiscount = values.discountEnabled ? values.discount : 0;
-  const sellingPrice = computeCustomerPrice(listPrice, effectiveDiscount);
+  const pricing = calculatePricing({
+    supplier_price: values.supplierPrice,
+    profit_type: values.profitType,
+    profit_value: values.profit,
+    discount: effectiveDiscount,
+    gst_rate: values.gst,
+    gst_included: values.gstIncluded,
+  });
 
   const liveProfitType = product?.profit_type === 'fixed' ? 'fixed' : 'percentage';
   const liveProfitValue = product?.profit_value ?? values.profit;
@@ -318,24 +320,53 @@ export default function PricingCommercialsSection({
             GST included in factory price
           </label>
 
-          <div className="text-xs text-portal-muted bg-portal-panel border border-portal-border rounded-md p-2.5 space-y-1.5 font-mono">
+          <div className="text-xs text-portal-muted bg-portal-panel border border-portal-border rounded-xl p-3.5 space-y-2 font-mono">
             <div className="flex justify-between">
-              <span>Factory price</span>
-              <span className="text-portal-text">₹{values.supplierPrice.toLocaleString('en-IN')}</span>
+              <span>Factory / Base price</span>
+              <span className="text-portal-text font-medium">₹{pricing.supplier_price.toLocaleString('en-IN')}</span>
             </div>
             <div className="flex justify-between">
               <span>{marginPreviewLabel}</span>
-              <span className="text-portal-text">₹{listPrice.toLocaleString('en-IN')}</span>
+              <span className="text-portal-text">+₹{pricing.profit_amount.toLocaleString('en-IN')}</span>
             </div>
-            {values.discountEnabled && (
-              <div className="flex justify-between">
-                <span>Discount</span>
-                <span className="text-portal-text">−₹{effectiveDiscount.toLocaleString('en-IN')}</span>
+            <div className="flex justify-between text-portal-muted">
+              <span>List price (pre-discount)</span>
+              <span className="text-portal-text">₹{pricing.selling_price.toLocaleString('en-IN')}</span>
+            </div>
+            {values.discountEnabled && pricing.discount > 0 && (
+              <div className="flex justify-between text-portal-warning">
+                <span>Unit discount</span>
+                <span>−₹{pricing.discount.toLocaleString('en-IN')}</span>
               </div>
             )}
-            <div className="flex justify-between font-medium pt-1 border-t border-portal-border">
-              <span className="text-portal-text">Selling price</span>
-              <span className="text-portal-success">₹{sellingPrice.toLocaleString('en-IN')}</span>
+            <div className="flex justify-between font-semibold pt-1 border-t border-portal-border">
+              <span className="text-portal-text">Catalog Selling price</span>
+              <span className="text-portal-text">₹{pricing.discounted_unit_price.toLocaleString('en-IN')}</span>
+            </div>
+
+            {/* GST breakdown */}
+            <div className="pt-1.5 border-t border-portal-border/60 text-[11px] space-y-1">
+              <div className="flex justify-between">
+                <span>
+                  GST ({pricing.gst_rate}%) {pricing.gst_included ? 'Included in price' : 'Excluded (added at checkout)'}
+                </span>
+                <span className={pricing.gst_included ? 'text-portal-muted font-medium' : 'text-portal-text font-medium'}>
+                  {pricing.gst_included
+                    ? `[₹${pricing.gst_amount_per_unit.toLocaleString('en-IN')}]`
+                    : `+₹${pricing.gst_amount_per_unit.toLocaleString('en-IN')}`}
+                </span>
+              </div>
+              {pricing.gst_included && (
+                <div className="flex justify-between text-portal-muted text-[10px]">
+                  <span>Taxable base (ex-GST)</span>
+                  <span>₹{pricing.subtotal.toLocaleString('en-IN')}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-between font-bold pt-1.5 border-t border-portal-border text-xs">
+              <span className="text-portal-text">Final Customer Pays (Unit)</span>
+              <span className="text-portal-success">₹{pricing.final_unit_price.toLocaleString('en-IN')}</span>
             </div>
           </div>
         </>

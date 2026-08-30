@@ -131,15 +131,18 @@ async function resolvePostAuthPath(
   }
 
   if (!identityOk) {
-    return `/auth/complete-profile?role=buyer`;
+    const redirectQs = opts.redirectPath && opts.redirectPath.startsWith('/') && !opts.redirectPath.startsWith('//')
+      ? `&redirect=${encodeURIComponent(opts.redirectPath)}`
+      : '';
+    return `/auth/complete-profile?role=buyer${redirectQs}`;
   }
 
   if (
     opts.redirectPath &&
-    (opts.redirectPath.startsWith('/cart') ||
-      opts.redirectPath.startsWith('/customer') ||
-      opts.redirectPath.startsWith('/products') ||
-      opts.redirectPath.startsWith('/rfq'))
+    opts.redirectPath.startsWith('/') &&
+    !opts.redirectPath.startsWith('//') &&
+    !opts.redirectPath.startsWith('/admin') &&
+    !opts.redirectPath.startsWith('/auth')
   ) {
     return opts.redirectPath;
   }
@@ -294,6 +297,7 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -1139,15 +1143,23 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
                 <Lock />
                 <input
                   id="register-confirm"
-                  type={showPassword ? 'text' : 'password'}
+                  type={showConfirmPassword ? 'text' : 'password'}
                   required
                   minLength={6}
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Re-enter password"
-                  className="saas-input"
+                  className="saas-input pr-10"
                   autoComplete="new-password"
                 />
+                <button
+                  type="button"
+                  className="auth-toggle-pw"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
             </div>
             <button

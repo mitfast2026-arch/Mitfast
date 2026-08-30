@@ -260,7 +260,7 @@ export default function CustomerLayout({
             Menu
           </button>
           <div className="flex items-center gap-1">
-            {shopNav.slice(0, 4).map((item) => {
+            {shopNav.map((item) => {
               const Icon = item.icon;
               const active = isActive(item);
               return (

@@ -303,6 +303,20 @@ function CustomerQuotesInner() {
                 </div>
 
                 <div className="space-y-3 text-xs">
+                  {Array.isArray(enq.line_items) && enq.line_items.length > 0 && (
+                    <div className="p-3 rounded-xl bg-[#F7F7F8] border border-[#D9DCE1] space-y-1.5">
+                      <p className="font-semibold text-[11px] text-[#111315]">Requested Items</p>
+                      <ul className="space-y-1">
+                        {enq.line_items.map((line: any, lIdx: number) => (
+                          <li key={line.product_id || lIdx} className="flex justify-between items-center text-[#6B7280]">
+                            <span className="font-medium text-[#111315]">{line.name || 'Product'}</span>
+                            <span className="font-mono">Qty: {line.quantity ?? 1}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
                   {enq.message ? (
                     <div className="p-4 rounded-xl bg-[#E8EAED] border border-[#D9DCE1] leading-relaxed">
                       <p className="font-semibold text-[11px] mb-1 text-[#111315]">Requirements</p>

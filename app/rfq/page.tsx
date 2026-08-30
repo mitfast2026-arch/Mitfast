@@ -35,7 +35,7 @@ export default async function RfqPage(
   }
 
   if (session?.profile.role === "supplier") {
-    redirect("/supplier/rfqs");
+    redirect("/supplier/orders");
   }
 
   redirect(cartTarget);

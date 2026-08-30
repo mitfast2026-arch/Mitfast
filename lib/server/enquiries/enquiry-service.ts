@@ -209,7 +209,7 @@ export async function updateEnquiryStatus(formData: unknown): Promise<ServerResu
 }
 
 /**
- * Admin hard deletes an enquiry (per spec Sections 34 & 109).
+ * Admin hard deletes an enquiry.
  */
 export async function deleteEnquiry(enquiryId: string): Promise<ServerResult<{ deleted: boolean }>> {
   try {
@@ -220,6 +220,7 @@ export async function deleteEnquiry(enquiryId: string): Promise<ServerResult<{ d
       return { success: false, error: { message: error.message, code: 'DATABASE_ERROR' } };
     }
 
+    invalidateAdminCaches();
     return { success: true, data: { deleted: true } };
   } catch (error) {
     console.error('[deleteEnquiry] Error:', error);
@@ -249,11 +250,13 @@ export async function getCustomerEnquiries(
         message,
         status,
         created_at,
+        updated_at,
         response_message,
         responded_at,
         attachment_url,
         attachment_path,
-        product:products(id, name, selling_price)
+        line_items,
+        product:products(id, name, selling_price, moq)
       `, { count: 'exact' })
       .eq('customer_id', customerId)
       .order('created_at', { ascending: false })
@@ -270,6 +273,46 @@ export async function getCustomerEnquiries(
   } catch (error) {
     console.error('[getCustomerEnquiries] Error:', error);
     return { success: false, error: { message: 'Failed to fetch customer enquiries', code: 'INTERNAL_ERROR' } };
+  }
+}
+
+/**
+ * Retrieve single enquiry detail with full line items and security checks.
+ */
+export async function getEnquiryDetail(
+  enquiryId: string,
+  options?: { customerId?: string; supplierId?: string; isAdmin?: boolean }
+): Promise<ServerResult<{ enquiry: any }>> {
+  try {
+    const adminClient = createAdminClient();
+    const { data: enquiry, error } = await adminClient
+      .from('enquiries')
+      .select(`
+        *,
+        product:products(id, name, selling_price, moq, supplier_id, category:categories(name)),
+        customer:profiles!enquiries_customer_id_fkey(id, full_name, email, phone)
+      `)
+      .eq('id', enquiryId)
+      .maybeSingle();
+
+    if (error || !enquiry) {
+      return { success: false, error: { message: 'Enquiry not found', code: 'NOT_FOUND' } };
+    }
+
+    if (!options?.isAdmin) {
+      if (options?.customerId && enquiry.customer_id !== options.customerId) {
+        return { success: false, error: { message: 'Forbidden', code: 'FORBIDDEN' } };
+      }
+      if (options?.supplierId && (enquiry as any).product?.supplier_id !== options.supplierId) {
+        return { success: false, error: { message: 'Forbidden', code: 'FORBIDDEN' } };
+      }
+    }
+
+    const [signedEnquiry] = await withSignedAttachments([enquiry]);
+    return { success: true, data: { enquiry: signedEnquiry } };
+  } catch (error) {
+    console.error('[getEnquiryDetail] Error:', error);
+    return { success: false, error: { message: 'Failed to fetch enquiry detail', code: 'INTERNAL_ERROR' } };
   }
 }
 
@@ -383,7 +426,6 @@ export async function respondToEnquiry(
     };
 
     if (nextStatus === enquiry.status) {
-      // Same status: update reply only (e.g. follow-up on already-contacted)
       const { error } = await adminClient
         .from('enquiries')
         .update({
@@ -397,6 +439,7 @@ export async function respondToEnquiry(
         return { success: false, error: { message: error.message, code: 'DATABASE_ERROR' } };
       }
 
+      invalidateAdminCaches();
       return { success: true, data: { updated: true } };
     }
 
@@ -437,7 +480,7 @@ export async function respondToEnquiry(
 }
 
 /**
- * Admin corrects stored contact details on an enquiry.
+ * Admin updates stored contact details, message, and line items on an enquiry.
  */
 export async function updateEnquiryDetails(formData: unknown): Promise<ServerResult<{ updated: boolean }>> {
   try {
@@ -449,32 +492,57 @@ export async function updateEnquiryDetails(formData: unknown): Promise<ServerRes
       };
     }
 
-    const { enquiryId, guestName, guestEmail, guestPhone, country, companyName } = validated.data;
+    const {
+      enquiryId,
+      guestName,
+      guestEmail,
+      guestPhone,
+      country,
+      companyName,
+      message,
+      enquiryType,
+      productId,
+      lineItems,
+    } = validated.data;
     const adminClient = createAdminClient();
 
-    const patch: {
-      updated_at: string;
-      guest_name?: string;
-      guest_email?: string;
-      guest_phone?: string;
-      country?: string;
-      company_name?: string | null;
-    } = { updated_at: new Date().toISOString() };
-    if (guestName !== undefined) patch.guest_name = guestName;
-    if (guestEmail !== undefined) patch.guest_email = guestEmail;
-    if (guestPhone !== undefined) patch.guest_phone = guestPhone;
-    if (country !== undefined) patch.country = country;
-    if (companyName !== undefined) patch.company_name = companyName;
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (guestName !== undefined) patch.guest_name = guestName.trim();
+    if (guestEmail !== undefined) patch.guest_email = guestEmail.trim().toLowerCase();
+    if (guestPhone !== undefined) patch.guest_phone = guestPhone.trim();
+    if (country !== undefined) patch.country = country.trim();
+    if (companyName !== undefined) patch.company_name = companyName ? companyName.trim() : null;
+    if (message !== undefined) patch.message = message.trim();
+    if (enquiryType !== undefined) patch.enquiry_type = enquiryType.trim();
 
-    const { error } = await adminClient
-      .from('enquiries')
-      .update(patch as import('@/types/database').Database['public']['Tables']['enquiries']['Update'])
-      .eq('id', enquiryId);
-
-    if (error) {
-      return { success: false, error: { message: error.message, code: 'DATABASE_ERROR' } };
+    if (lineItems !== undefined) {
+      const normalizedItems = (lineItems || []).map((li) => ({
+        product_id: li.productId || null,
+        name: li.name || null,
+        quantity: Math.max(1, li.quantity || 1),
+      }));
+      patch.line_items = normalizedItems.length > 0 ? normalizedItems : null;
+      if (productId === undefined) {
+        patch.product_id = normalizedItems[0]?.product_id || null;
+      }
     }
 
+    if (productId !== undefined) {
+      patch.product_id = productId;
+    }
+
+    const { data: updatedEnquiry, error } = await adminClient
+      .from('enquiries')
+      .update(patch as import('@/types/database').Database['public']['Tables']['enquiries']['Update'])
+      .eq('id', enquiryId)
+      .select('id, customer_id')
+      .maybeSingle();
+
+    if (error || !updatedEnquiry) {
+      return { success: false, error: { message: error?.message || 'Failed to update enquiry', code: 'DATABASE_ERROR' } };
+    }
+
+    invalidateAdminCaches();
     return { success: true, data: { updated: true } };
   } catch (error) {
     console.error('[updateEnquiryDetails] Error:', error);

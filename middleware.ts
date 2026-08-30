@@ -76,10 +76,19 @@ export async function middleware(request: NextRequest) {
     },
   });
 
+  const { pathname, searchParams } = request.nextUrl;
+  const isAdminRoute = pathname.startsWith('/admin');
+  const isSupplierRoute = pathname.startsWith('/supplier');
+  const isCustomerRoute = pathname.startsWith('/customer');
+  const isAuthRoute = pathname.startsWith('/auth');
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
+    if (isAdminRoute || isCustomerRoute || isSupplierRoute) {
+      return NextResponse.redirect(new URL('/auth?mode=signin', request.url));
+    }
     return response;
   }
 
@@ -112,7 +121,6 @@ export async function middleware(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const { pathname, searchParams } = request.nextUrl;
 
   // 0. Intercept stray OAuth code query parameter on any non-callback route (e.g. root or /auth)
   const code = searchParams.get('code');
@@ -125,11 +133,6 @@ export async function middleware(request: NextRequest) {
   }
 
   // 1. Protected Route Guards
-  const isAdminRoute = pathname.startsWith('/admin');
-  const isSupplierRoute = pathname.startsWith('/supplier');
-  const isCustomerRoute = pathname.startsWith('/customer');
-  const isAuthRoute = pathname.startsWith('/auth');
-
   if (isAdminRoute || isSupplierRoute || isCustomerRoute) {
     if (!user) {
       const redirectUrl = new URL(
@@ -170,8 +173,12 @@ export async function middleware(request: NextRequest) {
 
     if ((isCustomerRoute || isSupplierRoute) && role !== 'admin' && !identityOk) {
       const roleQs = role === 'supplier' || isSupplierRoute ? 'supplier' : 'buyer';
+      const redirectTarget = pathname + (request.nextUrl.search || '');
       const redirect = NextResponse.redirect(
-        new URL(`/auth/complete-profile?role=${roleQs}`, request.url)
+        new URL(
+          `/auth/complete-profile?role=${roleQs}&redirect=${encodeURIComponent(redirectTarget)}`,
+          request.url
+        )
       );
       clearPortalGateCookie(redirect);
       return redirect;
@@ -353,8 +360,12 @@ export async function middleware(request: NextRequest) {
 
     if (!identityOk && profile?.role !== 'admin') {
       const roleQs = profile?.role === 'supplier' ? 'supplier' : 'buyer';
+      const existingRedirect = request.nextUrl.searchParams.get('redirect');
+      const redirectSuffix = existingRedirect
+        ? `&redirect=${encodeURIComponent(existingRedirect)}`
+        : '';
       return NextResponse.redirect(
-        new URL(`/auth/complete-profile?role=${roleQs}`, request.url)
+        new URL(`/auth/complete-profile?role=${roleQs}${redirectSuffix}`, request.url)
       );
     }
 

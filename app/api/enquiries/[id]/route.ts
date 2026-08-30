@@ -1,11 +1,61 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import {
+  getEnquiryDetail,
   updateEnquiryStatus,
   deleteEnquiry,
   respondToEnquiry,
   updateEnquiryDetails,
 } from '@/lib/server/enquiries/enquiry-service';
-import { requireAdmin } from '@/lib/server/auth/get-session';
+import {
+  getServerSession,
+  requireAdmin,
+  unauthorizedResponse,
+  forbiddenResponse,
+} from '@/lib/server/auth/get-session';
+
+export async function GET(_request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  try {
+    const session = await getServerSession();
+    if (!session) return unauthorizedResponse();
+
+    const role = session.profile.role;
+    if (role === 'admin') {
+      const result = await getEnquiryDetail(params.id, { isAdmin: true });
+      if (!result.success) {
+        const status = result.error.code === 'NOT_FOUND' ? 404 : 400;
+        return NextResponse.json(result, { status });
+      }
+      return NextResponse.json(result);
+    }
+
+    if (role === 'customer') {
+      const result = await getEnquiryDetail(params.id, { customerId: session.profile.id });
+      if (!result.success) {
+        const status = result.error.code === 'NOT_FOUND' ? 404 : result.error.code === 'FORBIDDEN' ? 403 : 400;
+        return NextResponse.json(result, { status });
+      }
+      return NextResponse.json(result);
+    }
+
+    if (role === 'supplier' && session.supplier?.id) {
+      const result = await getEnquiryDetail(params.id, { supplierId: session.supplier.id });
+      if (!result.success) {
+        const status = result.error.code === 'NOT_FOUND' ? 404 : result.error.code === 'FORBIDDEN' ? 403 : 400;
+        return NextResponse.json(result, { status });
+      }
+      return NextResponse.json(result);
+    }
+
+    return forbiddenResponse();
+  } catch (error) {
+    console.error('[GET /api/enquiries/:id] Error:', error);
+    return NextResponse.json(
+      { success: false, error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } },
+      { status: 500 }
+    );
+  }
+}
 
 export async function PUT(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
@@ -32,7 +82,11 @@ export async function PUT(request: NextRequest, props: { params: Promise<{ id: s
       body.guestEmail !== undefined ||
       body.guestPhone !== undefined ||
       body.country !== undefined ||
-      body.companyName !== undefined
+      body.companyName !== undefined ||
+      body.message !== undefined ||
+      body.enquiryType !== undefined ||
+      body.productId !== undefined ||
+      body.lineItems !== undefined
     ) {
       const result = await updateEnquiryDetails({
         enquiryId: params.id,
@@ -41,6 +95,10 @@ export async function PUT(request: NextRequest, props: { params: Promise<{ id: s
         guestPhone: body.guestPhone,
         country: body.country,
         companyName: body.companyName,
+        message: body.message,
+        enquiryType: body.enquiryType,
+        productId: body.productId,
+        lineItems: body.lineItems,
       });
       if (!result.success) return NextResponse.json(result, { status: 400 });
       return NextResponse.json(result);
@@ -54,6 +112,7 @@ export async function PUT(request: NextRequest, props: { params: Promise<{ id: s
     if (!result.success) return NextResponse.json(result, { status: 400 });
     return NextResponse.json(result);
   } catch (error) {
+    console.error('[PUT /api/enquiries/:id] Error:', error);
     return NextResponse.json(
       { success: false, error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } },
       { status: 500 }
@@ -70,6 +129,7 @@ export async function DELETE(_request: NextRequest, props: { params: Promise<{ i
     if (!result.success) return NextResponse.json(result, { status: 400 });
     return NextResponse.json(result);
   } catch (error) {
+    console.error('[DELETE /api/enquiries/:id] Error:', error);
     return NextResponse.json(
       { success: false, error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } },
       { status: 500 }

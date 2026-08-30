@@ -18,7 +18,11 @@ export function isRpcMissing(
   const msg = error.message || '';
   return (
     error.code === 'PGRST202' ||
+    error.code === 'PGRST204' ||
+    error.code === '42883' ||
     msg.includes('Could not find the function') ||
+    msg.includes('schema cache') ||
+    msg.includes('does not exist') ||
     (functionName ? msg.includes(functionName) : false)
   );
 }

@@ -37,4 +37,26 @@ export const rejectRfqSchema = z.object({
 export const updateRfqContactSchema = z.object({
   rfqId: z.string().uuid('Invalid RFQ ID'),
   deliveryAddress: deliveryAddressInputSchema.optional(),
+  customerMessage: z.string().optional().nullable(),
+  contact: requiredContactSchema.partial().optional(),
+});
+
+export const editRfqItemSchema = z.object({
+  id: z.string().uuid('Invalid RFQ item ID').optional(),
+  productId: z.string().uuid('Invalid product ID').optional().nullable(),
+  productNameSnapshot: z.string().optional(),
+  originalQuantity: z.number().int().min(1, 'Quantity must be at least 1').optional(),
+  quantity: z.number().int().min(1, 'Quantity must be at least 1').optional(),
+  originalUnitPrice: z.number().min(0, 'Unit price must be non-negative').optional(),
+  unitPrice: z.number().min(0, 'Unit price must be non-negative').optional(),
+  finalQuantity: z.number().int().min(1, 'Final quantity must be at least 1').optional().nullable(),
+  finalUnitPrice: z.number().min(0, 'Final unit price must be non-negative').optional().nullable(),
+});
+
+export const editRfqSchema = z.object({
+  rfqId: z.string().uuid('Invalid RFQ ID'),
+  items: z.array(editRfqItemSchema).min(1, 'RFQ must contain at least one product line'),
+  deliveryAddress: deliveryAddressInputSchema.optional(),
+  customerMessage: z.string().optional().nullable(),
+  contact: requiredContactSchema.partial().optional(),
 });

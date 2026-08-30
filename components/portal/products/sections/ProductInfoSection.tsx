@@ -79,7 +79,8 @@ export default function ProductInfoSection({
         <RichTextEditor
           value={values.description}
           onChange={(description) => onChange({ description })}
-          placeholder="Brief technical description for buyers…"
+          productName={values.name}
+          placeholder="Describe the product, key features, specifications, applications, benefits, and included items…"
           readOnly={readOnly}
         />
       </FormField>

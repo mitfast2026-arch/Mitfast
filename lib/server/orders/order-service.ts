@@ -108,7 +108,7 @@ export async function convertRfqToOrder(
       const unitPrice = item.final_unit_price ?? item.original_unit_price;
       const p = item.product as any;
 
-      const gstRate = p?.gst_rate ?? 18;
+      const gstRate = p?.gst_rate ?? 0;
       const gstIncluded = p?.gst_included ?? false;
       const discount = 0; // Negotiated price is already final net price
 
@@ -262,7 +262,7 @@ export async function createManualOrder(
       }
 
       // Admin may set negotiated unitPrice; GST defaults from live product unless explicitly provided
-      const gstRate = item.gstRate ?? product.gst_rate ?? 18;
+      const gstRate = item.gstRate ?? product.gst_rate ?? 0;
       const gstIncluded = item.gstIncluded ?? product.gst_included ?? false;
       const discount = item.discount ?? 0;
       const unitPrice = item.unitPrice;
@@ -503,13 +503,15 @@ export async function editOrder(formData: unknown): Promise<ServerResult<{ updat
     const sortedItems = [...items].sort((a, b) => a.orderItemId.localeCompare(b.orderItemId));
 
     for (const item of sortedItems) {
+      const gstRate = item.gstRate ?? 0;
+      const gstIncluded = item.gstIncluded ?? false;
       const priced = calculatePricing({
         supplier_price: item.unitPrice,
         profit_type: 'fixed',
         profit_value: 0,
         discount: item.discount,
-        gst_rate: item.gstRate,
-        gst_included: item.gstIncluded,
+        gst_rate: gstRate,
+        gst_included: gstIncluded,
         quantity: item.quantity,
       });
 
@@ -517,8 +519,8 @@ export async function editOrder(formData: unknown): Promise<ServerResult<{ updat
         order_item_id: item.orderItemId,
         quantity: item.quantity,
         unit_price: item.unitPrice,
-        gst_rate: item.gstRate,
-        gst_included: item.gstIncluded,
+        gst_rate: gstRate,
+        gst_included: gstIncluded,
         discount: item.discount,
         subtotal: priced.subtotal,
         gst_amount: priced.total_gst_amount,
@@ -762,19 +764,136 @@ export async function getOrdersForAdmin(params: {
   }
 }
 
+export async function supplierOwnsOrder(supplierId: string, orderId: string): Promise<boolean> {
+  try {
+    const adminClient = createAdminClient();
+    const { data, error } = await adminClient
+      .from('order_items')
+      .select('id')
+      .eq('order_id', orderId)
+      .eq('supplier_id', supplierId)
+      .limit(1);
+
+    if (error || !data || data.length === 0) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function markSupplierOrderContacted(
+  supplierId: string,
+  orderId: string,
+  contacted: boolean = true
+): Promise<ServerResult<{ orderId: string; is_contacted: boolean; contacted_at: string | null }>> {
+  try {
+    const adminClient = createAdminClient();
+
+    // Verify supplier has items in this order
+    const owns = await supplierOwnsOrder(supplierId, orderId);
+    if (!owns) {
+      return {
+        success: false,
+        error: { message: 'Order not found for this supplier', code: 'NOT_FOUND' },
+      };
+    }
+
+    const { data: supplier, error: suppError } = await adminClient
+      .from('suppliers')
+      .select('id, notification_preferences')
+      .eq('id', supplierId)
+      .single();
+
+    if (suppError || !supplier) {
+      return {
+        success: false,
+        error: { message: 'Supplier account not found', code: 'NOT_FOUND' },
+      };
+    }
+
+    const prefs = (supplier.notification_preferences as Record<string, any>) || {};
+    const existingContacted = { ...(prefs.contactedOrders || {}) };
+
+    let contactedAt: string | null = null;
+    if (contacted) {
+      contactedAt = new Date().toISOString();
+      existingContacted[orderId] = contactedAt;
+    } else {
+      delete existingContacted[orderId];
+    }
+
+    const updatedPrefs = {
+      ...prefs,
+      contactedOrders: existingContacted,
+    };
+
+    const { error: updateError } = await adminClient
+      .from('suppliers')
+      .update({ notification_preferences: updatedPrefs })
+      .eq('id', supplierId);
+
+    if (updateError) {
+      return {
+        success: false,
+        error: { message: 'Failed to update order contact status', code: 'DATABASE_ERROR' },
+      };
+    }
+
+    return {
+      success: true,
+      data: {
+        orderId,
+        is_contacted: contacted,
+        contacted_at: contactedAt,
+      },
+    };
+  } catch (error) {
+    console.error('[markSupplierOrderContacted] Error:', error);
+    return {
+      success: false,
+      error: { message: 'Internal error updating contact state', code: 'INTERNAL_ERROR' },
+    };
+  }
+}
+
 export async function getSupplierOrders(
   supplierId: string,
-  params: { page?: number; limit?: number; search?: string }
+  params: { page?: number; limit?: number; search?: string; filter?: 'new' | 'contacted' | 'all' }
 ): Promise<
   ServerResult<{
     orders: Array<{
       id: string;
       order_number: string;
       status: string;
+      payment_status: string;
+      is_contacted: boolean;
+      contacted_at: string | null;
       created_at: string;
       updated_at: string;
       item_count: number;
+      total_quantity: number;
+      supplier_total: number;
+      items: Array<{
+        id: string;
+        product_id: string;
+        product_name_snapshot: string;
+        sku: string | null;
+        moq: number;
+        quantity: number;
+        unit_price: number;
+        total: number;
+        primary_image_url: string | null;
+        specifications: Array<{ key: string; value: string }>;
+        description: string | null;
+      }>;
     }>;
+    counts: {
+      new: number;
+      contacted: number;
+      total: number;
+    };
     total: number;
     page: number;
     limit: number;
@@ -784,8 +903,18 @@ export async function getSupplierOrders(
     const adminClient = createAdminClient();
     const page = Math.max(1, params.page || 1);
     const limit = Math.min(100, Math.max(1, params.limit || 10));
-    const offset = (page - 1) * limit;
 
+    // 1. Fetch supplier notification preferences to obtain contacted orders map
+    const { data: supplierRow } = await adminClient
+      .from('suppliers')
+      .select('notification_preferences')
+      .eq('id', supplierId)
+      .maybeSingle();
+
+    const contactedMap: Record<string, string> =
+      (supplierRow?.notification_preferences as any)?.contactedOrders || {};
+
+    // 2. Query all matching orders for this supplier
     let query = adminClient
       .from('orders')
       .select(
@@ -793,13 +922,31 @@ export async function getSupplierOrders(
         id,
         order_number,
         status,
+        payment_status,
         created_at,
         updated_at,
-        order_items!inner(id)
-      `,
-        { count: 'exact' }
+        order_items!inner(
+          id,
+          product_id,
+          supplier_id,
+          product_name_snapshot,
+          quantity,
+          unit_price,
+          total,
+          product:products(
+            id,
+            name,
+            sku,
+            moq,
+            description,
+            images:product_images(image_url, is_primary, sort_order),
+            specs:product_specifications(spec_name, spec_value)
+          )
+        )
+      `
       )
-      .eq('order_items.supplier_id', supplierId);
+      .eq('order_items.supplier_id', supplierId)
+      .order('created_at', { ascending: false });
 
     const search = params.search?.trim();
     if (search) {
@@ -809,24 +956,101 @@ export async function getSupplierOrders(
       }
     }
 
-    query = query.order('created_at', { ascending: false });
-
-    const { data, count, error } = await query.range(offset, offset + limit - 1);
+    const { data, error } = await query;
 
     if (error) {
       return { success: false, error: { message: error.message, code: 'DATABASE_ERROR' } };
     }
 
-    const orders = (data || []).map((row: any) => ({
-      id: row.id,
-      order_number: row.order_number,
-      status: row.status,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-      item_count: Array.isArray(row.order_items) ? row.order_items.length : 0,
-    }));
+    // Map rows into clean, redacted supplier orders
+    const allMapped = (data || []).map((row: any) => {
+      const rawItems = Array.isArray(row.order_items) ? row.order_items : [];
+      const supplierItems = rawItems.filter((itm: any) => itm.supplier_id === supplierId);
+      const totalQty = supplierItems.reduce((acc: number, itm: any) => acc + (Number(itm.quantity) || 0), 0);
+      const supplierTotal = supplierItems.reduce(
+        (acc: number, itm: any) =>
+          acc + (Number(itm.total) || Number(itm.quantity) * Number(itm.unit_price) || 0),
+        0
+      );
 
-    return { success: true, data: { orders, total: count || 0, page, limit } };
+      const contactedAt = contactedMap[row.id] || null;
+      const isContacted = Boolean(contactedAt);
+
+      const items = supplierItems.map((itm: any) => {
+        const prod = itm.product || {};
+        const images = Array.isArray(prod.images) ? prod.images : [];
+        const primaryImg =
+          images.find((img: any) => img.is_primary)?.image_url ||
+          images[0]?.image_url ||
+          null;
+
+        const rawSpecs = Array.isArray(prod.specs) ? prod.specs : [];
+        const specifications = rawSpecs.map((s: any) => ({
+          key: s.spec_name || s.key,
+          value: s.spec_value || s.value,
+        }));
+
+        return {
+          id: itm.id,
+          product_id: itm.product_id,
+          product_name_snapshot: itm.product_name_snapshot,
+          sku: prod.sku || null,
+          moq: prod.moq || 1,
+          quantity: itm.quantity,
+          unit_price: Number(itm.unit_price) || 0,
+          total: Math.round((Number(itm.total) || Number(itm.quantity) * Number(itm.unit_price) || 0) * 100) / 100,
+          primary_image_url: primaryImg,
+          specifications,
+          description: prod.description || null,
+        };
+      });
+
+      return {
+        id: row.id,
+        order_number: row.order_number,
+        status: row.status,
+        payment_status: row.payment_status,
+        is_contacted: isContacted,
+        contacted_at: contactedAt,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        item_count: supplierItems.length,
+        total_quantity: totalQty,
+        supplier_total: Math.round(supplierTotal * 100) / 100,
+        items,
+      };
+    });
+
+    const newOrders = allMapped.filter((o) => !o.is_contacted);
+    const contactedOrders = allMapped.filter((o) => o.is_contacted);
+
+    const counts = {
+      new: newOrders.length,
+      contacted: contactedOrders.length,
+      total: allMapped.length,
+    };
+
+    let filtered = allMapped;
+    if (params.filter === 'new') {
+      filtered = newOrders;
+    } else if (params.filter === 'contacted') {
+      filtered = contactedOrders;
+    }
+
+    const totalFiltered = filtered.length;
+    const offset = (page - 1) * limit;
+    const paginated = filtered.slice(offset, offset + limit);
+
+    return {
+      success: true,
+      data: {
+        orders: paginated,
+        counts,
+        total: totalFiltered,
+        page,
+        limit,
+      },
+    };
   } catch (error) {
     console.error('[getSupplierOrders] Error:', error);
     return { success: false, error: { message: 'Failed to fetch supplier orders', code: 'INTERNAL_ERROR' } };
@@ -841,13 +1065,29 @@ export async function getSupplierOrderDetail(
     id: string;
     order_number: string;
     status: string;
+    payment_status: string;
+    is_contacted: boolean;
+    contacted_at: string | null;
     created_at: string;
     updated_at: string;
+    supplier_subtotal: number;
+    supplier_total: number;
     items: Array<{
       id: string;
       product_id: string;
       product_name_snapshot: string;
+      sku: string | null;
+      moq: number;
       quantity: number;
+      unit_price: number;
+      subtotal: number;
+      gst_rate: number;
+      gst_amount: number;
+      total: number;
+      currency_code: string;
+      description: string | null;
+      primary_image_url: string | null;
+      specifications: Array<{ key: string; value: string }>;
     }>;
   }>
 > {
@@ -856,7 +1096,7 @@ export async function getSupplierOrderDetail(
 
     const { data: order, error: orderError } = await adminClient
       .from('orders')
-      .select('id, order_number, status, created_at, updated_at')
+      .select('id, order_number, status, payment_status, created_at, updated_at')
       .eq('id', orderId)
       .maybeSingle();
 
@@ -864,9 +1104,42 @@ export async function getSupplierOrderDetail(
       return { success: false, error: { message: 'Order not found', code: 'NOT_FOUND' } };
     }
 
+    const { data: supplierRow } = await adminClient
+      .from('suppliers')
+      .select('notification_preferences')
+      .eq('id', supplierId)
+      .maybeSingle();
+
+    const contactedMap: Record<string, string> =
+      (supplierRow?.notification_preferences as any)?.contactedOrders || {};
+    const contactedAt = contactedMap[orderId] || null;
+    const isContacted = Boolean(contactedAt);
+
     const { data: items, error: itemsError } = await adminClient
       .from('order_items')
-      .select('id, product_id, product_name_snapshot, quantity')
+      .select(`
+        id,
+        product_id,
+        product_name_snapshot,
+        quantity,
+        unit_price,
+        currency_code,
+        gst_rate,
+        gst_included,
+        discount,
+        subtotal,
+        gst_amount,
+        total,
+        product:products(
+          id,
+          name,
+          sku,
+          moq,
+          description,
+          images:product_images(image_url, is_primary, sort_order),
+          product_specifications(spec_name, spec_value)
+        )
+      `)
       .eq('order_id', orderId)
       .eq('supplier_id', supplierId);
 
@@ -878,16 +1151,57 @@ export async function getSupplierOrderDetail(
       return { success: false, error: { message: 'Order not found', code: 'NOT_FOUND' } };
     }
 
+    let supplierSubtotal = 0;
+    let supplierTotal = 0;
+
+    const mappedItems = items.map((item: any) => {
+      const prod = item.product || {};
+      const sub = Number(item.subtotal) || (Number(item.quantity) * Number(item.unit_price)) || 0;
+      const tot = Number(item.total) || sub;
+      supplierSubtotal += sub;
+      supplierTotal += tot;
+
+      const images = Array.isArray(prod.images) ? prod.images : [];
+      const primaryImg =
+        images.find((img: any) => img.is_primary)?.image_url ||
+        images[0]?.image_url ||
+        null;
+
+      return {
+        id: item.id,
+        product_id: item.product_id,
+        product_name_snapshot: item.product_name_snapshot,
+        sku: prod.sku || null,
+        moq: prod.moq || 1,
+        quantity: item.quantity,
+        unit_price: Number(item.unit_price) || 0,
+        subtotal: Math.round(sub * 100) / 100,
+        gst_rate: Number(item.gst_rate) || 0,
+        gst_amount: Number(item.gst_amount) || 0,
+        total: Math.round(tot * 100) / 100,
+        currency_code: item.currency_code || 'INR',
+        description: prod.description || null,
+        primary_image_url: primaryImg,
+        specifications: Array.isArray(prod.product_specifications)
+          ? prod.product_specifications.map((s: any) => ({ key: s.spec_name || s.key, value: s.spec_value || s.value }))
+          : [],
+      };
+    });
+
     return {
       success: true,
       data: {
-        ...order,
-        items: items.map((item: any) => ({
-          id: item.id,
-          product_id: item.product_id,
-          product_name_snapshot: item.product_name_snapshot,
-          quantity: item.quantity,
-        })),
+        id: order.id,
+        order_number: order.order_number,
+        status: order.status,
+        payment_status: order.payment_status,
+        is_contacted: isContacted,
+        contacted_at: contactedAt,
+        created_at: order.created_at,
+        updated_at: order.updated_at,
+        supplier_subtotal: Math.round(supplierSubtotal * 100) / 100,
+        supplier_total: Math.round(supplierTotal * 100) / 100,
+        items: mappedItems,
       },
     };
   } catch (error) {

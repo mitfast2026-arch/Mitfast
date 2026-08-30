@@ -20,6 +20,7 @@ import {
   Star,
   Check,
   Loader2,
+  Search,
 } from "lucide-react";
 import { toast } from "sonner";
 import { RemoteImage } from "@/components/ui/RemoteImage";
@@ -323,6 +324,7 @@ function ProductsCatalogContent({
 
   const [minPriceInput, setMinPriceInput] = useState(currentMinPrice);
   const [maxPriceInput, setMaxPriceInput] = useState(currentMaxPrice);
+  const [searchInput, setSearchInput] = useState(currentSearch);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
   const DEFAULT_CATALOG_BANNER = "/images/product-page.png";
@@ -344,11 +346,13 @@ function ProductsCatalogContent({
   useEffect(() => {
     setMinPriceInput(currentMinPrice);
     setMaxPriceInput(currentMaxPrice);
+    setSearchInput(currentSearch);
     setDraftMoq(selectedMoq);
     setDraftCategories(selectedCategories);
   }, [
     currentMinPrice,
     currentMaxPrice,
+    currentSearch,
     selectedMoq,
     selectedCategories,
   ]);
@@ -376,9 +380,9 @@ function ProductsCatalogContent({
       setLoading(true);
       try {
         const query = new URLSearchParams();
-        const primaryCat = selectedCategories[0] || currentCategory;
-        if (primaryCat) {
-          query.set("categoryId", primaryCat);
+        const allCats = selectedCategories.length > 0 ? selectedCategories.join(",") : currentCategory;
+        if (allCats) {
+          query.set("categoryId", allCats);
         }
 
         if (currentSearch.trim()) {
@@ -929,7 +933,28 @@ function ProductsCatalogContent({
                     : `${displayTotal.toLocaleString("en-IN")} Products found`}
                 </div>
 
-              <div className="pc-toolbar__right">
+              <div className="pc-toolbar__right flex items-center gap-2">
+                <div className="relative flex items-center">
+                  <Search className="w-3.5 h-3.5 absolute left-2.5 text-[#9CA3AF] pointer-events-none" />
+                  <input
+                    type="search"
+                    placeholder="Search catalog…"
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        pushParams((params) => {
+                          if (searchInput.trim()) params.set("search", searchInput.trim());
+                          else params.delete("search");
+                          params.set("page", "1");
+                        });
+                      }
+                    }}
+                    className="pl-8 pr-2.5 py-1.5 text-xs bg-white border border-[#E5E7EB] rounded-lg focus:outline-none focus:border-[#111315] w-36 sm:w-48 text-[#111315]"
+                    aria-label="Search products"
+                  />
+                </div>
+
                 <button
                   type="button"
                   className="pc-filters-mobile"

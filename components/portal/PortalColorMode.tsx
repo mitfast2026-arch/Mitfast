@@ -46,9 +46,7 @@ function writeHtmlTheme(mode: PortalColorMode) {
 }
 
 export function PortalColorModeProvider({ children }: { children: React.ReactNode }) {
-  const [mode, setModeState] = useState<PortalColorMode>(() =>
-    typeof window === 'undefined' ? 'dark' : readStoredMode()
-  );
+  const [mode, setModeState] = useState<PortalColorMode>('dark');
   const [animating, setAnimating] = useState(false);
   const [ready, setReady] = useState(false);
   const [, startTransition] = useTransition();

@@ -58,11 +58,23 @@ export const updateEnquiryStatusSchema = z.object({
 
 export const updateEnquiryDetailsSchema = z.object({
   enquiryId: z.string().uuid('Invalid enquiry ID'),
-  guestName: requiredContactSchema.shape.fullName,
-  guestEmail: requiredContactSchema.shape.email,
-  guestPhone: requiredContactSchema.shape.phone,
+  guestName: requiredContactSchema.shape.fullName.optional(),
+  guestEmail: requiredContactSchema.shape.email.optional(),
+  guestPhone: requiredContactSchema.shape.phone.optional(),
   country: z.string().min(2).optional(),
   companyName: z.string().optional().nullable(),
+  message: z.string().min(1).optional(),
+  enquiryType: z.string().optional(),
+  productId: z.string().uuid('Invalid product ID').optional().nullable(),
+  lineItems: z
+    .array(
+      z.object({
+        productId: z.string().uuid().optional().nullable(),
+        name: z.string().optional().nullable(),
+        quantity: z.number().int().min(1),
+      })
+    )
+    .optional(),
 });
 
 export const respondToEnquirySchema = z.object({
@@ -73,7 +85,16 @@ export const respondToEnquirySchema = z.object({
 
 export const convertEnquiryToRfqSchema = z.object({
   enquiryId: z.string().uuid('Invalid enquiry ID'),
-  quantity: z.number().int().min(1, 'Quantity must be at least 1'),
+  quantity: z.number().int().min(1, 'Quantity must be at least 1').optional(),
   productId: z.string().uuid('Invalid product ID').optional(),
+  items: z
+    .array(
+      z.object({
+        productId: z.string().uuid('Invalid product ID'),
+        quantity: z.number().int().min(1, 'Quantity must be at least 1'),
+      })
+    )
+    .min(1)
+    .optional(),
   deliveryAddress: deliveryAddressInputSchema.optional(),
 });

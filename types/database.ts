@@ -101,7 +101,7 @@ export type Database = {
           company_name: string
           created_at: string
           currency: string
-          default_gst_rate: number
+          default_gst_rate?: number
           google_login_enabled: boolean
           id: string
           logo_url: string | null

@@ -108,6 +108,23 @@ function pushRecent(item: RecentItem) {
   localStorage.setItem(RECENT_KEY, JSON.stringify(next));
 }
 
+function getVisitorSessionId(): string {
+  if (typeof window === "undefined") return "anon";
+  try {
+    let vid = localStorage.getItem("mitfast_vid");
+    if (!vid) {
+      vid =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `v_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      localStorage.setItem("mitfast_vid", vid);
+    }
+    return vid;
+  } catch {
+    return "anon";
+  }
+}
+
 function productThumb(p: { images?: ProductImage[] }): string {
   return (
     p.images?.find((img) => img.is_primary)?.image_url ||
@@ -168,6 +185,50 @@ export default function ProductDetailClient({
   const [recentlyViewed, setRecentlyViewed] = useState<RecentItem[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const thumbsRef = useRef<HTMLDivElement>(null);
+  const viewTrackedRef = useRef<string | null>(null);
+
+  // ── Track product detail view only on successful full page load ──────
+  useEffect(() => {
+    const activeProduct =
+      product || (initialProduct && initialProduct.id === productId ? initialProduct : null);
+    const activeId = activeProduct?.id;
+    if (!activeId || loadError) return;
+
+    // Prevent duplicate calls across React Strict Mode or state re-renders
+    if (viewTrackedRef.current === activeId) return;
+    viewTrackedRef.current = activeId;
+
+    // Deduplication window: 30 minutes (1800000 ms) per product per session
+    const DEDUP_WINDOW_MS = 30 * 60 * 1000;
+    const storageKey = `mitfast_pv_${activeId}`;
+    let shouldTrack = true;
+
+    try {
+      const lastViewedAt = sessionStorage.getItem(storageKey);
+      const now = Date.now();
+      if (lastViewedAt && now - Number(lastViewedAt) < DEDUP_WINDOW_MS) {
+        shouldTrack = false;
+      } else {
+        sessionStorage.setItem(storageKey, String(now));
+      }
+    } catch {
+      // Proceed to server rate-limit if sessionStorage is unavailable
+    }
+
+    if (shouldTrack) {
+      const visitorId = getVisitorSessionId();
+      void fetch(`/api/products/${activeId}/view`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-visitor-id': visitorId,
+        },
+        keepalive: true,
+      }).catch(() => {
+        // Non-blocking telemetry
+      });
+    }
+  }, [product, initialProduct, productId, loadError]);
 
   const loadProduct = useCallback(async (opts?: { soft?: boolean }) => {
     setLoadError(null);
