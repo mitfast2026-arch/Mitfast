@@ -181,7 +181,7 @@ Prefer single-file or single-test runs during iteration. Full suites are for the
 ### Forbidden
 - **Never use `mithronadmin@gmail.com`** for Supabase CLI, Vercel CLI, deploys, or env setup. That account belongs to a different org/project.
 - **Never point this app at any Supabase project other than** `qubphaacuuwlpdrsprjl` (`https://qubphaacuuwlpdrsprjl.supabase.co`).
-- Do not deploy or push secrets using the wrong Vercel team; production URL is `https://mitfast-b2b.vercel.app`.
+- Do not deploy or push secrets using the wrong Vercel team; production URL is `https://mitfast-b2b-puce.vercel.app` (or `https://mitfast-b2b.vercel.app`).
 
 ---
 

@@ -156,7 +156,7 @@ max_indexes = 5
 enabled = true
 # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
 # in emails.
-site_url = "https://mitfast-b2b.vercel.app"
+site_url = "https://mitfast-b2b-puce.vercel.app"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 additional_redirect_urls = [
@@ -164,6 +164,8 @@ additional_redirect_urls = [
   "http://localhost:3000/auth/callback",
   "http://127.0.0.1:3000/**",
   "http://127.0.0.1:3000/auth/callback",
+  "https://mitfast-b2b-puce.vercel.app/**",
+  "https://mitfast-b2b-puce.vercel.app/auth/callback",
   "https://mitfast-b2b.vercel.app/**",
   "https://mitfast-b2b.vercel.app/auth/callback"
 ]

@@ -10,7 +10,7 @@ Never configure Auth, hooks, or secrets on any other Supabase org/project.
 
 **Allowed for this app:**
 - Supabase project ref `qubphaacuuwlpdrsprjl` only
-- Production site `https://mitfast-b2b.vercel.app`
+- Production site `https://mitfast-b2b-puce.vercel.app` (or `https://mitfast-b2b.vercel.app`)
 - GitHub repo `mitfast2026-arch/Mitfast`
 
 ## Checklist
