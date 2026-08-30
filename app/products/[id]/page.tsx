@@ -69,9 +69,9 @@ export default async function ProductDetailPage(props: PageProps) {
 
   const product = result.data.product;
   const jsonLd = buildProductJsonLd(product);
-  const descriptionHtml = product.description
-    ? sanitizeRichTextHtml(product.description)
-    : '';
+  const descriptionHtml =
+    product.descriptionHtml ||
+    (product.description ? sanitizeRichTextHtml(product.description) : '');
 
   return (
     <>
@@ -82,7 +82,7 @@ export default async function ProductDetailPage(props: PageProps) {
       <noscript>
         <article>
           <h1>{product.name}</h1>
-          {product.description ? <p>{product.description}</p> : null}
+          {product.description ? <p>{stripRichTextHtml(product.description)}</p> : null}
           <p>
             Price: ₹
             {Math.max(

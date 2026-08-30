@@ -3,8 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Lock, Eye, EyeOff, ArrowRight, CheckCircle2, AlertCircle, ShieldCheck } from 'lucide-react';
+import { Lock, Eye, EyeOff, ArrowRight, ArrowLeft, CheckCircle2, AlertCircle, ShieldCheck } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
+import { homeForRole } from '@/lib/auth/post-auth-path';
 import '@/app/auth/auth.css';
 
 export default function ResetPasswordPage() {
@@ -83,10 +84,15 @@ export default function ResetPasswordPage() {
           .eq('user_id', user.id)
           .maybeSingle();
 
-        if (profile?.role === 'admin') {
-          target = '/admin/dashboard';
-        } else if (profile?.role === 'supplier') {
-          target = '/supplier/dashboard';
+        if (profile?.role === 'supplier') {
+          const { data: sup } = await supabase
+            .from('suppliers')
+            .select('status')
+            .eq('user_id', user.id)
+            .maybeSingle();
+          target = homeForRole('supplier', sup?.status ?? null);
+        } else {
+          target = homeForRole(profile?.role);
         }
       }
 
@@ -104,11 +110,21 @@ export default function ResetPasswordPage() {
   return (
     <div className="auth-shell">
       <div className="auth-container">
-        <div className="auth-brand">
+        <div className="flex items-center justify-between mb-4">
+          <Link
+            href="/auth?mode=signin"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-portal-muted hover:text-portal-fg transition-colors px-3 py-1.5 rounded-full border border-portal-border bg-portal-panel shadow-sm"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Back to Sign In</span>
+          </Link>
           <Link href="/" className="inline-flex items-center gap-2">
             <span className="text-xl font-bold tracking-tight text-portal-fg">MITFAST</span>
           </Link>
-          <h1 className="auth-title mt-4">Reset your password</h1>
+          <div className="w-20" />
+        </div>
+        <div className="auth-brand">
+          <h1 className="auth-title">Reset your password</h1>
           <p className="auth-subtitle">
             Enter and confirm your new secure password below.
           </p>

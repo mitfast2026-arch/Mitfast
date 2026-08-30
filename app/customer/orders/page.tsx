@@ -51,7 +51,7 @@ export default function CustomerOrdersPage() {
     {},
   );
 
-  async function loadOrders() {
+  async function loadOrders(force = false) {
     setLoading(true);
     try {
       const supabase = createBrowserClient();
@@ -77,6 +77,7 @@ export default function CustomerOrdersPage() {
 
       const res = await cachedApiGet<{ orders: Order[] }>(
         `/api/orders?customerId=${prof.id}`,
+        { force },
       );
       if (res.ok && res.data?.orders) {
         setOrders(res.data.orders);
@@ -136,7 +137,7 @@ export default function CustomerOrdersPage() {
       title="Orders"
       subtitle="Track manufacturing progress and deliveries."
       actions={
-        <button type="button" onClick={loadOrders} className="buyer-cta-ghost">
+        <button type="button" onClick={() => loadOrders(true)} className="buyer-cta-ghost">
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </button>

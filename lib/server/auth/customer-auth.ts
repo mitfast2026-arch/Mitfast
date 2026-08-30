@@ -4,14 +4,13 @@ import { completeProfileSchema, updateProfileSchema } from '@/lib/validation/aut
 import type { ServerResult } from './get-session';
 import {
   emailFromAuthUser,
-  isProfileIdentityComplete,
   nameFromAuthUser,
 } from './profile-complete';
 import { mergeGuestStateIntoCustomer } from '@/lib/server/guest/merge-guest-state';
 
 /**
  * Completes buyer/customer (or shared) identity on existing profiles row.
- * Ensures cart for customers. Does not set role if already locked to another portal role.
+ * Ensures cart for customers. Never changes an existing profiles.role.
  */
 export async function completeUserProfile(
   formData: unknown,
@@ -53,20 +52,18 @@ export async function completeUserProfile(
     if (existing?.role === 'admin') {
       role = 'admin';
     } else if (existing?.role && intended && existing.role !== intended) {
-      // Allow role choice only while onboarding is incomplete (Google defaults role via trigger).
-      if (isProfileIdentityComplete(existing)) {
-        return {
-          success: false,
-          error: {
-            message: `This account is already registered as a ${existing.role}. Sign in with that role.`,
-            code: 'ROLE_LOCKED',
-          },
-        };
-      }
+      return {
+        success: false,
+        error: {
+          message: `This account is already registered as a ${existing.role}. Sign in with that role.`,
+          code: 'ROLE_LOCKED',
+        },
+      };
+    } else if (existing?.role) {
+      role = existing.role as 'customer' | 'supplier' | 'admin';
+    } else if (intended) {
       role = intended;
-    } else if (!existing?.role && intended) {
-      role = intended;
-    } else if (!existing?.role) {
+    } else {
       const metaRole = user.user_metadata?.role;
       role = metaRole === 'supplier' ? 'supplier' : 'customer';
     }

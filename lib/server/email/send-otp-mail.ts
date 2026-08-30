@@ -5,7 +5,7 @@ import {
 
 export type SendOtpResult =
   | { ok: true; provider: EmailProvider }
-  | { ok: false; code: 'NOT_CONFIGURED' | 'ALL_FAILED' };
+  | { ok: false; code: 'NOT_CONFIGURED' | 'ALL_FAILED'; errorDetails?: string };
 
 /** Primary Resend, fallback Brevo — OTP emails only. Never logs the code. */
 export async function sendOtpEmail(to: string, code: string): Promise<SendOtpResult> {
@@ -24,7 +24,7 @@ export async function sendOtpEmail(to: string, code: string): Promise<SendOtpRes
 
   const result = await sendTransactionalEmail({ to, subject, html });
   if (!result.ok) {
-    return { ok: false, code: result.code };
+    return { ok: false, code: result.code, errorDetails: result.errorDetails };
   }
   return { ok: true, provider: result.provider };
 }

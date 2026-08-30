@@ -7,6 +7,7 @@ import {
   AlertCircle,
   CheckCircle2,
   ArrowRight,
+  ArrowLeft,
   ShoppingCart,
   Building2,
   Eye,
@@ -20,6 +21,13 @@ import { toast } from 'sonner';
 import { createBrowserClient } from '@/lib/supabase/client';
 import { getSettings } from '@/lib/client/settings-cache';
 import { mergeGuestStateOnce } from '@/lib/client/guest-merge';
+import {
+  buyerAllowsStorefront,
+  isIdentityComplete,
+  isSafeInternalPath,
+  internalPathname,
+  resolvePostAuthPath as resolveRoleHome,
+} from '@/lib/auth/post-auth-path';
 import './auth.css';
 
 export type AuthSearchParams = {
@@ -87,23 +95,21 @@ async function resolvePostAuthPath(
     .eq('user_id', userId)
     .maybeSingle();
 
-  const nameOk = (profile?.full_name || '').trim().length >= 2;
-  const phoneOk = (profile?.phone || '').trim().length >= 7;
-  const emailOk = (profile?.email || '').trim().includes('@');
-  const identityOk = nameOk && phoneOk && emailOk;
+  const identityOk = isIdentityComplete(profile);
 
   if (opts.isAdminAuth) {
     if (profile?.role !== 'admin') {
       await supabase.auth.signOut();
       throw new Error('This account does not have admin access.');
     }
-    return opts.redirectPath?.startsWith('/admin')
-      ? opts.redirectPath
-      : '/admin/dashboard';
   }
 
   if (profile?.role === 'admin') {
-    return '/admin/dashboard';
+    return resolveRoleHome({
+      role: 'admin',
+      redirectPath: opts.redirectPath,
+      identityComplete: true,
+    });
   }
 
   const wantsSupplier = opts.preferredRole === 'supplier' || profile?.role === 'supplier';
@@ -119,35 +125,19 @@ async function resolvePostAuthPath(
       .eq('user_id', userId)
       .maybeSingle();
 
-    if (!sup) return '/auth/supplier/apply';
-    if (sup.status === 'rejected') return '/auth/supplier/rejected';
-    if (sup.status === 'pending' || sup.status === 'archived') {
-      return sup.status === 'archived'
-        ? '/auth/supplier/pending?status=archived'
-        : '/auth/supplier/pending';
-    }
-    if (opts.redirectPath?.startsWith('/supplier')) return opts.redirectPath;
-    return '/supplier/dashboard';
+    return resolveRoleHome({
+      role: 'supplier',
+      supplierStatus: sup?.status ?? null,
+      redirectPath: opts.redirectPath,
+      identityComplete: identityOk,
+    });
   }
 
-  if (!identityOk) {
-    const redirectQs = opts.redirectPath && opts.redirectPath.startsWith('/') && !opts.redirectPath.startsWith('//')
-      ? `&redirect=${encodeURIComponent(opts.redirectPath)}`
-      : '';
-    return `/auth/complete-profile?role=buyer${redirectQs}`;
-  }
-
-  if (
-    opts.redirectPath &&
-    opts.redirectPath.startsWith('/') &&
-    !opts.redirectPath.startsWith('//') &&
-    !opts.redirectPath.startsWith('/admin') &&
-    !opts.redirectPath.startsWith('/auth')
-  ) {
-    return opts.redirectPath;
-  }
-
-  return '/customer/dashboard';
+  return resolveRoleHome({
+    role: 'customer',
+    redirectPath: opts.redirectPath,
+    identityComplete: identityOk,
+  });
 }
 
 function GoogleGlyph() {
@@ -213,36 +203,85 @@ function OtpInput({
   value,
   onChange,
   disabled,
+  onComplete,
 }: {
   value: string;
   onChange: (next: string) => void;
   disabled?: boolean;
+  onComplete?: (code: string) => void;
 }) {
   const inputsRef = useRef<(HTMLInputElement | null)[]>([]);
   const digits = value.padEnd(6, ' ').slice(0, 6).split('');
 
   function focusCell(index: number) {
-    inputsRef.current[index]?.focus();
+    if (index >= 0 && index < 6) {
+      inputsRef.current[index]?.focus();
+      inputsRef.current[index]?.select();
+    }
   }
 
   function handleChange(index: number, char: string) {
-    const digit = char.replace(/\D/g, '').slice(-1);
-    const next = digits.map((d, i) => (i === index ? digit : d.trim())).join('').slice(0, 6);
-    onChange(next);
-    if (digit && index < 5) focusCell(index + 1);
+    const cleanChars = char.replace(/\D/g, '');
+    if (!cleanChars) {
+      const nextArray = [...digits.map((d) => d.trim())];
+      nextArray[index] = '';
+      const next = nextArray.join('').slice(0, 6);
+      onChange(next);
+      return;
+    }
+
+    // Handle single digit or multiple digits typed in one cell
+    if (cleanChars.length === 1) {
+      const nextArray = [...digits.map((d) => d.trim())];
+      nextArray[index] = cleanChars;
+      const next = nextArray.join('').slice(0, 6);
+      onChange(next);
+      if (index < 5) {
+        focusCell(index + 1);
+      }
+      if (next.length === 6 && onComplete) {
+        onComplete(next);
+      }
+    } else {
+      // Multiple chars pasted or autofilled
+      const start = digits.slice(0, index).map((d) => d.trim()).join('');
+      const combined = (start + cleanChars).slice(0, 6);
+      onChange(combined);
+      focusCell(Math.min(combined.length, 5));
+      if (combined.length === 6 && onComplete) {
+        onComplete(combined);
+      }
+    }
   }
 
   function handleKeyDown(index: number, e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Backspace' && !digits[index]?.trim() && index > 0) {
+    if (e.key === 'Backspace') {
+      if (!digits[index]?.trim() && index > 0) {
+        e.preventDefault();
+        const nextArray = [...digits.map((d) => d.trim())];
+        nextArray[index - 1] = '';
+        onChange(nextArray.join('').slice(0, 6));
+        focusCell(index - 1);
+      }
+    } else if (e.key === 'ArrowLeft' && index > 0) {
+      e.preventDefault();
       focusCell(index - 1);
+    } else if (e.key === 'ArrowRight' && index < 5) {
+      e.preventDefault();
+      focusCell(index + 1);
     }
   }
 
   function handlePaste(e: React.ClipboardEvent) {
     e.preventDefault();
     const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
-    if (pasted) onChange(pasted);
-    focusCell(Math.min(pasted.length, 5));
+    if (pasted) {
+      onChange(pasted);
+      focusCell(Math.min(pasted.length, 5));
+      if (pasted.length === 6 && onComplete) {
+        onComplete(pasted);
+      }
+    }
   }
 
   return (
@@ -255,12 +294,13 @@ function OtpInput({
           }}
           type="text"
           inputMode="numeric"
+          pattern="[0-9]*"
           autoComplete={idx === 0 ? 'one-time-code' : 'off'}
           maxLength={1}
           value={digit.trim()}
           disabled={disabled}
           className="auth-otp-cell"
-          aria-label={`Digit ${idx + 1}`}
+          aria-label={`Digit ${idx + 1} of 6`}
           onChange={(e) => handleChange(idx, e.target.value)}
           onKeyDown={(e) => handleKeyDown(idx, e)}
           onFocus={(e) => e.target.select()}
@@ -335,7 +375,7 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
 
   useEffect(() => {
     if (cooldown <= 0) return;
-    const t = window.setTimeout(() => setCooldown((c) => c - 1), 1000);
+    const t = window.setTimeout(() => setCooldown((c) => Math.max(0, c - 1)), 1000);
     return () => window.clearTimeout(t);
   }, [cooldown]);
 
@@ -387,13 +427,12 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
           ? '/auth/supplier/apply'
           : '/customer/dashboard';
       let nextTarget = defaultNext;
-      if (redirectPath && redirectPath.startsWith('/') && !redirectPath.startsWith('//')) {
+      if (redirectPath && isSafeInternalPath(redirectPath)) {
         if (activeRole === 'supplier') {
-          // Keep supplier onboarding intent even when a deep-link redirect is present
-          nextTarget = redirectPath.includes('role=supplier') || redirectPath.startsWith('/supplier')
+          nextTarget = internalPathname(redirectPath).startsWith('/supplier')
             ? redirectPath
-            : `/auth/supplier/apply?redirect=${encodeURIComponent(redirectPath)}`;
-        } else {
+            : '/auth/supplier/apply';
+        } else if (buyerAllowsStorefront(redirectPath)) {
           nextTarget = redirectPath;
         }
       }
@@ -578,6 +617,8 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
     try {
       const supabase = createBrowserClient();
       const role = activeRole === 'supplier' ? 'supplier' : 'customer';
+      let isExistingUser = false;
+
       const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
         password,
@@ -587,41 +628,50 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
       if (error) {
         const msg = error.message.toLowerCase();
         if (msg.includes('already') || msg.includes('registered') || msg.includes('exists')) {
-          throw new Error('This email is already registered. Sign in instead.');
+          isExistingUser = true;
+        } else {
+          throw error;
         }
-        throw error;
       }
 
-      // Supabase may return a user without identities when email already exists (no error)
-      const identities = (data.user as { identities?: unknown[] } | null)?.identities;
-      if (data.user && Array.isArray(identities) && identities.length === 0) {
-        throw new Error('This email is already registered. Sign in instead.');
+      // Supabase returns an empty identities array if user exists
+      const identities = (data?.user as { identities?: unknown[] } | null)?.identities;
+      if (data?.user && Array.isArray(identities) && identities.length === 0) {
+        isExistingUser = true;
       }
 
-      if (!data.user) throw new Error('Registration failed. Please try again.');
+      if (!data?.user && !isExistingUser) {
+        throw new Error('Registration failed. Please try again.');
+      }
 
-      await deliverOtp();
-      toast.success('Verification code sent to your email!', { id: 'auth-toast' });
+      // Transition to OTP step immediately
+      setRegisterStep('otp');
+
+      try {
+        await deliverOtp();
+        toast.success('Verification code sent to your email!', { id: 'auth-toast' });
+      } catch (otpErr: unknown) {
+        const otpMsg = otpErr instanceof Error ? otpErr.message : 'Could not send verification code';
+        setErrorMsg(otpMsg);
+        toast.error(otpMsg, { id: 'auth-toast' });
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Could not create account';
       setErrorMsg(msg);
       toast.error(msg, { id: 'auth-toast' });
-      if (msg.toLowerCase().includes('already registered')) {
-        // Stay on password step; user can switch to Sign in via footer / mode tabs
-      }
     } finally {
       setLoading(false);
       submitLockRef.current = false;
     }
   }
 
-  async function verifyOtp(e: React.FormEvent) {
-    e.preventDefault();
+  async function executeOtpVerification(tokenToVerify: string) {
     if (submitLockRef.current || loading) return;
     setErrorMsg('');
     setSuccessMsg('');
 
-    if (otp.length < 6) {
+    const token = tokenToVerify.trim();
+    if (token.length < 6) {
       setErrorMsg('Enter the 6-digit verification code');
       return;
     }
@@ -636,23 +686,16 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
     toast.loading('Verifying code...', { id: 'auth-toast' });
     try {
       const supabase = createBrowserClient();
-      const token = otp.trim();
-      let result = await supabase.auth.verifyOtp({
-        email: email.trim(),
+      const cleanEmail = email.trim();
+
+      const { data, error } = await supabase.auth.verifyOtp({
+        email: cleanEmail,
         token,
         type: 'email',
       });
 
-      if (result.error || !result.data.user) {
-        result = await supabase.auth.verifyOtp({
-          email: email.trim(),
-          token,
-          type: 'magiclink',
-        });
-      }
-
-      if (result.error) throw result.error;
-      if (!result.data.user) throw new Error('Verification failed');
+      if (error) throw error;
+      if (!data.user) throw new Error('Verification failed');
 
       setOtpFailCount(0);
       toast.success('Verified! Redirecting…', { id: 'auth-toast' });
@@ -663,7 +706,7 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
         /* best-effort */
       }
 
-      const target = await resolvePostAuthPath(supabase, result.data.user.id, {
+      const target = await resolvePostAuthPath(supabase, data.user.id, {
         isAdminAuth: false,
         preferredRole: activeRole,
         redirectPath,
@@ -683,13 +726,18 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
         const msg =
           err instanceof Error
             ? `${err.message} (${remaining} attempt${remaining === 1 ? '' : 's'} left)`
-            : `Invalid or expired code (${remaining} attempts left)`;
+            : `Invalid or expired code (${remaining} attempt${remaining === 1 ? '' : 's'} left)`;
         setErrorMsg(msg);
         toast.error(msg, { id: 'auth-toast' });
       }
       setLoading(false);
       submitLockRef.current = false;
     }
+  }
+
+  async function verifyOtp(e: React.FormEvent) {
+    e.preventDefault();
+    await executeOtpVerification(otp);
   }
 
   async function handleForgotPassword(e: React.FormEvent) {
@@ -783,12 +831,61 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
                     : 'Register as a supplier — admin approval required',
               };
 
+  const handleGlobalBack = () => {
+    if (authMode === 'register' && registerStep === 'otp') {
+      setRegisterStep('password');
+      setOtp('');
+      setErrorMsg('');
+      setSuccessMsg('');
+      return;
+    }
+    if (authMode === 'register' && registerStep === 'password') {
+      setRegisterStep('email');
+      setPassword('');
+      setConfirmPassword('');
+      setErrorMsg('');
+      setSuccessMsg('');
+      return;
+    }
+    if (authMode === 'forgot') {
+      switchAuthMode('signin');
+      return;
+    }
+    if (redirectPath && isSafeInternalPath(redirectPath) && !internalPathname(redirectPath).startsWith('/auth')) {
+      router.push(redirectPath);
+      return;
+    }
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push('/');
+    }
+  };
+
+  const getBackBtnLabel = () => {
+    if (authMode === 'register' && registerStep === 'otp') return 'Back to password';
+    if (authMode === 'register' && registerStep === 'password') return 'Back to email';
+    if (authMode === 'forgot') return 'Back to sign in';
+    return 'Back to Store';
+  };
+
   return (
     <div className="auth-page saas-canvas-bg">
       <div className="auth-card">
-        <Link href="/" className="auth-brand">
-          MITFAST B2B
-        </Link>
+        <div className="auth-card-header">
+          <button
+            type="button"
+            onClick={handleGlobalBack}
+            className="auth-top-back-btn"
+            aria-label={getBackBtnLabel()}
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>{getBackBtnLabel()}</span>
+          </button>
+          <Link href="/" className="auth-brand-inline">
+            MITFAST B2B
+          </Link>
+        </div>
 
         {!isAdminAuth && (authMode === 'forgot' || registerStep === 'email') && (
           <>
@@ -1197,7 +1294,14 @@ export default function AuthPageClient({ searchParams }: { searchParams: AuthSea
             />
             <div className="space-y-2">
               <label className="saas-label text-center block">Verification code</label>
-              <OtpInput value={otp} onChange={setOtp} disabled={loading} />
+              <OtpInput
+                value={otp}
+                onChange={setOtp}
+                disabled={loading}
+                onComplete={(completedCode) => {
+                  void executeOtpVerification(completedCode);
+                }}
+              />
             </div>
             <button
               type="submit"

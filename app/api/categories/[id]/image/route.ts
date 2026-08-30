@@ -1,14 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireAdmin } from '@/lib/server/auth/get-session';
-import {
-  uploadCategoryImageFile,
-  removeCategoryImage,
-} from '@/lib/server/categories/category-service';
+import { uploadCategoryImageFile, removeCategoryImage } from '@/lib/server/categories/category-service';
 
-export async function POST(
-  request: NextRequest,
-  props: { params: Promise<{ id: string }> }
-) {
+export const runtime = 'nodejs';
+export const maxDuration = 60;
+
+export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
     const auth = await requireAdmin();
@@ -16,12 +13,11 @@ export async function POST(
 
     const formData = await request.formData();
     const file = formData.get('file');
-
     if (!file || !(file instanceof File)) {
       return NextResponse.json(
         {
           success: false,
-          error: { message: 'Image file is required', code: 'VALIDATION_ERROR' },
+          error: { message: 'Category image file is required', code: 'VALIDATION_ERROR' },
         },
         { status: 400 }
       );
@@ -29,26 +25,20 @@ export async function POST(
 
     const result = await uploadCategoryImageFile(params.id, file);
     if (!result.success) {
-      return NextResponse.json(result, { status: 400 });
+      const status = result.error.code === 'NOT_FOUND' ? 404 : 400;
+      return NextResponse.json(result, { status });
     }
-
     return NextResponse.json(result);
   } catch (error) {
-    console.error('[POST /api/categories/[id]/image] Error:', error);
+    console.error('[POST /api/categories/:id/image] Error:', error);
     return NextResponse.json(
-      {
-        success: false,
-        error: { message: 'Internal server error', code: 'INTERNAL_ERROR' },
-      },
+      { success: false, error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } },
       { status: 500 }
     );
   }
 }
 
-export async function DELETE(
-  _request: NextRequest,
-  props: { params: Promise<{ id: string }> }
-) {
+export async function DELETE(_request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
     const auth = await requireAdmin();
@@ -56,17 +46,14 @@ export async function DELETE(
 
     const result = await removeCategoryImage(params.id);
     if (!result.success) {
-      return NextResponse.json(result, { status: 400 });
+      const status = result.error.code === 'NOT_FOUND' ? 404 : 400;
+      return NextResponse.json(result, { status });
     }
-
     return NextResponse.json(result);
   } catch (error) {
-    console.error('[DELETE /api/categories/[id]/image] Error:', error);
+    console.error('[DELETE /api/categories/:id/image] Error:', error);
     return NextResponse.json(
-      {
-        success: false,
-        error: { message: 'Internal server error', code: 'INTERNAL_ERROR' },
-      },
+      { success: false, error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } },
       { status: 500 }
     );
   }

@@ -108,8 +108,8 @@ export async function convertRfqToOrder(
       const unitPrice = item.final_unit_price ?? item.original_unit_price;
       const p = item.product as any;
 
-      const gstRate = p?.gst_rate ?? 0;
-      const gstIncluded = p?.gst_included ?? false;
+      const gstRate = item.gst_rate ?? p?.gst_rate ?? 0;
+      const gstIncluded = item.gst_included ?? p?.gst_included ?? false;
       const discount = 0; // Negotiated price is already final net price
 
       const linePricing = calculatePricing({

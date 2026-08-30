@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.17"
+    PostgrestVersion: "14.5"
   }
   graphql_public: {
     Tables: {
@@ -101,7 +101,6 @@ export type Database = {
           company_name: string
           created_at: string
           currency: string
-          default_gst_rate?: number
           google_login_enabled: boolean
           id: string
           logo_url: string | null
@@ -120,7 +119,6 @@ export type Database = {
           company_name?: string
           created_at?: string
           currency?: string
-          default_gst_rate?: number
           google_login_enabled?: boolean
           id?: string
           logo_url?: string | null
@@ -139,7 +137,6 @@ export type Database = {
           company_name?: string
           created_at?: string
           currency?: string
-          default_gst_rate?: number
           google_login_enabled?: boolean
           id?: string
           logo_url?: string | null
@@ -1081,6 +1078,8 @@ export type Database = {
           created_at: string
           final_quantity: number | null
           final_unit_price: number | null
+          gst_included: boolean
+          gst_rate: number
           id: string
           original_quantity: number
           original_unit_price: number
@@ -1092,6 +1091,8 @@ export type Database = {
           created_at?: string
           final_quantity?: number | null
           final_unit_price?: number | null
+          gst_included?: boolean
+          gst_rate?: number
           id?: string
           original_quantity: number
           original_unit_price: number
@@ -1103,6 +1104,8 @@ export type Database = {
           created_at?: string
           final_quantity?: number | null
           final_unit_price?: number | null
+          gst_included?: boolean
+          gst_rate?: number
           id?: string
           original_quantity?: number
           original_unit_price?: number
@@ -1376,56 +1379,56 @@ export type Database = {
           p_customer_message: string
           p_delivery_address: Json
           p_enquiry_id: string
+          p_items: Json
           p_original_total: number
-          p_product_id: string
-          p_product_name_snapshot: string
-          p_quantity: number
           p_rfq_number: string
-          p_unit_price: number
         }
         Returns: {
           rfq_id: string
           rfq_number: string
         }[]
       }
+      create_supplier_product_atomic: {
+        Args: { p_payload: Json; p_supplier_id: string }
+        Returns: string
+      }
       edit_order_atomic: {
         Args: { p_delivery_address?: Json; p_items: Json; p_order_id: string }
         Returns: boolean
       }
+      edit_rfq_atomic: {
+        Args: {
+          p_customer_message?: string
+          p_delivery_address?: Json
+          p_items: Json
+          p_rfq_id: string
+        }
+        Returns: {
+          final_total: number
+          original_total: number
+          rfq_id: string
+        }[]
+      }
       generate_order_number: { Args: never; Returns: string }
       generate_rfq_number: { Args: never; Returns: string }
-      increment_cart_item_quantity:
-        | {
-            Args: { p_cart_id: string; p_delta: number; p_product_id: string }
-            Returns: number
-          }
-        | {
-            Args: {
-              p_cart_id: string
-              p_delta: number
-              p_moq?: number
-              p_product_id: string
-            }
-            Returns: number
-          }
-      increment_guest_cart_item_quantity:
-        | {
-            Args: {
-              p_delta: number
-              p_guest_session_id: string
-              p_product_id: string
-            }
-            Returns: number
-          }
-        | {
-            Args: {
-              p_delta: number
-              p_guest_session_id: string
-              p_moq?: number
-              p_product_id: string
-            }
-            Returns: number
-          }
+      increment_cart_item_quantity: {
+        Args: {
+          p_cart_id: string
+          p_delta: number
+          p_moq?: number
+          p_product_id: string
+        }
+        Returns: number
+      }
+      increment_guest_cart_item_quantity: {
+        Args: {
+          p_delta: number
+          p_guest_session_id: string
+          p_moq?: number
+          p_product_id: string
+        }
+        Returns: number
+      }
       increment_product_view: { Args: { p_id: string }; Returns: undefined }
       increment_product_view_sampled: {
         Args: { p_id: string; p_sample_key?: string; p_window_seconds?: number }
@@ -1435,6 +1438,21 @@ export type Database = {
       negotiate_rfq_items_atomic: {
         Args: { p_items: Json; p_rfq_id: string }
         Returns: boolean
+      }
+      prune_api_rate_limit_log: {
+        Args: { p_older_than?: string }
+        Returns: number
+      }
+      reorder_product_images_atomic: {
+        Args: { p_ordered_ids: string[]; p_product_id: string }
+        Returns: boolean
+      }
+      reserve_product_image_slot: {
+        Args: { p_max: number; p_product_id: string }
+        Returns: {
+          image_id: string
+          sort_order: number
+        }[]
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
@@ -1464,6 +1482,15 @@ export type Database = {
           rfq_number: string
           supplier_key: string
         }[]
+      }
+      submit_supplier_update_atomic: {
+        Args: {
+          p_base_updated_at?: string
+          p_product_id: string
+          p_proposed: Json
+          p_supplier_id: string
+        }
+        Returns: string
       }
       supplier_admin_summary_stats: {
         Args: { p_supplier_ids: string[] }

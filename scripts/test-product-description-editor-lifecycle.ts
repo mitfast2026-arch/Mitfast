@@ -1,23 +1,28 @@
 import { sanitizeRichTextHtml, stripRichTextHtml, isEmptyRichText } from '../lib/html/sanitize-rich-text.server';
+import { stripHtmlTags } from '../lib/html/strip-html';
 import assert from 'node:assert';
 
 async function runTests() {
   console.log('--- 1. Testing Sanitization & Tag Support ---');
 
-  // Test 1.1: Headings & Font Sizes
+  // Test 1.1: Headings & Font Sizes & Alignments
   const htmlWithHeadingsAndFont = `
     <h1>Industrial Fastener Spec Sheet</h1>
     <h2>Grade 8.8 High-Tensile Steel</h2>
     <h3>Mechanical Properties</h3>
     <p><span style="font-size: 18px;" data-font-size="18px">Tensile Strength: 800 MPa</span></p>
     <p style="text-align: center;" data-text-align="center">Certified to ISO 898-1 standards.</p>
+    <p style="text-align: right;">Right aligned</p>
+    <p style="text-align: justify;">Justified paragraph</p>
   `;
   const sanitized1 = sanitizeRichTextHtml(htmlWithHeadingsAndFont);
   assert(sanitized1.includes('<h1>Industrial Fastener Spec Sheet</h1>'), 'H1 preserved');
   assert(sanitized1.includes('<h2>Grade 8.8 High-Tensile Steel</h2>'), 'H2 preserved');
   assert(sanitized1.includes('<h3>Mechanical Properties</h3>'), 'H3 preserved');
   assert(sanitized1.includes('font-size: 18px') || sanitized1.includes('data-font-size="18px"'), 'Font size preserved');
-  assert(sanitized1.includes('text-align: center') || sanitized1.includes('data-text-align="center"'), 'Text alignment preserved');
+  assert(sanitized1.includes('text-align: center') || sanitized1.includes('text-align:center') || sanitized1.includes('data-text-align="center"'), 'Text alignment center preserved');
+  assert(sanitized1.includes('text-align: right') || sanitized1.includes('text-align:right'), 'Text alignment right preserved');
+  assert(sanitized1.includes('text-align: justify') || sanitized1.includes('text-align:justify'), 'Text alignment justify preserved');
   console.log('✓ Headings, Font Sizes & Alignments preserved');
 
   // Test 1.2: Lists (Ordered, Bullet, Nested)
@@ -111,11 +116,27 @@ async function runTests() {
   assert(!isEmptyRichText('<table><tr><td>Spec</td></tr></table>'), 'Table-only content is not empty');
   console.log('✓ Empty TipTap HTML variations correctly identified');
 
-  console.log('\n--- 3. Testing Plain Text Extraction for Card Snippets ---');
+  console.log('\n--- 3. Testing Plain Text Extraction & Card Rendering Safety ---');
+  // <p>hello</p> -> "hello" (no HTML tags shown to users)
+  assert.strictEqual(stripHtmlTags('<p>hello</p>'), 'hello');
+  assert.strictEqual(stripRichTextHtml('<p>hello</p>'), 'hello');
+
+  // <p style="text-align:left">fasd</p> -> "fasd"
+  assert.strictEqual(stripHtmlTags('<p style="text-align:left">fasd</p>'), 'fasd');
+  assert.strictEqual(stripRichTextHtml('<p style="text-align:left">fasd</p>'), 'fasd');
+
+  // <strong>hello</strong> -> "hello" in cards
+  assert.strictEqual(stripHtmlTags('<strong>hello</strong>'), 'hello');
+  assert.strictEqual(stripRichTextHtml('<strong>hello</strong>'), 'hello');
+
+  // <ul><li>Item 1</li><li>Item 2</li></ul> -> clean text for card snippet
+  assert.strictEqual(stripHtmlTags('<ul><li>Item 1</li><li>Item 2</li></ul>'), 'Item 1 Item 2');
+  assert.strictEqual(stripRichTextHtml('<ul><li>Item 1</li><li>Item 2</li></ul>'), 'Item 1 Item 2');
+
   const richCardSource = '<h2>Title</h2><p>High-grade <strong>stainless steel</strong> fastener.</p>';
   const stripped = stripRichTextHtml(richCardSource);
   assert.strictEqual(stripped, 'Title High-grade stainless steel fastener.');
-  console.log('✓ Plain text extraction cleans tags without merging words');
+  console.log('✓ Plain text extraction cleans tags without merging words and removes all raw HTML tags');
 
   console.log('\n--- 4. Testing Groq AI Refinement API Integration ---');
   const groqApiKey = process.env.GROQ_API_KEY || '';

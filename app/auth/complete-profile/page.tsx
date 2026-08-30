@@ -2,9 +2,14 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { AlertCircle, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { AlertCircle, ArrowLeft, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
 import { mergeGuestStateOnce } from '@/lib/client/guest-merge';
+import {
+  homeForRole,
+  isIdentityComplete,
+  resolvePostAuthPath,
+} from '@/lib/auth/post-auth-path';
 
 export default function CompleteProfilePage() {
   const [email, setEmail] = useState('');
@@ -40,32 +45,32 @@ export default function CompleteProfilePage() {
 
         if (cancelled) return;
 
-        const effectiveRole =
-          roleParam === 'supplier' || profile?.role === 'supplier' ? 'supplier' : 'customer';
+        const lockedRole =
+          profile?.role === 'admin' || profile?.role === 'supplier' || profile?.role === 'customer'
+            ? profile.role
+            : roleParam === 'supplier'
+              ? 'supplier'
+              : 'customer';
 
-        const nameOk = (profile?.full_name || '').trim().length >= 2;
-        const phoneOk = (profile?.phone || '').trim().length >= 7;
-        const emailOk = (profile?.email || user.email || '').trim().includes('@');
+        const identityOk = isIdentityComplete({
+          full_name: profile?.full_name,
+          phone: profile?.phone,
+          email: profile?.email || user.email,
+        });
 
-        if (nameOk && phoneOk && emailOk) {
+        if (identityOk) {
           const redirectParam = params.get('redirect');
-          const safeRedirect =
-            redirectParam &&
-            redirectParam.startsWith('/') &&
-            !redirectParam.startsWith('//')
-              ? redirectParam
-              : null;
-
-          if (effectiveRole === 'supplier') {
+          if (lockedRole === 'admin') {
+            window.location.assign('/admin/dashboard');
+            return;
+          }
+          if (lockedRole === 'supplier') {
             const { data: sup } = await supabase
               .from('suppliers')
               .select('status')
               .eq('user_id', user.id)
               .maybeSingle();
-            if (!sup) window.location.assign('/auth/supplier/apply');
-            else if (sup.status === 'active') window.location.assign('/supplier/dashboard');
-            else if (sup.status === 'rejected') window.location.assign('/auth/supplier/rejected');
-            else window.location.assign('/auth/supplier/pending');
+            window.location.assign(homeForRole('supplier', sup?.status ?? null));
             return;
           }
 
@@ -74,7 +79,13 @@ export default function CompleteProfilePage() {
           } catch {
             /* best-effort */
           }
-          window.location.assign(safeRedirect || '/customer/dashboard');
+          window.location.assign(
+            resolvePostAuthPath({
+              role: 'customer',
+              redirectPath: redirectParam,
+              identityComplete: true,
+            })
+          );
           return;
         }
 
@@ -86,7 +97,7 @@ export default function CompleteProfilePage() {
         setFullName((profile?.full_name || metaName || '').trim());
         setPhone((profile?.phone || '').trim());
         setEmailLocked(Boolean(user.email));
-        setIntendedRole(effectiveRole);
+        setIntendedRole(lockedRole === 'supplier' ? 'supplier' : 'customer');
       } catch {
         if (!cancelled) setErrorMsg('Could not load your account.');
       } finally {
@@ -119,8 +130,23 @@ export default function CompleteProfilePage() {
         return;
       }
 
+      if (json.data?.role === 'admin') {
+        window.location.assign('/admin/dashboard');
+        return;
+      }
       if (json.data?.role === 'supplier') {
-        window.location.assign('/auth/supplier/apply');
+        const supabase = createBrowserClient();
+        const {
+          data: { user: current },
+        } = await supabase.auth.getUser();
+        const { data: sup } = current
+          ? await supabase
+              .from('suppliers')
+              .select('status')
+              .eq('user_id', current.id)
+              .maybeSingle()
+          : { data: null };
+        window.location.assign(homeForRole('supplier', sup?.status ?? null));
         return;
       }
 
@@ -131,13 +157,13 @@ export default function CompleteProfilePage() {
       }
 
       const redirectParam = new URLSearchParams(window.location.search).get('redirect');
-      const safeRedirect =
-        redirectParam &&
-        redirectParam.startsWith('/') &&
-        !redirectParam.startsWith('//')
-          ? redirectParam
-          : '/customer/dashboard';
-      window.location.assign(safeRedirect);
+      window.location.assign(
+        resolvePostAuthPath({
+          role: 'customer',
+          redirectPath: redirectParam,
+          identityComplete: true,
+        })
+      );
     } catch {
       setErrorMsg('Unexpected error saving profile');
     } finally {
@@ -156,9 +182,19 @@ export default function CompleteProfilePage() {
   return (
     <div className="min-h-screen saas-canvas-bg flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md space-y-4 text-center">
-        <Link href="/" className="inline-block">
-          <span className="text-xl font-semibold text-[#111315] tracking-tight">MITFAST B2B</span>
-        </Link>
+        <div className="flex items-center justify-between">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-portal-muted hover:text-portal-text transition-colors px-3 py-1.5 rounded-full border border-portal-border bg-portal-panel"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Back to Store</span>
+          </Link>
+          <Link href="/" className="inline-block">
+            <span className="text-xl font-semibold text-[#111315] tracking-tight">MITFAST B2B</span>
+          </Link>
+          <div className="w-16" /> {/* spacer */}
+        </div>
         <h1 className="type-page text-2xl">Complete your profile</h1>
         <p className="type-subtitle">Name, phone, and email are required</p>
       </div>

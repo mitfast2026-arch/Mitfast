@@ -71,9 +71,10 @@ export const ENQUIRY_TRANSITIONS: Record<string, string[]> = {
 };
 
 export const ORDER_STATUS_TRANSITIONS: Record<string, string[]> = {
-  // Admin may move forward or reverse between open fulfillment states.
+  // Open fulfillment may move between accepted and packing.
+  // dispatched and cancelled are terminal (no reverse).
   accepted: ['packing'],
-  packing: ['accepted', 'dispatched'],
+  packing: ['accepted'],
   dispatched: ['packing'],
   cancelled: ['accepted', 'packing'],
 };

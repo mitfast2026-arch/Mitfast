@@ -1,13 +1,14 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import {
   getRfqDetail,
+  getSupplierRfqDetail,
   adminEditRfq,
   adminDeleteRfq,
-  supplierOwnsRfqItems,
 } from '@/lib/server/rfq/rfq-service';
 import {
   getServerSession,
   requireAdmin,
+  requireSupplier,
   unauthorizedResponse,
   forbiddenResponse,
 } from '@/lib/server/auth/get-session';
@@ -37,11 +38,12 @@ export async function GET(_request: NextRequest, props: { params: Promise<{ id: 
       return NextResponse.json(result);
     }
 
-    if (role === 'supplier' && session.supplier?.id) {
-      const owns = await supplierOwnsRfqItems(session.supplier.id, params.id);
-      if (!owns) return forbiddenResponse();
+    if (role === 'supplier') {
+      const auth = await requireSupplier();
+      if (!auth.ok) return auth.response;
+      if (!auth.session.supplier?.id) return forbiddenResponse();
 
-      const result = await getRfqDetail(params.id, { supplierId: session.supplier.id });
+      const result = await getSupplierRfqDetail(auth.session.supplier.id, params.id);
       if (!result.success) {
         const status = result.error.code === 'NOT_FOUND' ? 404 : 400;
         return NextResponse.json(result, { status });

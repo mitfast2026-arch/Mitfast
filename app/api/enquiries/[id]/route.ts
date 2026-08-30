@@ -38,7 +38,10 @@ export async function GET(_request: NextRequest, props: { params: Promise<{ id: 
       return NextResponse.json(result);
     }
 
-    if (role === 'supplier' && session.supplier?.id) {
+    if (role === 'supplier') {
+      if (!session.supplier || session.supplier.status !== 'active') {
+        return forbiddenResponse();
+      }
       const result = await getEnquiryDetail(params.id, { supplierId: session.supplier.id });
       if (!result.success) {
         const status = result.error.code === 'NOT_FOUND' ? 404 : result.error.code === 'FORBIDDEN' ? 403 : 400;

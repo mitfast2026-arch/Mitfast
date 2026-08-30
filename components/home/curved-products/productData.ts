@@ -1,4 +1,5 @@
 import { sanitizeImageUrl } from '@/lib/image-url';
+import { stripHtmlTags } from '@/lib/html/strip-html';
 
 export interface CurvedProduct {
   id: string;
@@ -40,7 +41,7 @@ export function mapApiProductToCurved(p: {
   const specification =
     sortedSpecs.length > 0
       ? `${sortedSpecs[0].spec_name}: ${sortedSpecs[0].spec_value}`
-      : (p.description || '').trim().slice(0, 80);
+      : stripHtmlTags(p.description || '').trim().slice(0, 80);
 
   const selling = p.selling_price || 0;
   const discount = p.discount || 0;

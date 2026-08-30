@@ -42,6 +42,11 @@ if (typeof window !== 'undefined') {
         invalidatePortalCache('/api/supplier/rfqs');
         invalidatePortalCache('/api/customer/quotes');
         invalidatePortalCache('/api/admin/dashboard');
+        if (url.includes('convert-to-order')) {
+          invalidatePortalCache('/api/orders');
+          invalidatePortalCache('/api/supplier/orders');
+          invalidatePortalCache('/api/customer/badge-counts');
+        }
       } else if (url.includes('/api/orders') || url.includes('/api/supplier/orders')) {
         invalidatePortalCache('/api/orders');
         invalidatePortalCache('/api/supplier/orders');

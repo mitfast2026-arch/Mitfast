@@ -18,7 +18,7 @@ $ErrorActionPreference = 'Continue'
 
 function Invoke-Supabase {
   param([Parameter(Mandatory)][string[]]$Args)
-  $out = & supabase @Args 2>&1 | ForEach-Object { $_.ToString() }
+  $out = & npx supabase @Args 2>&1 | ForEach-Object { $_.ToString() }
   $code = $LASTEXITCODE
   [pscustomobject]@{
     ExitCode = $code

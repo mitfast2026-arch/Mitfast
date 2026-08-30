@@ -24,8 +24,8 @@ type ProductOption = {
 
 type LineItem = {
   productId: string;
-  quantity: number;
-  unitPrice: number;
+  quantity: number | '';
+  unitPrice: number | '';
 };
 
 type ManualOrderModalProps = {
@@ -93,7 +93,9 @@ export default function ManualOrderModal({ open, onClose, onCreated }: ManualOrd
       setErrorMsg('Select a customer.');
       return;
     }
-    const validItems = items.filter((i) => i.productId && i.quantity > 0);
+    const validItems = items.filter(
+      (i) => i.productId && (i.quantity === '' || Number(i.quantity) > 0)
+    );
     if (validItems.length === 0) {
       setErrorMsg('Add at least one product line.');
       return;
@@ -116,8 +118,8 @@ export default function ManualOrderModal({ open, onClose, onCreated }: ManualOrd
           const prod = products.find((p) => p.id === i.productId);
           return {
             productId: i.productId,
-            quantity: i.quantity,
-            unitPrice: i.unitPrice,
+            quantity: Math.max(1, Number(i.quantity) || 1),
+            unitPrice: Math.max(0, Number(i.unitPrice) || 0),
             gstRate: prod?.gst_rate ?? 0,
             gstIncluded: Boolean(prod?.gst_included),
             discount: 0,
@@ -292,7 +294,9 @@ export default function ManualOrderModal({ open, onClose, onCreated }: ManualOrd
                     className="saas-input w-full"
                     value={item.quantity}
                     onChange={(e) =>
-                      updateItem(index, { quantity: Math.max(1, parseInt(e.target.value, 10) || 1) })
+                      updateItem(index, {
+                        quantity: e.target.value === '' ? '' : parseInt(e.target.value, 10),
+                      })
                     }
                   />
                 </div>
@@ -306,7 +310,9 @@ export default function ManualOrderModal({ open, onClose, onCreated }: ManualOrd
                     className="saas-input w-full"
                     value={item.unitPrice}
                     onChange={(e) =>
-                      updateItem(index, { unitPrice: Math.max(0, parseFloat(e.target.value) || 0) })
+                      updateItem(index, {
+                        unitPrice: e.target.value === '' ? '' : parseFloat(e.target.value),
+                      })
                     }
                   />
                 </div>

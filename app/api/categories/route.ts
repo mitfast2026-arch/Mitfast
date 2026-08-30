@@ -1,6 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getCategories, createCategory, deleteCategory } from '@/lib/server/categories/category-service';
+import { getCachedPublicCategories } from '@/lib/server/products/cached-storefront';
 import { requireAdmin } from '@/lib/server/auth/get-session';
+
+export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
   try {
@@ -22,7 +25,10 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const result = await getCategories({ mode, status });
+    const result =
+      mode === 'public'
+        ? await getCachedPublicCategories()
+        : await getCategories({ mode, status });
     if (!result.success) return NextResponse.json(result, { status: 400 });
 
     const headers: Record<string, string> =

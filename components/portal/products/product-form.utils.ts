@@ -23,7 +23,7 @@ export function productToFormValues(product: ProductFormProduct): ProductFormVal
   const discount =
     (isUpdatePending ? (proposed?.discount as number | undefined) : undefined) ??
     product.discount ??
-    0;
+    '';
 
   const proposedImageUrls =
     isUpdatePending && Array.isArray(proposed?.image_urls)
@@ -70,15 +70,15 @@ export function productToFormValues(product: ProductFormProduct): ProductFormVal
       (proposed?.specifications as ProductFormProduct['specifications']) || product.specifications
     ),
     supplierPrice:
-      (proposed?.supplier_price as number) ?? product.supplier_price ?? 0,
+      (proposed?.supplier_price as number) ?? product.supplier_price ?? '',
     profitType:
       product.profit_type === 'fixed' ? 'fixed' : 'percentage',
     profit: product.profit_value ?? 15,
-    discount,
-    discountEnabled: discount > 0,
+    discount: discount === 0 ? '' : discount,
+    discountEnabled: Number(discount) > 0,
     gst: (proposed?.gst_rate as number) ?? product.gst_rate ?? 0,
     gstIncluded: (proposed?.gst_included as boolean) ?? product.gst_included ?? false,
-    minValue: (proposed?.min_order_value as number) ?? product.min_order_value ?? 0,
+    minValue: (proposed?.min_order_value as number) ?? product.min_order_value ?? '',
     locationMode: loc.mode,
     locationOther: loc.other,
     images: sortedImages.map((img) => ({
@@ -106,25 +106,25 @@ export function validateFormValues(
   if (!opts?.draft && !values.categoryId) {
     errors.categoryId = 'Category is required';
   }
-  if (!opts?.draft && values.supplierPrice < 0) {
-    errors.supplierPrice = 'Factory price must be non-negative';
+  if (!opts?.draft && (values.supplierPrice === '' || Number(values.supplierPrice) < 0 || isNaN(Number(values.supplierPrice)))) {
+    errors.supplierPrice = 'Factory price is required';
   }
 
-  if (isSupplier && !opts?.draft && values.suggestedMoq < 1) {
+  if (isSupplier && !opts?.draft && (values.suggestedMoq === '' || Number(values.suggestedMoq) < 1 || isNaN(Number(values.suggestedMoq)))) {
     errors.suggestedMoq = 'Suggested MOQ must be at least 1';
   }
-  if (isAdmin && !opts?.draft && values.moq < 1) {
+  if (isAdmin && !opts?.draft && (values.moq === '' || Number(values.moq) < 1 || isNaN(Number(values.moq)))) {
     errors.moq = 'Catalog MOQ must be at least 1';
   }
 
   if (isAdmin) {
-    if (values.profit < 0) {
+    if (values.profit === '' || Number(values.profit) < 0 || isNaN(Number(values.profit))) {
       errors.profit = 'Margin must be non-negative';
     }
-    if (values.gst < 0 || values.gst > 100) {
+    if (values.gst !== '' && (Number(values.gst) < 0 || Number(values.gst) > 100 || isNaN(Number(values.gst)))) {
       errors.gst = 'GST must be between 0 and 100';
     }
-    if (values.discountEnabled && values.discount < 0) {
+    if (values.discountEnabled && (values.discount === '' || Number(values.discount) < 0 || isNaN(Number(values.discount)))) {
       errors.discount = 'Discount cannot be negative';
     }
   }
@@ -159,7 +159,7 @@ export function buildPayload(
     }))
     .filter((s) => s.spec_name && s.spec_value);
 
-  const discount = values.discountEnabled ? values.discount : 0;
+  const discount = values.discountEnabled && values.discount !== '' ? Number(values.discount) : 0;
 
   const payload: Record<string, unknown> = {
     name: values.name.trim(),
@@ -167,14 +167,14 @@ export function buildPayload(
     supplierId: values.supplierId || null,
     description: values.description.trim() || undefined,
     sku: values.sku.trim() || null,
-    suggestedMoq: values.suggestedMoq,
-    supplierPrice: values.supplierPrice,
-    gstRate: values.gst,
+    suggestedMoq: values.suggestedMoq === '' ? 100 : Number(values.suggestedMoq),
+    supplierPrice: values.supplierPrice === '' ? 0 : Number(values.supplierPrice),
+    gstRate: values.gst === '' ? 0 : Number(values.gst),
     gstIncluded: values.gstIncluded,
     discount,
-    minOrderValue: values.minValue > 0 ? values.minValue : null,
+    minOrderValue: values.minValue !== '' && Number(values.minValue) > 0 ? Number(values.minValue) : null,
     profitType: values.profitType,
-    profitValue: values.profit,
+    profitValue: values.profit === '' ? 0 : Number(values.profit),
     ribbonLabel: values.ribbon.trim() || null,
     specifications,
   };
@@ -182,7 +182,7 @@ export function buildPayload(
   payload.imageUrls = values.images.map((img) => img.image_url).filter(Boolean);
 
   if (!opts?.isSupplier) {
-    payload.moq = values.moq;
+    payload.moq = values.moq === '' ? 100 : Number(values.moq);
   }
 
   return payload;

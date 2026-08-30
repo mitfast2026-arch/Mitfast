@@ -4,18 +4,18 @@ import React from 'react';
 import { calculatePricing } from '@/lib/server/pricing/calculate-price';
 
 type ProductPricingSectionProps = {
-  supplierPrice: number;
-  profit: number;
-  discount: number;
-  gst: number;
+  supplierPrice: number | '';
+  profit: number | '';
+  discount: number | '';
+  gst: number | '';
   gstIncluded: boolean;
-  minValue: number;
-  onSupplierPriceChange: (v: number) => void;
-  onProfitChange: (v: number) => void;
-  onDiscountChange: (v: number) => void;
-  onGstChange: (v: number) => void;
+  minValue: number | '';
+  onSupplierPriceChange: (v: number | '') => void;
+  onProfitChange: (v: number | '') => void;
+  onDiscountChange: (v: number | '') => void;
+  onGstChange: (v: number | '') => void;
   onGstIncludedChange: (v: boolean) => void;
-  onMinValueChange: (v: number) => void;
+  onMinValueChange: (v: number | '') => void;
 };
 
 export default function ProductPricingSection({
@@ -33,11 +33,11 @@ export default function ProductPricingSection({
   onMinValueChange,
 }: ProductPricingSectionProps) {
   const pricing = calculatePricing({
-    supplier_price: supplierPrice,
+    supplier_price: Number(supplierPrice) || 0,
     profit_type: 'percentage',
-    profit_value: profit,
-    discount: discount,
-    gst_rate: gst,
+    profit_value: Number(profit) || 0,
+    discount: Number(discount) || 0,
+    gst_rate: Number(gst) || 0,
     gst_included: gstIncluded,
   });
 
@@ -53,8 +53,9 @@ export default function ProductPricingSection({
             required
             min={0}
             step="any"
+            placeholder="0.00"
             value={supplierPrice}
-            onChange={(e) => onSupplierPriceChange(parseFloat(e.target.value) || 0)}
+            onChange={(e) => onSupplierPriceChange(e.target.value === '' ? '' : parseFloat(e.target.value))}
             className="saas-input type-metric"
           />
         </div>
@@ -63,8 +64,9 @@ export default function ProductPricingSection({
           <input
             type="number"
             min={0}
+            placeholder="0"
             value={profit}
-            onChange={(e) => onProfitChange(parseFloat(e.target.value) || 0)}
+            onChange={(e) => onProfitChange(e.target.value === '' ? '' : parseFloat(e.target.value))}
             className="saas-input type-metric"
           />
         </div>
@@ -73,8 +75,9 @@ export default function ProductPricingSection({
           <input
             type="number"
             min={0}
+            placeholder="0"
             value={discount}
-            onChange={(e) => onDiscountChange(parseFloat(e.target.value) || 0)}
+            onChange={(e) => onDiscountChange(e.target.value === '' ? '' : parseFloat(e.target.value))}
             className="saas-input type-metric"
           />
         </div>
@@ -84,8 +87,9 @@ export default function ProductPricingSection({
             type="number"
             min={0}
             max={100}
+            placeholder="0"
             value={gst}
-            onChange={(e) => onGstChange(parseFloat(e.target.value) || 0)}
+            onChange={(e) => onGstChange(e.target.value === '' ? '' : parseFloat(e.target.value))}
             className="saas-input type-metric"
           />
         </div>
@@ -94,8 +98,9 @@ export default function ProductPricingSection({
           <input
             type="number"
             min={0}
+            placeholder="0"
             value={minValue}
-            onChange={(e) => onMinValueChange(parseFloat(e.target.value) || 0)}
+            onChange={(e) => onMinValueChange(e.target.value === '' ? '' : parseFloat(e.target.value))}
             className="saas-input type-metric"
           />
         </div>

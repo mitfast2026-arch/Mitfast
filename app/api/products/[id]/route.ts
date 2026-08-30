@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { getStorefrontProductDetail } from '@/lib/server/products/storefront-detail';
+import { getCachedStorefrontProductDetail } from '@/lib/server/products/cached-storefront';
 import { requireAdmin } from '@/lib/server/auth/get-session';
 import { deferRevalidateProduct } from '@/lib/server/products/revalidate-product-paths';
 
@@ -20,7 +20,7 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
       return NextResponse.json(result);
     }
 
-    const result = await getStorefrontProductDetail(productId);
+    const result = await getCachedStorefrontProductDetail(productId);
 
     if (!result.success) {
       return NextResponse.json(result, { status: 404 });

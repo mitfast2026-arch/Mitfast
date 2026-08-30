@@ -19,7 +19,7 @@ import { createBrowserClient } from '@/lib/supabase/client';
 import { StatusPill } from '@/components/portal/ds';
 import { clsx } from 'clsx';
 import { toast } from 'sonner';
-import { cachedApiGet } from '@/lib/client/portal-data-cache';
+import { cachedApiGet, invalidatePortalCache } from '@/lib/client/portal-data-cache';
 import { apiPost } from '@/lib/client/api-client';
 import { createIdempotencyKey } from '@/lib/client/idempotency-key';
 import { CustomerPageShell, CustomerPageSkeleton } from '@/components/customer/CustomerPageShell';
@@ -93,7 +93,7 @@ function CustomerQuotesInner() {
     }
   }, [searchParams, router]);
 
-  const loadAll = useCallback(async () => {
+  const loadAll = useCallback(async (force = false) => {
     setLoading(true);
     try {
       const supabase = createBrowserClient();
@@ -118,8 +118,8 @@ function CustomerQuotesInner() {
       }
 
       const [enqRes, rfqRes] = await Promise.all([
-        cachedApiGet<{ enquiries: any[] }>('/api/customer/enquiries'),
-        cachedApiGet<{ rfqs: any[] }>(`/api/rfqs?customerId=${prof.id}`),
+        cachedApiGet<{ enquiries: any[] }>('/api/customer/enquiries', { force }),
+        cachedApiGet<{ rfqs: any[] }>(`/api/rfqs?customerId=${prof.id}`, { force }),
       ]);
 
       const errors: string[] = [];
@@ -164,6 +164,9 @@ function CustomerQuotesInner() {
       });
       if (result.ok) {
         toast.success('Order created successfully! Redirecting...', { id: 'convert-order' });
+        invalidatePortalCache('/api/orders');
+        invalidatePortalCache('/api/rfqs');
+        invalidatePortalCache('/api/customer/badge-counts');
         router.push('/customer/orders');
       } else {
         toast.error(result.message || 'Failed to convert RFQ to order', { id: 'convert-order' });
@@ -187,7 +190,7 @@ function CustomerQuotesInner() {
               New enquiry
             </Link>
           ) : null}
-          <button type="button" onClick={loadAll} className="buyer-cta-ghost">
+          <button type="button" onClick={() => loadAll(true)} className="buyer-cta-ghost">
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
@@ -253,7 +256,7 @@ function CustomerQuotesInner() {
             <AlertCircle className="w-4 h-4 shrink-0" />
             {loadError}
           </span>
-          <button type="button" onClick={loadAll} className="buyer-cta-ghost text-xs shrink-0">
+          <button type="button" onClick={() => loadAll(true)} className="buyer-cta-ghost text-xs shrink-0">
             Retry
           </button>
         </div>

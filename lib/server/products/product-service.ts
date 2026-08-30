@@ -24,7 +24,11 @@ import {
   rejectProductSchema,
   requestChangesSchema,
 } from '@/lib/validation/product.schema';
-import { sanitizeRichTextHtml, isEmptyRichText } from '@/lib/html/sanitize-rich-text.server';
+import {
+  sanitizeRichTextHtml,
+  stripRichTextHtml,
+  isEmptyRichText,
+} from '@/lib/html/sanitize-rich-text.server';
 import type { ServerResult } from '@/lib/server/auth/get-session';
 import type {
   ProductApprovalStatus,
@@ -1754,10 +1758,10 @@ export async function getStorefrontProducts(params: {
         images.find((img: any) => img.is_primary) ||
         [...images].sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0))[0] ||
         null;
-      const fullDesc = typeof p.description === 'string' ? p.description : '';
+      const cleanDesc = typeof p.description === 'string' ? stripRichTextHtml(p.description) : '';
       return {
         ...p,
-        description: fullDesc.length > 120 ? `${fullDesc.slice(0, 120).trim()}…` : fullDesc,
+        description: cleanDesc.length > 120 ? `${cleanDesc.slice(0, 120).trim()}…` : cleanDesc,
         images: primary
           ? [{ id: primary.id, image_url: primary.image_url, sort_order: primary.sort_order ?? 0, is_primary: true }]
           : [],

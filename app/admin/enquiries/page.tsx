@@ -63,18 +63,18 @@ export default function AdminEnquiriesPage() {
   const [responseError, setResponseError] = useState('');
 
   // Products & Line items state
-  const [lineItemsDraft, setLineItemsDraft] = useState<Array<{ productId?: string; name?: string; quantity: number }>>([]);
+  const [lineItemsDraft, setLineItemsDraft] = useState<Array<{ productId?: string; name?: string; quantity: number | '' }>>([]);
   const [itemsSaving, setItemsSaving] = useState(false);
   const [itemsError, setItemsError] = useState('');
 
-  const [rfqQty, setRfqQty] = useState(1);
+  const [rfqQty, setRfqQty] = useState<number | ''>(1);
   const [rfqProductId, setRfqProductId] = useState('');
   const [catalogProducts, setCatalogProducts] = useState<any[]>([]);
   const [catalogSearch, setCatalogSearch] = useState('');
   const [addCatalogSearch, setAddCatalogSearch] = useState('');
   const [addCatalogProducts, setAddCatalogProducts] = useState<any[]>([]);
   const [selectedAddProductId, setSelectedAddProductId] = useState('');
-  const [addQty, setAddQty] = useState(1);
+  const [addQty, setAddQty] = useState<number | ''>(1);
   const [rfqLoading, setRfqLoading] = useState(false);
   const [rfqError, setRfqError] = useState('');
   const [createdRfqId, setCreatedRfqId] = useState('');
@@ -361,7 +361,7 @@ export default function AdminEnquiriesPage() {
       {
         productId: prod.id,
         name: prod.name,
-        quantity: Math.max(1, addQty || prod.moq || 1),
+        quantity: Math.max(1, Number(addQty) || prod.moq || 1),
       },
     ]);
     setSelectedAddProductId('');
@@ -372,9 +372,9 @@ export default function AdminEnquiriesPage() {
     setLineItemsDraft((prev) => prev.filter((_, i) => i !== idx));
   }
 
-  function handleUpdateLineQty(idx: number, qty: number) {
+  function handleUpdateLineQty(idx: number, qty: number | '') {
     setLineItemsDraft((prev) =>
-      prev.map((item, i) => (i === idx ? { ...item, quantity: Math.max(1, qty) } : item))
+      prev.map((item, i) => (i === idx ? { ...item, quantity: qty } : item))
     );
   }
 
@@ -427,7 +427,7 @@ export default function AdminEnquiriesPage() {
           .filter((li) => Boolean(li.productId))
           .map((li) => ({
             productId: li.productId!,
-            quantity: li.quantity,
+            quantity: Math.max(1, Number(li.quantity) || 1),
           }))
       : [];
 
@@ -447,7 +447,7 @@ export default function AdminEnquiriesPage() {
         },
         body: JSON.stringify({
           items: itemsPayload.length > 0 ? itemsPayload : undefined,
-          quantity: itemsPayload.length === 0 ? rfqQty : undefined,
+          quantity: itemsPayload.length === 0 ? (rfqQty === '' ? 1 : Number(rfqQty)) : undefined,
           productId: itemsPayload.length === 0 && !selectedEnquiry.product_id ? productId : undefined,
           deliveryAddress: editCountry.trim()
             ? {
@@ -709,8 +709,14 @@ export default function AdminEnquiriesPage() {
                           <input
                             type="number"
                             min={1}
+                            placeholder="1"
                             value={item.quantity}
-                            onChange={(e) => handleUpdateLineQty(idx, parseInt(e.target.value, 10) || 1)}
+                            onChange={(e) =>
+                              handleUpdateLineQty(
+                                idx,
+                                e.target.value === '' ? '' : parseInt(e.target.value, 10)
+                              )
+                            }
                             className="saas-input text-xs w-20 py-1 px-2"
                           />
                           <button
@@ -754,7 +760,9 @@ export default function AdminEnquiriesPage() {
                         min={1}
                         placeholder="Qty"
                         value={addQty}
-                        onChange={(e) => setAddQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                        onChange={(e) =>
+                          setAddQty(e.target.value === '' ? '' : parseInt(e.target.value, 10))
+                        }
                         className="saas-input text-xs w-20"
                       />
                       <button
@@ -839,9 +847,12 @@ export default function AdminEnquiriesPage() {
                         <input
                           type="number"
                           min={1}
+                          placeholder="1"
                           className="saas-input text-xs w-24"
                           value={rfqQty}
-                          onChange={(e) => setRfqQty(Math.max(1, Number(e.target.value) || 1))}
+                          onChange={(e) =>
+                            setRfqQty(e.target.value === '' ? '' : parseInt(e.target.value, 10))
+                          }
                         />
                       </div>
                     )}

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { AlertCircle, ArrowRight, Building2, CheckCircle2, ShieldCheck, Sparkles } from 'lucide-react';
+import { AlertCircle, ArrowLeft, ArrowRight, Building2, CheckCircle2, ShieldCheck, Sparkles } from 'lucide-react';
 import gsap from 'gsap';
 import { createBrowserClient } from '@/lib/supabase/client';
 import CountrySelect from '@/components/ui/CountrySelect';
@@ -160,10 +160,20 @@ export default function SupplierApplyPage() {
   return (
     <div className="min-h-screen saas-canvas-bg flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div ref={containerRef} className="sm:mx-auto sm:w-full sm:max-w-lg space-y-6">
-        <div className="text-center space-y-2">
+        <div className="flex items-center justify-between">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 transition-colors px-3 py-1.5 rounded-full border border-slate-200 bg-white shadow-sm"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Back to Store</span>
+          </Link>
           <Link href="/" className="inline-flex items-center gap-2">
             <span className="text-xl font-bold text-[#111315] tracking-tight">MITFAST B2B</span>
           </Link>
+          <div className="w-16" />
+        </div>
+        <div className="text-center space-y-2">
           <h1 className="type-page text-2xl sm:text-3xl font-semibold">Supplier Onboarding</h1>
           <p className="type-subtitle text-sm">
             Complete your manufacturing profile for admin review and enterprise catalog access.

@@ -64,6 +64,16 @@ export function sanitizeRichTextHtml(html: string): string {
       th: ['colspan', 'rowspan', 'align', 'valign'],
       td: ['colspan', 'rowspan', 'align', 'valign'],
     },
+    allowedStyles: {
+      '*': {
+        'text-align': [/^left$/, /^right$/, /^center$/, /^justify$/],
+        'font-size': [/^\d+(?:\.\d+)?(?:px|em|rem|pt|%)$/],
+        color: [/^#(0x)?[0-9a-f]+$/i, /^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i],
+        'background-color': [/^#(0x)?[0-9a-f]+$/i, /^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i],
+        'margin-left': [/^\d+(?:\.\d+)?(?:px|em|rem|%)$/],
+        'margin-right': [/^\d+(?:\.\d+)?(?:px|em|rem|%)$/],
+      },
+    },
     allowedSchemes: ALLOWED_URI_SCHEMES,
     allowedSchemesByTag: {
       img: ['data', 'http', 'https'],

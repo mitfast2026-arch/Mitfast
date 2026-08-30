@@ -334,12 +334,6 @@ export default function PortalShell({
                   <Bell className="w-4 h-4" />
                 </button>
               )}
-              <div
-                className="h-9 w-9 rounded-full bg-portal-panel border border-portal-border flex items-center justify-center text-xs font-semibold text-portal-text"
-                aria-label="User avatar"
-              >
-                {avatarLabel.slice(0, 1).toUpperCase()}
-              </div>
             </div>
           </div>
         </header>

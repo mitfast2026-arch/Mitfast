@@ -59,7 +59,17 @@ export async function PUT(request: NextRequest) {
 
     if (body.notificationPreferences !== undefined) {
       const prefs = body.notificationPreferences;
+      const { data: current } = await admin
+        .from('suppliers')
+        .select('notification_preferences')
+        .eq('id', (supplier as any).id)
+        .maybeSingle();
+      const existing =
+        current?.notification_preferences && typeof current.notification_preferences === 'object'
+          ? (current.notification_preferences as Record<string, unknown>)
+          : {};
       updatePayload.notification_preferences = {
+        ...existing,
         emailRfqs: Boolean(prefs.emailRfqs),
         emailOrders: Boolean(prefs.emailOrders),
         emailApprovals: Boolean(prefs.emailApprovals),

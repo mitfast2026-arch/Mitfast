@@ -26,6 +26,7 @@ import { createBrowserClient } from "@/lib/supabase/client";
 import { RemoteImage } from "@/components/ui/RemoteImage";
 import { CountryFlag } from "@/components/ui/CountryFlag";
 import { resolveSupplierCountry } from "@/lib/country-origin";
+import { isEmptyRichText } from "@/lib/html/rich-text-utils";
 import "./product-detail.css";
 
 type ProductImage = {
@@ -671,16 +672,20 @@ export default function ProductDetailClient({
               )}
             </div>
 
-            {product.descriptionHtml?.trim() || product.description?.trim() ? (
-              <div
-                className="pdp-desc"
-                dangerouslySetInnerHTML={{
-                  __html: product.descriptionHtml || product.description || '',
-                }}
-              />
-            ) : (
-              <p className="pdp-desc">No description provided.</p>
-            )}
+            {(() => {
+              const htmlContent = product.descriptionHtml || product.description || '';
+              if (!isEmptyRichText(htmlContent)) {
+                return (
+                  <div
+                    className="pdp-desc"
+                    dangerouslySetInnerHTML={{
+                      __html: htmlContent,
+                    }}
+                  />
+                );
+              }
+              return <p className="pdp-desc">No description provided.</p>;
+            })()}
 
             {keySpecs.length > 0 && (
               <>

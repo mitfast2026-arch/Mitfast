@@ -232,6 +232,51 @@ function runTests() {
     console.log('✓ Test 7 Passed: Product form mapping and validation');
   }
 
+  // Test 8: Convert-to-order must use RFQ GST snapshot, not live product GST
+  {
+    const snapshotRate = 18;
+    const liveRate = 5;
+    const unitPrice = 1000;
+    const quantity = 2;
+
+    const fromSnapshot = calculatePricing({
+      supplier_price: unitPrice,
+      profit_type: 'fixed',
+      profit_value: 0,
+      discount: 0,
+      gst_rate: snapshotRate,
+      gst_included: false,
+      quantity,
+    });
+    const fromLiveProduct = calculatePricing({
+      supplier_price: unitPrice,
+      profit_type: 'fixed',
+      profit_value: 0,
+      discount: 0,
+      gst_rate: liveRate,
+      gst_included: false,
+      quantity,
+    });
+
+    const item = { gst_rate: snapshotRate, gst_included: false, product: { gst_rate: liveRate, gst_included: false } };
+    const gstRate = item.gst_rate ?? item.product?.gst_rate ?? 0;
+    const gstIncluded = item.gst_included ?? item.product?.gst_included ?? false;
+    const converted = calculatePricing({
+      supplier_price: unitPrice,
+      profit_type: 'fixed',
+      profit_value: 0,
+      discount: 0,
+      gst_rate: gstRate,
+      gst_included: gstIncluded,
+      quantity,
+    });
+
+    assert(fromSnapshot.total !== fromLiveProduct.total, 'snapshot GST and live product GST must produce different order totals');
+    assert(converted.total === fromSnapshot.total, `convert-to-order must keep snapshot GST total ${fromSnapshot.total}, got ${converted.total}`);
+    assert(converted.total_gst_amount === 360, `18% of 2000 should be 360, got ${converted.total_gst_amount}`);
+    console.log('✓ Test 8 Passed: Convert-to-order uses RFQ GST snapshot over live product GST');
+  }
+
   console.log('\n--- All GST and Pricing Tests Passed Successfully! ---');
 }
 

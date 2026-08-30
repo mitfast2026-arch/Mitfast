@@ -42,9 +42,9 @@ export default function AdminSettingsPage() {
   const [errorMsg, setErrorMsg] = useState('');
 
   const [companyName, setCompanyName] = useState(cached?.data.companyName || 'MITFAST');
-  const [minimumRfqValue, setMinimumRfqValue] = useState(cached?.data.minimumRfqValue ?? 500000);
+  const [minimumRfqValue, setMinimumRfqValue] = useState<number | ''>(cached?.data.minimumRfqValue ?? 500000);
   const [currency, setCurrency] = useState(cached?.data.currency || 'INR');
-  const [maxProductImages, setMaxProductImages] = useState(cached?.data.maxProductImages ?? 8);
+  const [maxProductImages, setMaxProductImages] = useState<number | ''>(cached?.data.maxProductImages ?? 8);
   const [businessEmail, setBusinessEmail] = useState(cached?.data.businessEmail || '');
   const [businessPhone, setBusinessPhone] = useState(cached?.data.businessPhone || '');
   const [businessAddress, setBusinessAddress] = useState(cached?.data.businessAddress || '');
@@ -109,9 +109,9 @@ export default function AdminSettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyName: companyName.trim(),
-          minimumRfqValue,
+          minimumRfqValue: minimumRfqValue === '' ? 0 : Number(minimumRfqValue),
           currency: currency.trim().toUpperCase(),
-          maxProductImages,
+          maxProductImages: maxProductImages === '' ? 8 : Number(maxProductImages),
           businessEmail: businessEmail.trim() || null,
           businessPhone: businessPhone.trim() || null,
           businessAddress: businessAddress.trim() || null,
@@ -222,8 +222,9 @@ export default function AdminSettingsPage() {
                 required
                 min={0}
                 step={1000}
+                placeholder="0"
                 value={minimumRfqValue}
-                onChange={(e) => setMinimumRfqValue(parseFloat(e.target.value) || 0)}
+                onChange={(e) => setMinimumRfqValue(e.target.value === '' ? '' : parseFloat(e.target.value))}
                 className="saas-input type-metric text-xs"
               />
               <p className="text-[11px] text-portal-muted mt-1">
@@ -251,8 +252,9 @@ export default function AdminSettingsPage() {
                 required
                 min={1}
                 max={20}
+                placeholder="8"
                 value={maxProductImages}
-                onChange={(e) => setMaxProductImages(parseInt(e.target.value, 10) || 8)}
+                onChange={(e) => setMaxProductImages(e.target.value === '' ? '' : parseInt(e.target.value, 10))}
                 className="saas-input type-metric text-xs"
               />
               <p className="text-[11px] text-portal-muted mt-1">Enforced on product create and edit.</p>

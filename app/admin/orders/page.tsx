@@ -406,10 +406,10 @@ function AdminOrdersPageContent() {
                             type="number"
                             min={1}
                             className="saas-input text-xs w-20"
-                            value={itm.quantity}
+                            value={itm.quantity ?? ''}
                             disabled={selectedOrder.status === 'dispatched' || selectedOrder.status === 'cancelled'}
                             onChange={(e) => {
-                              const quantity = Math.max(1, Number(e.target.value) || 1);
+                              const quantity = e.target.value === '' ? '' : parseInt(e.target.value, 10);
                               setSelectedOrder({
                                 ...selectedOrder,
                                 items: selectedOrder.items.map((row: any) =>
@@ -423,11 +423,12 @@ function AdminOrdersPageContent() {
                           <input
                             type="number"
                             min={0}
+                            step="any"
                             className="saas-input text-xs w-24"
-                            value={itm.unit_price}
+                            value={itm.unit_price ?? ''}
                             disabled={selectedOrder.status === 'dispatched' || selectedOrder.status === 'cancelled'}
                             onChange={(e) => {
-                              const unit_price = Math.max(0, Number(e.target.value) || 0);
+                              const unit_price = e.target.value === '' ? '' : parseFloat(e.target.value);
                               setSelectedOrder({
                                 ...selectedOrder,
                                 items: selectedOrder.items.map((row: any) =>

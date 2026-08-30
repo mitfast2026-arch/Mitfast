@@ -5,6 +5,8 @@ import {
   type CarouselSlotInput,
 } from '@/lib/server/homepage/homepage-cms-service';
 
+export const runtime = 'nodejs';
+
 export async function PUT(request: NextRequest) {
   try {
     const auth = await requireAdmin();

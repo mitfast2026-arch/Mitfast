@@ -225,6 +225,8 @@ export async function submitRfqFromCart(
         product_name_snapshot: string;
         original_quantity: number;
         original_unit_price: number;
+        gst_rate: number;
+        gst_included: boolean;
       }>;
     }> = [];
 
@@ -239,6 +241,8 @@ export async function submitRfqFromCart(
           product_name_snapshot: item.product.name,
           original_quantity: item.quantity,
           original_unit_price: item.product.actualUnitPrice,
+          gst_rate: item.product.gstRate || 0,
+          gst_included: Boolean(item.product.gstIncluded),
         })),
       });
     }
@@ -319,6 +323,8 @@ export async function submitRfqFromCart(
             original_unit_price: item.original_unit_price,
             final_quantity: null,
             final_unit_price: null,
+            gst_rate: item.gst_rate,
+            gst_included: item.gst_included,
           }))
         );
         if (itemsError) {
@@ -443,6 +449,8 @@ export async function createRfqFromEnquiry(
       product_name_snapshot: string;
       quantity: number;
       unit_price: number;
+      gst_rate: number;
+      gst_included: boolean;
     }> = [];
 
     for (const item of rawItems) {
@@ -471,6 +479,8 @@ export async function createRfqFromEnquiry(
         product_name_snapshot: product.name,
         quantity: effectiveQty,
         unit_price: unitPrice,
+        gst_rate: Number(product.gst_rate ?? 0),
+        gst_included: Boolean(product.gst_included ?? false),
       });
     }
 
@@ -608,6 +618,8 @@ export async function createRfqFromEnquiry(
         original_unit_price: item.unit_price,
         final_quantity: null,
         final_unit_price: null,
+        gst_rate: item.gst_rate,
+        gst_included: item.gst_included,
       }));
 
       const { error: itemsErr } = await adminClient.from('rfq_items').insert(itemInserts);
@@ -888,13 +900,18 @@ export async function getRfqDetail(
         return { success: false, error: { message: 'Forbidden', code: 'FORBIDDEN' } };
       }
       if (options?.supplierId) {
-        const ownsAny = (rfq.items || []).some(
-          (itm: any) => (itm.product as any)?.supplier_id === options.supplierId
-        );
-        if (!ownsAny) {
-          return { success: false, error: { message: 'Forbidden', code: 'FORBIDDEN' } };
-        }
+        return { success: false, error: { message: 'Forbidden', code: 'FORBIDDEN' } };
       }
+    }
+
+    if (options?.customerId && !options?.isAdmin) {
+      const items = ((rfq as { items?: unknown[] }).items || []).map((itm: any) => {
+        const product = itm?.product;
+        if (!product || typeof product !== 'object') return itm;
+        const { supplier_id: _supplierId, ...safeProduct } = product as { supplier_id?: string };
+        return { ...itm, product: safeProduct };
+      });
+      return { success: true, data: { rfq: { ...rfq, items } } };
     }
 
     return { success: true, data: { rfq } };

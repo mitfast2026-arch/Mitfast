@@ -1,3 +1,5 @@
+import { stripHtmlTags } from '@/lib/html/strip-html';
+
 /**
  * Product structured data for Google merchant/product visibility.
  * Availability is derived from publication state (inventory is informational only).
@@ -41,7 +43,7 @@ export function buildProductJsonLd(product: {
     '@context': 'https://schema.org',
     '@type': 'Product',
     name: product.name,
-    description: product.description || product.name,
+    description: (product.description ? stripHtmlTags(product.description) : '') || product.name,
     sku: product.sku || product.id,
     url,
     image: image ? [image] : undefined,

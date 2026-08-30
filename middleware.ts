@@ -1,6 +1,13 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import type { Database } from '@/types/database';
+import {
+  appendDeniedNotice,
+  homeForRole,
+  isIdentityComplete,
+  isSafeInternalPath,
+  resolvePostAuthPath,
+} from '@/lib/auth/post-auth-path';
 
 const PORTAL_GATE_COOKIE = 'mf_portal_gate';
 
@@ -9,16 +16,6 @@ type PortalGate = {
   role: string;
   supplierStatus?: string;
 };
-
-function parsePortalGate(value: string | undefined): PortalGate | null {
-  if (!value) return null;
-  const parts = value.split('|');
-  const userId = parts[0];
-  const role = parts[1];
-  if (!userId || !role) return null;
-  const supplierStatus = parts[2] || undefined;
-  return { userId, role, supplierStatus };
-}
 
 function serializePortalGate(gate: PortalGate): string {
   return `${gate.userId}|${gate.role}|${gate.supplierStatus ?? ''}`;
@@ -51,22 +48,24 @@ function setPortalGateCookie(response: NextResponse, gate: PortalGate) {
   });
 }
 
-function supplierStatusRedirect(
-  status: string | undefined,
-  requestUrl: string
-): NextResponse | null {
-  if (!status || status === 'pending') {
-    return NextResponse.redirect(new URL('/auth/supplier/pending', requestUrl));
-  }
-  if (status === 'rejected') {
-    return NextResponse.redirect(new URL('/auth/supplier/rejected', requestUrl));
-  }
-  if (status === 'archived') {
-    return NextResponse.redirect(
-      new URL('/auth/supplier/pending?status=archived', requestUrl)
-    );
-  }
-  return null;
+function redirectTo(
+  path: string,
+  request: NextRequest,
+  opts?: { denied?: boolean; clearGate?: boolean }
+): NextResponse {
+  const target = opts?.denied ? appendDeniedNotice(path) : path;
+  const redirect = NextResponse.redirect(new URL(target, request.url));
+  if (opts?.denied || opts?.clearGate) clearPortalGateCookie(redirect);
+  return redirect;
+}
+
+async function loadSupplierStatus(supabase: any, userId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from('suppliers')
+    .select('status')
+    .eq('user_id', userId)
+    .maybeSingle();
+  return (data as { status?: string } | null)?.status ?? null;
 }
 
 export async function middleware(request: NextRequest) {
@@ -89,6 +88,22 @@ export async function middleware(request: NextRequest) {
     if (isAdminRoute || isCustomerRoute || isSupplierRoute) {
       return NextResponse.redirect(new URL('/auth?mode=signin', request.url));
     }
+    return response;
+  }
+
+  const code = searchParams.get('code');
+  if (code && pathname !== '/auth/callback') {
+    const callbackUrl = new URL('/auth/callback', request.url);
+    searchParams.forEach((value, key) => {
+      callbackUrl.searchParams.set(key, value);
+    });
+    return NextResponse.redirect(callbackUrl, 307);
+  }
+
+  const hasAuthCookie = request.cookies.getAll().some(
+    (cookie) => cookie.name.includes('-auth-token') || cookie.name.startsWith('sb-')
+  );
+  if (pathname === '/' && !hasAuthCookie) {
     return response;
   }
 
@@ -122,16 +137,6 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // 0. Intercept stray OAuth code query parameter on any non-callback route (e.g. root or /auth)
-  const code = searchParams.get('code');
-  if (code && pathname !== '/auth/callback') {
-    const callbackUrl = new URL('/auth/callback', request.url);
-    searchParams.forEach((value, key) => {
-      callbackUrl.searchParams.set(key, value);
-    });
-    return NextResponse.redirect(callbackUrl, 307);
-  }
-
   // 1. Protected Route Guards
   if (isAdminRoute || isSupplierRoute || isCustomerRoute) {
     if (!user) {
@@ -150,8 +155,6 @@ export async function middleware(request: NextRequest) {
     }
 
     // Portal gate cookie is a perf hint only — never authorize from cookie alone.
-
-    // Resolve user role (full DB check)
     const { data: profileData } = await supabase
       .from('profiles')
       .select('role, full_name, phone, email')
@@ -165,69 +168,39 @@ export async function middleware(request: NextRequest) {
       email?: string | null;
     } | null;
     const role = profile?.role;
+    const identityOk = isIdentityComplete(profile);
+    const supplierStatus =
+      role === 'supplier' ? await loadSupplierStatus(supabase, user.id) : null;
 
-    const identityOk =
-      (profile?.full_name || '').trim().length >= 2 &&
-      (profile?.phone || '').trim().length >= 7 &&
-      (profile?.email || '').trim().includes('@');
+    const onWrongPortal =
+      (isAdminRoute && role !== 'admin') ||
+      (isCustomerRoute && role !== 'customer') ||
+      (isSupplierRoute && role !== 'supplier');
+
+    if (onWrongPortal) {
+      return redirectTo(homeForRole(role, supplierStatus), request, { denied: true });
+    }
 
     if ((isCustomerRoute || isSupplierRoute) && role !== 'admin' && !identityOk) {
-      const roleQs = role === 'supplier' || isSupplierRoute ? 'supplier' : 'buyer';
-      const redirectTarget = pathname + (request.nextUrl.search || '');
-      const redirect = NextResponse.redirect(
-        new URL(
-          `/auth/complete-profile?role=${roleQs}&redirect=${encodeURIComponent(redirectTarget)}`,
-          request.url
-        )
-      );
-      clearPortalGateCookie(redirect);
-      return redirect;
-    }
-
-    if (isAdminRoute && role !== 'admin') {
-      const redirect = NextResponse.redirect(new URL('/', request.url));
-      clearPortalGateCookie(redirect);
-      return redirect;
-    }
-
-    if (isCustomerRoute && role !== 'customer') {
-      const redirect = NextResponse.redirect(new URL('/', request.url));
-      clearPortalGateCookie(redirect);
-      return redirect;
+      const dest = resolvePostAuthPath({
+        role,
+        supplierStatus,
+        redirectPath: pathname + (request.nextUrl.search || ''),
+        identityComplete: false,
+      });
+      return redirectTo(dest, request, { clearGate: true });
     }
 
     if (isSupplierRoute) {
-      if (role !== 'supplier') {
-        const redirect = NextResponse.redirect(
-          new URL('/auth?role=supplier&mode=signin', request.url)
-        );
-        clearPortalGateCookie(redirect);
-        return redirect;
-      }
-
-      const { data: supplierData } = await supabase
-        .from('suppliers')
-        .select('status')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      const supplier = supplierData as { status?: string } | null;
-      if (!supplier) {
-        const redirect = NextResponse.redirect(new URL('/auth/supplier/apply', request.url));
-        clearPortalGateCookie(redirect);
-        return redirect;
-      }
-
-      const statusRedirect = supplierStatusRedirect(supplier?.status, request.url);
-      if (statusRedirect) {
-        clearPortalGateCookie(statusRedirect);
-        return statusRedirect;
+      const statusHome = homeForRole('supplier', supplierStatus);
+      if (statusHome !== '/supplier/dashboard' && !statusHome.startsWith('/supplier/')) {
+        return redirectTo(statusHome, request, { clearGate: true });
       }
 
       setPortalGateCookie(response, {
         userId: user.id,
         role: 'supplier',
-        supplierStatus: supplier?.status,
+        supplierStatus: supplierStatus ?? undefined,
       });
       return response;
     }
@@ -239,71 +212,43 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  // 2. Redirect authenticated users visiting login/register pages
-  // Allow onboarding pages: complete-profile, supplier apply, pending, rejected
+  const isSupplierPending = pathname.includes('/auth/supplier/pending');
+  const isSupplierRejected = pathname.includes('/auth/supplier/rejected');
+
   // Pending/rejected require a session — anonymous visitors go to supplier sign-in.
-  if (
-    !user &&
-    (pathname.includes('/auth/supplier/pending') || pathname.includes('/auth/supplier/rejected'))
-  ) {
-    const redirect = NextResponse.redirect(
-      new URL('/auth?role=supplier&mode=signin', request.url)
-    );
-    clearPortalGateCookie(redirect);
-    return redirect;
+  if (!user && (isSupplierPending || isSupplierRejected)) {
+    return redirectTo('/auth?role=supplier&mode=signin', request, { clearGate: true });
   }
 
-  // Active suppliers should not linger on pending/rejected; matching status may stay.
-  if (
-    user &&
-    (pathname.includes('/auth/supplier/pending') || pathname.includes('/auth/supplier/rejected'))
-  ) {
-    const cached = parsePortalGate(request.cookies.get(PORTAL_GATE_COOKIE)?.value);
-    if (cached?.userId === user.id && cached.role === 'supplier') {
-      if (cached.supplierStatus === 'active') {
-        return NextResponse.redirect(new URL('/supplier/dashboard', request.url));
+  // Always resolve pending/rejected from DB — never the portal-gate cookie.
+  if (user && (isSupplierPending || isSupplierRejected)) {
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    const role = (profileData as { role?: string } | null)?.role;
+    const supplierStatus =
+      role === 'supplier' ? await loadSupplierStatus(supabase, user.id) : null;
+    const dest = homeForRole(role, supplierStatus);
+    const destPath = dest.split('?')[0];
+
+    if (role !== 'supplier') {
+      return redirectTo(dest, request, { denied: true });
+    }
+    if (
+      (isSupplierPending && destPath !== '/auth/supplier/pending') ||
+      (isSupplierRejected && destPath !== '/auth/supplier/rejected')
+    ) {
+      const redirect = redirectTo(dest, request, { clearGate: dest !== '/supplier/dashboard' });
+      if (dest === '/supplier/dashboard') {
+        setPortalGateCookie(redirect, {
+          userId: user.id,
+          role: 'supplier',
+          supplierStatus: 'active',
+        });
       }
-      if (
-        cached.supplierStatus === 'rejected' &&
-        pathname.includes('/auth/supplier/pending')
-      ) {
-        return NextResponse.redirect(new URL('/auth/supplier/rejected', request.url));
-      }
-      if (
-        cached.supplierStatus === 'pending' &&
-        pathname.includes('/auth/supplier/rejected')
-      ) {
-        return NextResponse.redirect(new URL('/auth/supplier/pending', request.url));
-      }
-    } else {
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('user_id', user.id)
-        .maybeSingle();
-      if ((profileData as { role?: string } | null)?.role === 'supplier') {
-        const { data: supplierData } = await supabase
-          .from('suppliers')
-          .select('status')
-          .eq('user_id', user.id)
-          .maybeSingle();
-        const status = (supplierData as { status?: string } | null)?.status;
-        if (status === 'active') {
-          const redirect = NextResponse.redirect(new URL('/supplier/dashboard', request.url));
-          setPortalGateCookie(redirect, {
-            userId: user.id,
-            role: 'supplier',
-            supplierStatus: 'active',
-          });
-          return redirect;
-        }
-        if (status === 'rejected' && pathname.includes('/auth/supplier/pending')) {
-          return NextResponse.redirect(new URL('/auth/supplier/rejected', request.url));
-        }
-        if (status === 'pending' && pathname.includes('/auth/supplier/rejected')) {
-          return NextResponse.redirect(new URL('/auth/supplier/pending', request.url));
-        }
-      }
+      return redirect;
     }
   }
 
@@ -318,28 +263,6 @@ export async function middleware(request: NextRequest) {
     !pathname.includes('/supplier/apply') &&
     !pathname.includes('/reset-password')
   ) {
-    const cached = parsePortalGate(request.cookies.get(PORTAL_GATE_COOKIE)?.value);
-    if (cached?.userId === user.id) {
-      if (cached.role === 'admin') {
-        return NextResponse.redirect(new URL('/admin/dashboard', request.url));
-      }
-      if (cached.role === 'customer') {
-        return NextResponse.redirect(new URL('/customer/dashboard', request.url));
-      }
-      if (cached.role === 'supplier') {
-        if (cached.supplierStatus === 'active') {
-          return NextResponse.redirect(new URL('/supplier/dashboard', request.url));
-        }
-        if (cached.supplierStatus === 'rejected') {
-          return NextResponse.redirect(new URL('/auth/supplier/rejected', request.url));
-        }
-        if (!cached.supplierStatus) {
-          return NextResponse.redirect(new URL('/auth/supplier/apply', request.url));
-        }
-        return NextResponse.redirect(new URL('/auth/supplier/pending', request.url));
-      }
-    }
-
     const { data: profileData } = await supabase
       .from('profiles')
       .select('role, full_name, phone, email')
@@ -353,61 +276,29 @@ export async function middleware(request: NextRequest) {
       email?: string | null;
     } | null;
 
-    const identityOk =
-      (profile?.full_name || '').trim().length >= 2 &&
-      (profile?.phone || '').trim().length >= 7 &&
-      (profile?.email || '').trim().includes('@');
+    const role = profile?.role;
+    const identityOk = isIdentityComplete(profile);
+    const supplierStatus =
+      role === 'supplier' ? await loadSupplierStatus(supabase, user.id) : null;
+    const requestedRedirect = request.nextUrl.searchParams.get('redirect');
+    const dest = resolvePostAuthPath({
+      role,
+      supplierStatus,
+      redirectPath: requestedRedirect && isSafeInternalPath(requestedRedirect) ? requestedRedirect : undefined,
+      identityComplete: identityOk,
+    });
 
-    if (!identityOk && profile?.role !== 'admin') {
-      const roleQs = profile?.role === 'supplier' ? 'supplier' : 'buyer';
-      const existingRedirect = request.nextUrl.searchParams.get('redirect');
-      const redirectSuffix = existingRedirect
-        ? `&redirect=${encodeURIComponent(existingRedirect)}`
-        : '';
-      return NextResponse.redirect(
-        new URL(`/auth/complete-profile?role=${roleQs}${redirectSuffix}`, request.url)
-      );
+    const redirect = NextResponse.redirect(new URL(dest, request.url));
+    if (role === 'admin' || role === 'customer' || supplierStatus === 'active') {
+      setPortalGateCookie(redirect, {
+        userId: user.id,
+        role: role || 'customer',
+        supplierStatus: supplierStatus ?? undefined,
+      });
+    } else {
+      clearPortalGateCookie(redirect);
     }
-
-    if (profile?.role === 'admin') {
-      const redirect = NextResponse.redirect(new URL('/admin/dashboard', request.url));
-      setPortalGateCookie(redirect, { userId: user.id, role: 'admin' });
-      return redirect;
-    } else if (profile?.role === 'customer') {
-      const redirect = NextResponse.redirect(new URL('/customer/dashboard', request.url));
-      setPortalGateCookie(redirect, { userId: user.id, role: 'customer' });
-      return redirect;
-    } else if (profile?.role === 'supplier') {
-      const { data: supplierData } = await supabase
-        .from('suppliers')
-        .select('status')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      const supplier = supplierData as { status?: string } | null;
-
-      if (supplier?.status === 'active') {
-        const redirect = NextResponse.redirect(new URL('/supplier/dashboard', request.url));
-        setPortalGateCookie(redirect, {
-          userId: user.id,
-          role: 'supplier',
-          supplierStatus: 'active',
-        });
-        return redirect;
-      } else if (supplier?.status === 'rejected') {
-        const redirect = NextResponse.redirect(new URL('/auth/supplier/rejected', request.url));
-        clearPortalGateCookie(redirect);
-        return redirect;
-      } else if (!supplier) {
-        const redirect = NextResponse.redirect(new URL('/auth/supplier/apply', request.url));
-        clearPortalGateCookie(redirect);
-        return redirect;
-      } else {
-        const redirect = NextResponse.redirect(new URL('/auth/supplier/pending', request.url));
-        clearPortalGateCookie(redirect);
-        return redirect;
-      }
-    }
+    return redirect;
   }
 
   if (isAuthRoute && !user) {

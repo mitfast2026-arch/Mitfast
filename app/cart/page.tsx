@@ -38,6 +38,7 @@ import { RemoteImage } from "@/components/ui/RemoteImage";
 import AuthOrGuestGate from "@/components/commerce/AuthOrGuestGate";
 import { getSettings } from "@/lib/client/settings-cache";
 import { mergeGuestStateOnce } from "@/lib/client/guest-merge";
+import { invalidatePortalCache } from "@/lib/client/portal-data-cache";
 import {
   computeOptimisticLineTotal,
   computeOptimisticSubtotal,
@@ -97,6 +98,7 @@ function CartRFQPageInner() {
   const [addingSampleId, setAddingSampleId] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
+  const prefillDoneRef = useRef(false);
   const [submitting, setSubmitting] = useState(false);
   const [editingContact, setEditingContact] = useState(false);
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
@@ -178,8 +180,9 @@ function CartRFQPageInner() {
         }
       }
 
-      // 2. Process prefill query params if present
-      if (prefillProduct) {
+      // 2. Process prefill query params once, then strip them so refresh cannot restack qty
+      if (prefillProduct && !prefillDoneRef.current) {
+        prefillDoneRef.current = true;
         try {
           await fetch("/api/cart", {
             method: "POST",
@@ -190,6 +193,7 @@ function CartRFQPageInner() {
             }),
           });
           notifyCartUpdated();
+          router.replace("/cart");
         } catch (e) {
           console.error("Prefill add error:", e);
         }
@@ -612,6 +616,9 @@ function CartRFQPageInner() {
         } else {
           const count = Array.isArray(json.data?.rfqs) ? json.data.rfqs.length : 1;
           notifyCartUpdated();
+          invalidatePortalCache('/api/rfqs');
+          invalidatePortalCache('/api/customer/quotes');
+          invalidatePortalCache('/api/customer/badge-counts');
           if (count > 1) {
             // Multi-supplier cart → one RFQ per supplier
             router.push(`/customer/quotes?tab=rfqs&created=${count}`);
@@ -677,6 +684,10 @@ function CartRFQPageInner() {
           : { cartId: "guest", items: [], itemCount: 0, subtotal: 0, totalGst: 0, grandTotal: 0 }
       );
       notifyCartUpdated(0);
+      invalidatePortalCache('/api/enquiries');
+      invalidatePortalCache('/api/customer/enquiries');
+      invalidatePortalCache('/api/customer/quotes');
+      invalidatePortalCache('/api/customer/badge-counts');
 
       const trackingToken = enquiryJson.data?.trackingToken || enquiryJson.data?.enquiryId;
       if (customer?.id) {

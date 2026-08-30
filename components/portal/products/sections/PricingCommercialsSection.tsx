@@ -46,18 +46,19 @@ export default function PricingCommercialsSection({
   const proposedPrice = proposed?.supplier_price;
   const proposedSuggestedMoq = proposed?.suggested_moq;
 
-  const effectiveDiscount = values.discountEnabled ? values.discount : 0;
+  const effectiveDiscount =
+    values.discountEnabled && values.discount !== '' ? Number(values.discount) : 0;
   const pricing = calculatePricing({
-    supplier_price: values.supplierPrice,
+    supplier_price: Number(values.supplierPrice) || 0,
     profit_type: values.profitType,
-    profit_value: values.profit,
+    profit_value: Number(values.profit) || 0,
     discount: effectiveDiscount,
-    gst_rate: values.gst,
+    gst_rate: Number(values.gst) || 0,
     gst_included: values.gstIncluded,
   });
 
   const liveProfitType = product?.profit_type === 'fixed' ? 'fixed' : 'percentage';
-  const liveProfitValue = product?.profit_value ?? values.profit;
+  const liveProfitValue = product?.profit_value ?? (values.profit !== '' ? Number(values.profit) : 0);
   const marginSummary =
     liveProfitType === 'fixed'
       ? `₹${liveProfitValue.toLocaleString('en-IN')}`
@@ -65,8 +66,8 @@ export default function PricingCommercialsSection({
 
   function handleProfitTypeChange(nextType: 'percentage' | 'fixed') {
     if (nextType === values.profitType) return;
-    const base = Math.max(0, values.supplierPrice);
-    const current = Math.max(0, values.profit);
+    const base = Math.max(0, Number(values.supplierPrice) || 0);
+    const current = Math.max(0, Number(values.profit) || 0);
     let converted = current;
     if (nextType === 'fixed') {
       converted = Math.round(base * (current / 100) * 100) / 100;
@@ -80,8 +81,8 @@ export default function PricingCommercialsSection({
 
   const marginPreviewLabel =
     values.profitType === 'percentage'
-      ? `List price (+${values.profit}% margin)`
-      : `List price (+₹${values.profit.toLocaleString('en-IN')} margin)`;
+      ? `List price (+${values.profit !== '' ? values.profit : 0}% margin)`
+      : `List price (+₹${(values.profit !== '' ? Number(values.profit) : 0).toLocaleString('en-IN')} margin)`;
 
   const supplierFieldsDisabled = readOnly || (isAdmin && hasPendingUpdate && !isSupplier);
 
@@ -119,7 +120,7 @@ export default function PricingCommercialsSection({
                 </div>
               </>
             )}
-            {(product.suggested_moq != null || values.suggestedMoq > 0) && (
+            {(product.suggested_moq != null || (values.suggestedMoq !== '' && Number(values.suggestedMoq) > 0)) && (
               <>
                 <div className="text-portal-muted">Suggested MOQ (supplier)</div>
                 <div className="text-portal-text text-right">
@@ -128,7 +129,7 @@ export default function PricingCommercialsSection({
               </>
             )}
             <div className="text-portal-muted">Catalog MOQ</div>
-            <div className="text-portal-text text-right">{(product.moq ?? values.moq).toLocaleString('en-IN')}</div>
+            <div className="text-portal-text text-right">{(product.moq ?? (values.moq !== '' ? values.moq : 100)).toLocaleString('en-IN')}</div>
             <div className="text-portal-muted">Margin</div>
             <div className="text-portal-text text-right">{marginSummary}</div>
             <div className="text-portal-muted">Discount / unit</div>
@@ -154,9 +155,14 @@ export default function PricingCommercialsSection({
               type="number"
               min={0}
               step="any"
+              placeholder="0.00"
               disabled={readOnly}
               value={values.supplierPrice}
-              onChange={(e) => onChange({ supplierPrice: parseFloat(e.target.value) || 0 })}
+              onChange={(e) =>
+                onChange({
+                  supplierPrice: e.target.value === '' ? '' : parseFloat(e.target.value),
+                })
+              }
               className="saas-input type-metric text-xs"
             />
           </FormField>
@@ -164,9 +170,14 @@ export default function PricingCommercialsSection({
             <input
               type="number"
               min={1}
+              placeholder="100"
               disabled={readOnly}
               value={values.suggestedMoq}
-              onChange={(e) => onChange({ suggestedMoq: parseInt(e.target.value, 10) || 1 })}
+              onChange={(e) =>
+                onChange({
+                  suggestedMoq: e.target.value === '' ? '' : parseInt(e.target.value, 10),
+                })
+              }
               className="saas-input type-metric text-xs"
             />
             <p className="text-[10px] text-portal-muted mt-1">
@@ -184,9 +195,14 @@ export default function PricingCommercialsSection({
                 type="number"
                 min={0}
                 step="any"
+                placeholder="0.00"
                 disabled={supplierFieldsDisabled}
                 value={values.supplierPrice}
-                onChange={(e) => onChange({ supplierPrice: parseFloat(e.target.value) || 0 })}
+                onChange={(e) =>
+                  onChange({
+                    supplierPrice: e.target.value === '' ? '' : parseFloat(e.target.value),
+                  })
+                }
                 className="saas-input type-metric text-xs"
               />
             </FormField>
@@ -203,9 +219,14 @@ export default function PricingCommercialsSection({
               <input
                 type="number"
                 min={1}
+                placeholder="100"
                 disabled={readOnly}
                 value={values.moq}
-                onChange={(e) => onChange({ moq: parseInt(e.target.value, 10) || 1 })}
+                onChange={(e) =>
+                  onChange({
+                    moq: e.target.value === '' ? '' : parseInt(e.target.value, 10),
+                  })
+                }
                 className="saas-input type-metric text-xs"
               />
             </FormField>
@@ -250,9 +271,14 @@ export default function PricingCommercialsSection({
                   type="number"
                   min={0}
                   step="any"
+                  placeholder="0"
                   disabled={readOnly}
                   value={values.profit}
-                  onChange={(e) => onChange({ profit: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) =>
+                    onChange({
+                      profit: e.target.value === '' ? '' : parseFloat(e.target.value),
+                    })
+                  }
                   className="saas-input type-metric text-xs flex-1 min-w-0"
                 />
               </div>
@@ -262,9 +288,14 @@ export default function PricingCommercialsSection({
                 type="number"
                 min={0}
                 max={100}
+                placeholder="0"
                 disabled={readOnly}
                 value={values.gst}
-                onChange={(e) => onChange({ gst: parseFloat(e.target.value) || 0 })}
+                onChange={(e) =>
+                  onChange({
+                    gst: e.target.value === '' ? '' : parseFloat(e.target.value),
+                  })
+                }
                 className="saas-input type-metric text-xs"
               />
             </FormField>
@@ -272,9 +303,14 @@ export default function PricingCommercialsSection({
               <input
                 type="number"
                 min={0}
+                placeholder="0"
                 disabled={readOnly}
                 value={values.minValue}
-                onChange={(e) => onChange({ minValue: parseFloat(e.target.value) || 0 })}
+                onChange={(e) =>
+                  onChange({
+                    minValue: e.target.value === '' ? '' : parseFloat(e.target.value),
+                  })
+                }
                 className="saas-input type-metric text-xs"
               />
             </FormField>
@@ -288,7 +324,7 @@ export default function PricingCommercialsSection({
               onChange={(e) =>
                 onChange({
                   discountEnabled: e.target.checked,
-                  discount: e.target.checked ? values.discount : 0,
+                  discount: e.target.checked ? values.discount : '',
                 })
               }
               className="rounded border-portal-border"
@@ -301,9 +337,14 @@ export default function PricingCommercialsSection({
               <input
                 type="number"
                 min={0}
+                placeholder="0"
                 disabled={readOnly}
                 value={values.discount}
-                onChange={(e) => onChange({ discount: parseFloat(e.target.value) || 0 })}
+                onChange={(e) =>
+                  onChange({
+                    discount: e.target.value === '' ? '' : parseFloat(e.target.value),
+                  })
+                }
                 className="saas-input type-metric text-xs"
               />
             </FormField>

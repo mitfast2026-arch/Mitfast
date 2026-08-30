@@ -1,20 +1,18 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { isProfileIdentityComplete, nameFromAuthUser } from '@/lib/server/auth/profile-complete';
+import { nameFromAuthUser } from '@/lib/server/auth/profile-complete';
 import { mergeGuestStateIntoCustomer } from '@/lib/server/guest/merge-guest-state';
+import {
+  isIdentityComplete,
+  isSafeInternalPath,
+  resolvePostAuthPath,
+} from '@/lib/auth/post-auth-path';
 
-function isSafeInternalPath(path: string): boolean {
-  if (!path.startsWith('/') || path.startsWith('//')) return false;
-  if (path.includes('://') || path.includes('\\')) return false;
-  return true;
-}
-
-function roleAllowsPath(role: string | undefined, path: string): boolean {
-  if (path.startsWith('/admin')) return role === 'admin';
-  if (path.startsWith('/supplier')) return role === 'supplier';
-  if (path.startsWith('/customer')) return role === 'customer';
-  return true;
+function isPasswordResetNext(path: string | null | undefined): boolean {
+  if (!path || !isSafeInternalPath(path)) return false;
+  const pathname = path.split('?')[0];
+  return pathname === '/auth/reset-password';
 }
 
 /**
@@ -75,45 +73,81 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/auth?mode=signin`);
   }
 
-  const admin = createAdminClient();
-  let { data: profile } = await admin
-    .from('profiles')
-    .select('role, full_name, phone, email')
-    .eq('user_id', user.id)
-    .maybeSingle();
+  if (isPasswordResetNext(next)) {
+    return NextResponse.redirect(`${origin}${next}`);
+  }
 
-  // Ensure profile row exists for OAuth users (trigger should create; upsert as safety)
-  if (!profile) {
-    // user_metadata.role is onboarding hint only; next path also carries supplier intent
-    const intended =
-      onboardingWantsSupplier(next) || user.user_metadata?.role === 'supplier'
-        ? 'supplier'
-        : 'customer';
-    await admin.from('profiles').upsert(
-      {
-        user_id: user.id,
-        role: intended,
-        full_name: nameFromAuthUser(user),
-        email: (user.email || '').toLowerCase(),
-        phone: '',
-      },
-      { onConflict: 'user_id' }
+  let admin;
+  try {
+    admin = createAdminClient();
+  } catch (err) {
+    console.error('[GET /auth/callback] admin client unavailable', err instanceof Error ? err.message : err);
+    return NextResponse.redirect(
+      `${origin}/auth?mode=signin&error=${encodeURIComponent('Authentication completed but profile setup failed. Please try again.')}`
     );
-    const refreshed = await admin
+  }
+
+  let profile: { role?: string; full_name?: string | null; phone?: string | null; email?: string | null } | null = null;
+  try {
+    const loaded = await admin
       .from('profiles')
       .select('role, full_name, phone, email')
       .eq('user_id', user.id)
       .maybeSingle();
-    profile = refreshed.data;
+    profile = loaded.data;
+  } catch (err) {
+    console.error('[GET /auth/callback] profile load failed', err instanceof Error ? err.message : err);
+    return NextResponse.redirect(
+      `${origin}/auth?mode=signin&error=${encodeURIComponent('Authentication completed but profile setup failed. Please try again.')}`
+    );
+  }
+
+  // Ensure profile row exists for OAuth users (trigger should create; upsert as safety)
+  if (!profile) {
+    try {
+      const intended =
+        onboardingWantsSupplier(next) || user.user_metadata?.role === 'supplier'
+          ? 'supplier'
+          : 'customer';
+      await admin.from('profiles').upsert(
+        {
+          user_id: user.id,
+          role: intended,
+          full_name: nameFromAuthUser(user),
+          email: (user.email || '').toLowerCase(),
+          phone: '',
+        },
+        { onConflict: 'user_id' }
+      );
+      const refreshed = await admin
+        .from('profiles')
+        .select('role, full_name, phone, email')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      profile = refreshed.data;
+    } catch (err) {
+      console.error('[GET /auth/callback] profile upsert failed', err instanceof Error ? err.message : err);
+      return NextResponse.redirect(
+        `${origin}/auth?mode=signin&error=${encodeURIComponent('Authentication completed but profile setup failed. Please try again.')}`
+      );
+    }
   }
 
   const role = profile?.role as string | undefined;
+  const identityOk = isIdentityComplete({
+    full_name: profile?.full_name,
+    phone: profile?.phone,
+    email: profile?.email || user.email,
+  });
+  const safeNext = next && isSafeInternalPath(next) ? next : undefined;
 
   // 1. Admin Handling
   if (role === 'admin') {
-    const target = next && isSafeInternalPath(next) && next.startsWith('/admin')
-      ? next
-      : '/admin/dashboard';
+    const target = resolvePostAuthPath({
+      role: 'admin',
+      redirectPath: safeNext,
+      identityComplete: true,
+    });
     return NextResponse.redirect(`${origin}${target}`);
   }
 
@@ -136,65 +170,33 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const nameOk = (customerProfile?.full_name || '').trim().length >= 2;
-    const phoneOk = (customerProfile?.phone || '').trim().length >= 7;
-    const emailOk = (customerProfile?.email || user.email || '').trim().includes('@');
-
-    if (!nameOk || !phoneOk || !emailOk) {
-      const redirectSuffix = next && isSafeInternalPath(next) && roleAllowsPath('customer', next)
-        ? `&redirect=${encodeURIComponent(next)}`
-        : '';
-      return NextResponse.redirect(`${origin}/auth/complete-profile?role=buyer${redirectSuffix}`);
-    }
-
-    if (next && isSafeInternalPath(next) && roleAllowsPath('customer', next)) {
-      if (!next.startsWith('/auth/supplier') && !next.startsWith('/admin')) {
-        return NextResponse.redirect(`${origin}${next}`);
-      }
-    }
-
-    return NextResponse.redirect(`${origin}/customer/dashboard`);
+    const target = resolvePostAuthPath({
+      role: 'customer',
+      redirectPath: safeNext,
+      identityComplete: isIdentityComplete({
+        full_name: customerProfile?.full_name ?? profile?.full_name,
+        phone: customerProfile?.phone ?? profile?.phone,
+        email: customerProfile?.email || profile?.email || user.email,
+      }),
+    });
+    return NextResponse.redirect(`${origin}${target}`);
   }
 
   // 3. Supplier Handling
   if (role === 'supplier') {
-    const { data: supplierProfile } = await admin
-      .from('profiles')
-      .select('id, full_name, phone, email')
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    const nameOk = (supplierProfile?.full_name || '').trim().length >= 2;
-    const phoneOk = (supplierProfile?.phone || '').trim().length >= 7;
-    const emailOk = (supplierProfile?.email || user.email || '').trim().includes('@');
-
     const { data: supplier } = await admin
       .from('suppliers')
       .select('id, status')
       .eq('user_id', user.id)
       .maybeSingle();
 
-    if (!supplier) {
-      return NextResponse.redirect(`${origin}/auth/supplier/apply`);
-    }
-
-    if (!nameOk || !phoneOk || !emailOk) {
-      return NextResponse.redirect(`${origin}/auth/complete-profile?role=supplier`);
-    }
-
-    if (supplier.status === 'active') {
-      const target = next && isSafeInternalPath(next) && next.startsWith('/supplier')
-        ? next
-        : '/supplier/dashboard';
-      return NextResponse.redirect(`${origin}${target}`);
-    }
-
-    if (supplier.status === 'rejected') {
-      return NextResponse.redirect(`${origin}/auth/supplier/rejected`);
-    }
-
-    const pendingQs = supplier.status === 'archived' ? '?status=archived' : '';
-    return NextResponse.redirect(`${origin}/auth/supplier/pending${pendingQs}`);
+    const target = resolvePostAuthPath({
+      role: 'supplier',
+      supplierStatus: (supplier as { status?: string } | null)?.status ?? null,
+      redirectPath: safeNext,
+      identityComplete: identityOk,
+    });
+    return NextResponse.redirect(`${origin}${target}`);
   }
 
   return NextResponse.redirect(`${origin}/customer/dashboard`);

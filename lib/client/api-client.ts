@@ -1,3 +1,5 @@
+import { createBrowserClient } from '@/lib/supabase/client';
+
 export type MutationErrorKind =
   | 'validation'
   | 'auth'
@@ -24,12 +26,41 @@ function errorKindFromStatus(status: number, code?: string): MutationErrorKind {
   return 'server';
 }
 
+function handleAuthExpiry() {
+  if (typeof window === 'undefined') return;
+
+  window.dispatchEvent(new CustomEvent('portal-auth-expired'));
+
+  const pathname = window.location.pathname;
+  const isProtectedPortal =
+    pathname.startsWith('/admin') ||
+    pathname.startsWith('/supplier') ||
+    pathname.startsWith('/customer');
+
+  if (isProtectedPortal && !(window as any).__mf_auth_redirecting) {
+    (window as any).__mf_auth_redirecting = true;
+    const role = pathname.startsWith('/admin')
+      ? 'admin'
+      : pathname.startsWith('/supplier')
+        ? 'supplier'
+        : 'buyer';
+
+    const redirectPath = encodeURIComponent(window.location.pathname + window.location.search);
+    const target = `/auth?role=${role === 'admin' ? 'admin' : role}&mode=signin&redirect=${redirectPath}`;
+
+    setTimeout(() => {
+      window.location.assign(target);
+    }, 1200);
+  }
+}
+
 /**
  * Typed fetch wrapper for portal API routes returning `{ success, data?, error? }`.
+ * Automatically attempts session refresh on 401 and handles auth expiration.
  */
 export async function apiRequest<T>(
   url: string,
-  init?: RequestInit
+  init?: RequestInit & { _isRetry?: boolean }
 ): Promise<MutationResult<T>> {
   try {
     const res = await fetch(url, {
@@ -37,16 +68,44 @@ export async function apiRequest<T>(
       // No forced cache override — allow browser HTTP cache for GETs.
       // Mutations (POST/PUT/DELETE) are naturally non-cacheable by the browser.
     });
+
+    // If 401 Unauthorized on client, attempt silent session refresh and retry once
+    if (res.status === 401 && typeof window !== 'undefined' && !init?._isRetry) {
+      try {
+        const supabase = createBrowserClient();
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (session && !error) {
+          return await apiRequest<T>(url, { ...init, _isRetry: true });
+        }
+      } catch (refreshErr) {
+        console.warn('[apiRequest] Silent session refresh failed:', refreshErr);
+      }
+
+      handleAuthExpiry();
+      return {
+        ok: false,
+        kind: 'auth',
+        message: 'Your session has expired. Please sign in again.',
+        code: 'UNAUTHORIZED',
+      };
+    }
+
     let json: ApiSuccess<T> | ApiFailure | null = null;
 
     try {
       json = await res.json();
     } catch {
       if (!res.ok) {
+        if (res.status === 401) {
+          handleAuthExpiry();
+        }
         return {
           ok: false,
           kind: errorKindFromStatus(res.status),
-          message: res.statusText || 'Request failed',
+          message:
+            res.status === 401
+              ? 'Your session has expired. Please sign in again.'
+              : res.statusText || 'Request failed',
         };
       }
       return { ok: false, kind: 'server', message: 'Invalid response from server' };
@@ -54,10 +113,16 @@ export async function apiRequest<T>(
 
     if (!res.ok || !json || !('success' in json) || !json.success) {
       const code = json && 'error' in json ? json.error?.code : undefined;
+      const rawMessage = json && 'error' in json ? json.error?.message : undefined;
       const message =
-        (json && 'error' in json && json.error?.message) ||
-        res.statusText ||
-        'Request failed';
+        res.status === 401
+          ? 'Your session has expired. Please sign in again.'
+          : rawMessage || res.statusText || 'Request failed';
+
+      if (res.status === 401) {
+        handleAuthExpiry();
+      }
+
       return {
         ok: false,
         kind: errorKindFromStatus(res.status, code),

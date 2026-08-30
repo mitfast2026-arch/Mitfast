@@ -69,18 +69,18 @@ export type ProductFormValues = {
   supplierId: string;
   description: string;
   sku: string;
-  moq: number;
-  suggestedMoq: number;
+  moq: number | '';
+  suggestedMoq: number | '';
   ribbon: string;
   specRows: SpecRow[];
-  supplierPrice: number;
+  supplierPrice: number | '';
   profitType: 'percentage' | 'fixed';
-  profit: number;
-  discount: number;
+  profit: number | '';
+  discount: number | '';
   discountEnabled: boolean;
-  gst: number;
+  gst: number | '';
   gstIncluded: boolean;
-  minValue: number;
+  minValue: number | '';
   locationMode: string;
   locationOther: string;
   images: ProductImageItem[];
@@ -100,14 +100,14 @@ export const EMPTY_PRODUCT_FORM: ProductFormValues = {
   suggestedMoq: 100,
   ribbon: '',
   specRows: [],
-  supplierPrice: 0,
+  supplierPrice: '',
   profitType: 'percentage',
   profit: 15,
-  discount: 0,
+  discount: '',
   discountEnabled: false,
   gst: 0,
   gstIncluded: false,
-  minValue: 0,
+  minValue: '',
   locationMode: '',
   locationOther: '',
   images: [],

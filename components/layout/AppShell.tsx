@@ -1,12 +1,13 @@
 'use client';
 
-import React from 'react';
+import React, { Suspense } from 'react';
 import { usePathname } from 'next/navigation';
 import { Toaster } from 'sonner';
 import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
 import SmoothScroll from '@/components/providers/SmoothScroll';
 import { PortalColorModeProvider, PortalUiRoot } from '@/components/portal/PortalColorMode';
+import AccessDeniedNotice from '@/components/layout/AccessDeniedNotice';
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -51,6 +52,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               },
             }}
           />
+          <Suspense fallback={null}>
+            <AccessDeniedNotice />
+          </Suspense>
           {children}
         </PortalUiRoot>
       </PortalColorModeProvider>
@@ -76,6 +80,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           closeButton
           duration={2500}
         />
+        <Suspense fallback={null}>
+          <AccessDeniedNotice />
+        </Suspense>
         <Navbar />
         {/* Match Navbar h-16 so non-home pages align with scrolled homepage chrome */}
         <main

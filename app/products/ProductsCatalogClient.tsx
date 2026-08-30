@@ -28,6 +28,7 @@ import { CountryFlag } from "@/components/ui/CountryFlag";
 import { resolveSupplierCountry } from "@/lib/country-origin";
 import { getSettings } from "@/lib/client/settings-cache";
 import { prefetchStorefrontProduct } from "@/lib/client/storefront-nav-prefetch";
+import { stripHtmlTags } from "@/lib/html/strip-html";
 import "./products-catalog.css";
 
 /* ── Types ──────────────────────────────────────────────── */
@@ -110,7 +111,8 @@ function getSpecLine(product: Product): string {
       .join(" | ");
   }
   if (product.description) {
-    const short = product.description.split(/[.\n]/)[0]?.trim();
+    const plain = stripHtmlTags(product.description);
+    const short = plain.split(/[.\n]/)[0]?.trim();
     if (short) return short;
   }
   return "";

@@ -3,9 +3,9 @@ import {
   createProductBySupplier,
   createProductByAdmin,
   saveProductDraft,
-  getStorefrontProducts,
   getProductsForAdmin,
 } from '@/lib/server/products/product-service';
+import { getCachedStorefrontProducts } from '@/lib/server/products/cached-storefront';
 import { getServerSession, requireAdmin, unauthorizedResponse, forbiddenResponse } from '@/lib/server/auth/get-session';
 import { deferRevalidateProduct } from '@/lib/server/products/revalidate-product-paths';
 import { withIdempotency } from '@/lib/server/db/idempotency';
@@ -100,7 +100,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(result);
     }
 
-    const result = await getStorefrontProducts({
+    const result = await getCachedStorefrontProducts({
       categoryId,
       search,
       page,

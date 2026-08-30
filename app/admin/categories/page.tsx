@@ -278,6 +278,16 @@ export default function AdminCategoriesPage() {
         <div className="p-4 rounded-xl bg-portal-danger-soft border border-portal-danger/30 text-xs text-portal-danger flex items-center gap-2.5 shadow-sm">
           <AlertCircle className="w-4 h-4 shrink-0 text-portal-danger" />
           <span className="flex-1">{errorMsg}</span>
+          {(errorMsg.toLowerCase().includes('unauthorized') ||
+            errorMsg.toLowerCase().includes('session') ||
+            errorMsg.toLowerCase().includes('sign in')) && (
+            <a
+              href={`/auth?role=admin&mode=signin&redirect=${encodeURIComponent('/admin/categories')}`}
+              className="px-2.5 py-1 bg-portal-danger text-white rounded-md text-xs font-medium hover:opacity-90 shrink-0 transition-opacity"
+            >
+              Sign In
+            </a>
+          )}
           <button onClick={() => setErrorMsg('')} className="p-0.5 hover:opacity-70">
             <X className="w-3.5 h-3.5" />
           </button>

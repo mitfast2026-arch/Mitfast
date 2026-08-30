@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendOtpEmail } from '@/lib/server/email/send-otp-mail';
 import { getConfiguredEmailProviders } from '@/lib/server/email/send-transactional-mail';
+import { allowUnsafeDbFallback, isRpcMissing } from '@/lib/server/db/production-guards';
 
 const OTP_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 const OTP_RATE_LIMIT_WINDOW_SECONDS = 15 * 60;
@@ -127,12 +128,20 @@ export async function POST(request: NextRequest) {
         .maybeSingle();
       reservedLogId = reserved?.id ?? null;
     } else {
-      const rpcMissing =
-        limitError.code === 'PGRST202' ||
-        limitError.message?.includes('Could not find the function') ||
-        limitError.message?.includes('try_record_otp_send');
-
-      if (!rpcMissing) {
+      if (isRpcMissing(limitError, 'try_record_otp_send')) {
+        if (!allowUnsafeDbFallback()) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: {
+                message: 'Unable to send verification code. Try again later.',
+                code: 'DATABASE_MISCONFIGURED',
+              },
+            },
+            { status: 503 }
+          );
+        }
+      } else {
         console.error('[POST /api/auth/otp/send] rate-limit RPC', limitError.message || limitError);
         return NextResponse.json(
           {
@@ -196,14 +205,22 @@ export async function POST(request: NextRequest) {
       const status = sendResult.code === 'NOT_CONFIGURED' ? 503 : 502;
       console.error('[POST /api/auth/otp/send] delivery failed', {
         code: sendResult.code,
+        errorDetails: sendResult.errorDetails,
         providers: configured,
       });
+
+      let userFriendlyMessage = 'Unable to send verification code. Please check your email configuration or try again later.';
+      if (sendResult.errorDetails?.includes('only send testing emails')) {
+        userFriendlyMessage = 'Email sending is in test mode. Please verify your custom domain in Resend or use your registered test email.';
+      }
+
       return NextResponse.json(
         {
           success: false,
           error: {
-            message: 'Unable to send verification code. Try again later.',
+            message: userFriendlyMessage,
             code: sendResult.code === 'NOT_CONFIGURED' ? 'EMAIL_NOT_CONFIGURED' : 'EMAIL_DELIVERY_FAILED',
+            details: process.env.NODE_ENV !== 'production' ? sendResult.errorDetails : undefined,
           },
         },
         { status }

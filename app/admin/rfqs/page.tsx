@@ -44,10 +44,10 @@ type LineItemDraft = {
   id?: string;
   productId?: string;
   productNameSnapshot: string;
-  originalQuantity: number;
-  originalUnitPrice: number;
-  finalQuantity?: number | null;
-  finalUnitPrice?: number | null;
+  originalQuantity: number | '';
+  originalUnitPrice: number | '';
+  finalQuantity?: number | null | '';
+  finalUnitPrice?: number | null | '';
   moq?: number;
 };
 
@@ -75,8 +75,8 @@ export default function AdminRfqsPage() {
   const [catalogSearch, setCatalogSearch] = useState('');
   const [catalogProducts, setCatalogProducts] = useState<any[]>([]);
   const [selectedAddProductId, setSelectedAddProductId] = useState('');
-  const [addQty, setAddQty] = useState(1);
-  const [addUnitPrice, setAddUnitPrice] = useState<number>(0);
+  const [addQty, setAddQty] = useState<number | ''>(1);
+  const [addUnitPrice, setAddUnitPrice] = useState<number | ''>(0);
 
   // Editable Customer & Delivery Details
   const [editCustName, setEditCustName] = useState('');
@@ -239,16 +239,16 @@ export default function AdminRfqsPage() {
     let hasFinal = false;
 
     for (const item of itemsDraft) {
-      const oQty = item.originalQuantity || 1;
-      const oPrice = item.originalUnitPrice || 0;
+      const oQty = Number(item.originalQuantity) || 1;
+      const oPrice = Number(item.originalUnitPrice) || 0;
       orig += oQty * oPrice;
 
-      if (item.finalUnitPrice !== null && item.finalUnitPrice !== undefined) {
+      if (item.finalUnitPrice !== null && item.finalUnitPrice !== undefined && item.finalUnitPrice !== '') {
         hasFinal = true;
-        const fQty = item.finalQuantity || oQty;
-        final += fQty * item.finalUnitPrice;
+        const fQty = Number(item.finalQuantity) || oQty;
+        final += fQty * Number(item.finalUnitPrice);
       } else {
-        const fQty = item.finalQuantity || oQty;
+        const fQty = Number(item.finalQuantity) || oQty;
         final += fQty * oPrice;
       }
     }
@@ -260,25 +260,25 @@ export default function AdminRfqsPage() {
     };
   }, [itemsDraft]);
 
-  function handleUpdateLineQty(idx: number, qty: number) {
+  function handleUpdateLineQty(idx: number, qty: number | '') {
     setItemsDraft((prev) =>
-      prev.map((item, i) => (i === idx ? { ...item, originalQuantity: Math.max(1, qty) } : item))
+      prev.map((item, i) => (i === idx ? { ...item, originalQuantity: qty } : item))
     );
   }
 
-  function handleUpdateLineUnitPrice(idx: number, price: number) {
+  function handleUpdateLineUnitPrice(idx: number, price: number | '') {
     setItemsDraft((prev) =>
-      prev.map((item, i) => (i === idx ? { ...item, originalUnitPrice: Math.max(0, price) } : item))
+      prev.map((item, i) => (i === idx ? { ...item, originalUnitPrice: price } : item))
     );
   }
 
-  function handleUpdateFinalQty(idx: number, qty: number | null) {
+  function handleUpdateFinalQty(idx: number, qty: number | null | '') {
     setItemsDraft((prev) =>
       prev.map((item, i) => (i === idx ? { ...item, finalQuantity: qty } : item))
     );
   }
 
-  function handleUpdateFinalUnitPrice(idx: number, price: number | null) {
+  function handleUpdateFinalUnitPrice(idx: number, price: number | null | '') {
     setItemsDraft((prev) =>
       prev.map((item, i) => (i === idx ? { ...item, finalUnitPrice: price } : item))
     );
@@ -310,8 +310,8 @@ export default function AdminRfqsPage() {
     const newItem: LineItemDraft = {
       productId: prod.id,
       productNameSnapshot: prod.name,
-      originalQuantity: Math.max(1, addQty || prod.moq || 1),
-      originalUnitPrice: Math.max(0, addUnitPrice || Number(prod.selling_price || 0)),
+      originalQuantity: Math.max(1, Number(addQty) || prod.moq || 1),
+      originalUnitPrice: Math.max(0, Number(addUnitPrice) || Number(prod.selling_price || 0)),
       moq: prod.moq || 1,
     };
 
@@ -339,10 +339,10 @@ export default function AdminRfqsPage() {
           id: item.id,
           productId: item.productId,
           productNameSnapshot: item.productNameSnapshot,
-          quantity: item.originalQuantity,
-          unitPrice: item.originalUnitPrice,
-          finalQuantity: item.finalQuantity,
-          finalUnitPrice: item.finalUnitPrice,
+          quantity: Math.max(1, Number(item.originalQuantity) || 1),
+          unitPrice: Math.max(0, Number(item.originalUnitPrice) || 0),
+          finalQuantity: item.finalQuantity !== '' && item.finalQuantity != null ? Number(item.finalQuantity) : null,
+          finalUnitPrice: item.finalUnitPrice !== '' && item.finalUnitPrice != null ? Number(item.finalUnitPrice) : null,
         })),
       };
 
@@ -678,8 +678,14 @@ export default function AdminRfqsPage() {
                     </thead>
                     <tbody>
                       {itemsDraft.map((item, idx) => {
-                        const effectivePrice = item.finalUnitPrice ?? item.originalUnitPrice;
-                        const effectiveQty = item.finalQuantity ?? item.originalQuantity;
+                        const effectivePrice =
+                          item.finalUnitPrice !== null && item.finalUnitPrice !== undefined && item.finalUnitPrice !== ''
+                            ? Number(item.finalUnitPrice)
+                            : Number(item.originalUnitPrice) || 0;
+                        const effectiveQty =
+                          item.finalQuantity !== null && item.finalQuantity !== undefined && item.finalQuantity !== ''
+                            ? Number(item.finalQuantity)
+                            : Number(item.originalQuantity) || 1;
                         const lineTotal = effectiveQty * effectivePrice;
 
                         return (
@@ -697,8 +703,14 @@ export default function AdminRfqsPage() {
                                 <input
                                   type="number"
                                   min={1}
+                                  placeholder="1"
                                   value={item.originalQuantity}
-                                  onChange={(e) => handleUpdateLineQty(idx, parseInt(e.target.value, 10) || 1)}
+                                  onChange={(e) =>
+                                    handleUpdateLineQty(
+                                      idx,
+                                      e.target.value === '' ? '' : parseInt(e.target.value, 10)
+                                    )
+                                  }
                                   className="saas-input type-metric w-20 py-1 px-2 text-xs"
                                 />
                               )}
@@ -710,8 +722,15 @@ export default function AdminRfqsPage() {
                                 <input
                                   type="number"
                                   min={0}
+                                  step="any"
+                                  placeholder="0.00"
                                   value={item.originalUnitPrice}
-                                  onChange={(e) => handleUpdateLineUnitPrice(idx, parseFloat(e.target.value) || 0)}
+                                  onChange={(e) =>
+                                    handleUpdateLineUnitPrice(
+                                      idx,
+                                      e.target.value === '' ? '' : parseFloat(e.target.value)
+                                    )
+                                  }
                                   className="saas-input type-metric w-24 py-1 px-2 text-xs"
                                 />
                               )}
@@ -723,10 +742,11 @@ export default function AdminRfqsPage() {
                                 <input
                                   type="number"
                                   min={0}
+                                  step="any"
                                   placeholder="Auto"
                                   value={item.finalUnitPrice !== null && item.finalUnitPrice !== undefined ? item.finalUnitPrice : ''}
                                   onChange={(e) => {
-                                    const val = e.target.value === '' ? null : parseFloat(e.target.value) || 0;
+                                    const val = e.target.value === '' ? null : parseFloat(e.target.value);
                                     handleUpdateFinalUnitPrice(idx, val);
                                   }}
                                   className="saas-input type-metric w-24 py-1 px-2 text-xs"
@@ -785,15 +805,20 @@ export default function AdminRfqsPage() {
                           min={1}
                           placeholder="Qty"
                           value={addQty}
-                          onChange={(e) => setAddQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                          onChange={(e) =>
+                            setAddQty(e.target.value === '' ? '' : parseInt(e.target.value, 10))
+                          }
                           className="saas-input text-xs w-20"
                         />
                         <input
                           type="number"
                           min={0}
+                          step="any"
                           placeholder="Price"
                           value={addUnitPrice}
-                          onChange={(e) => setAddUnitPrice(Math.max(0, parseFloat(e.target.value) || 0))}
+                          onChange={(e) =>
+                            setAddUnitPrice(e.target.value === '' ? '' : parseFloat(e.target.value))
+                          }
                           className="saas-input text-xs w-24"
                         />
                       </div>

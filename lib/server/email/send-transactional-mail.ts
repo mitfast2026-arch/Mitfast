@@ -8,7 +8,7 @@ export type EmailProvider = 'resend' | 'brevo';
 
 export type SendMailResult =
   | { ok: true; provider: EmailProvider }
-  | { ok: false; code: 'NOT_CONFIGURED' | 'ALL_FAILED' };
+  | { ok: false; code: 'NOT_CONFIGURED' | 'ALL_FAILED'; errorDetails?: string };
 
 function parseFrom(from: string): { name: string; email: string } {
   const match = from.match(/^(.*)<([^>]+)>$/);
@@ -109,9 +109,14 @@ export async function sendTransactionalEmail(input: SendMailInput): Promise<Send
   const providers = getConfiguredEmailProviders();
   if (providers.length === 0) {
     console.error('[sendTransactionalEmail] No email providers configured (RESEND_API_KEY / BREVO_API_KEY)');
-    return { ok: false, code: 'NOT_CONFIGURED' };
+    return {
+      ok: false,
+      code: 'NOT_CONFIGURED',
+      errorDetails: 'Email service credentials (RESEND_API_KEY / BREVO_API_KEY) are not set',
+    };
   }
 
+  const errors: string[] = [];
   for (const provider of providers) {
     try {
       if (provider === 'resend') {
@@ -121,12 +126,15 @@ export async function sendTransactionalEmail(input: SendMailInput): Promise<Send
       }
       return { ok: true, provider };
     } catch (err) {
-      console.error(`[sendTransactionalEmail] ${provider} failed:`, err instanceof Error ? err.message : err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[sendTransactionalEmail] ${provider} failed:`, msg);
+      errors.push(`${provider}: ${msg}`);
     }
   }
 
   console.error('[sendTransactionalEmail] All configured providers failed', {
     tried: providers,
+    errors,
   });
-  return { ok: false, code: 'ALL_FAILED' };
+  return { ok: false, code: 'ALL_FAILED', errorDetails: errors.join(' | ') };
 }

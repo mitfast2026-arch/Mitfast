@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { ServerResult } from '@/lib/server/auth/get-session';
 import { isRpcMissing } from '@/lib/server/db/production-guards';
+import { sanitizeRichTextHtml } from '@/lib/html/sanitize-rich-text.server';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -138,7 +139,7 @@ export async function getStorefrontProductDetail(productId: string): Promise<Ser
         category:categories(id, name),
         images:product_images(id, image_url, sort_order, is_primary),
         specifications:product_specifications(id, spec_name, spec_value, sort_order),
-        supplier:suppliers(country, address)
+        supplier:suppliers(country)
       `)
       .eq('id', productId)
       .eq('publication_status', 'published')
@@ -153,9 +154,19 @@ export async function getStorefrontProductDetail(productId: string): Promise<Ser
       };
     }
 
+    const normalized = normalizeStorefrontSupplier(product);
+    const descriptionHtml = product.description
+      ? sanitizeRichTextHtml(product.description)
+      : '';
+
     return {
       success: true,
-      data: { product: normalizeStorefrontSupplier(product) },
+      data: {
+        product: {
+          ...normalized,
+          descriptionHtml,
+        },
+      },
     };
   } catch (error) {
     console.error('[getStorefrontProductDetail] Error:', error);
