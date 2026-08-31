@@ -189,15 +189,14 @@ export async function sendTransactionalEmail(input: SendMailInput): Promise<Send
       }
       return { ok: true, provider };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[sendTransactionalEmail] ${provider} failed:`, msg);
-      errors.push(`${provider}: ${msg}`);
+      const msg = err instanceof Error ? err.name : 'UnknownError';
+      console.error(`[sendTransactionalEmail] ${provider} delivery failed (${msg})`);
+      errors.push(`${provider}: delivery failed`);
     }
   }
 
   console.error('[sendTransactionalEmail] All configured providers failed', {
     tried: providers,
-    errors,
   });
   return { ok: false, code: 'ALL_FAILED', errorDetails: errors.join(' | ') };
 }

@@ -309,6 +309,19 @@ export async function getEnquiryDetail(
     }
 
     const [signedEnquiry] = await withSignedAttachments([enquiry]);
+    if (options?.supplierId) {
+      const {
+        guest_email: _email,
+        guest_phone: _phone,
+        customer: _customer,
+        customer_id: _customerId,
+        country: _country,
+        company_name: _companyName,
+        tracking_token: _token,
+        ...supplierSafeEnquiry
+      } = signedEnquiry;
+      return { success: true, data: { enquiry: supplierSafeEnquiry } };
+    }
     return { success: true, data: { enquiry: signedEnquiry } };
   } catch (error) {
     console.error('[getEnquiryDetail] Error:', error);
@@ -582,9 +595,6 @@ export async function getEnquiriesForSupplier(
       .select(
         `
         id,
-        guest_name,
-        guest_email,
-        guest_phone,
         message,
         status,
         created_at,
@@ -593,6 +603,7 @@ export async function getEnquiriesForSupplier(
         responded_at,
         attachment_url,
         attachment_path,
+        line_items,
         product:products(id, name, supplier_id)
       `,
         { count: 'exact' }
@@ -604,7 +615,7 @@ export async function getEnquiriesForSupplier(
       const q = sanitizePostgrestSearch(params.search);
       if (q) {
         query = query.or(
-          `guest_name.ilike.%${q}%,guest_email.ilike.%${q}%,message.ilike.%${q}%`
+          `message.ilike.%${q}%`
         );
       }
     }

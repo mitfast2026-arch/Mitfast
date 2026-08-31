@@ -28,6 +28,9 @@ import {
   Boxes,
   Home,
   FileText,
+  Loader2,
+  Package,
+  CornerDownLeft,
 } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
 import { getSettings, prefetchSettings } from '@/lib/client/settings-cache';
@@ -100,6 +103,9 @@ export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [liveResults, setLiveResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(-1);
 
   const initedRef = useRef(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -156,14 +162,60 @@ export default function Navbar() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Autofocus desktop search input when modal opens
+  // Autofocus desktop search input when modal opens & reset on close
   useEffect(() => {
     if (searchModalOpen) {
       setTimeout(() => {
         desktopSearchInputRef.current?.focus();
       }, 50);
+    } else {
+      setSearchQuery('');
+      setLiveResults([]);
+      setSelectedIndex(-1);
+      setIsSearching(false);
     }
   }, [searchModalOpen]);
+
+  // Debounced live search preview for the SaaS panel
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q || !searchModalOpen) {
+      setLiveResults([]);
+      setIsSearching(false);
+      setSelectedIndex(-1);
+      return;
+    }
+
+    setIsSearching(true);
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/products?search=${encodeURIComponent(q)}&limit=5`, {
+          signal: controller.signal,
+        });
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data?.products)) {
+          setLiveResults(json.data.products);
+          setSelectedIndex(0);
+        } else {
+          setLiveResults([]);
+          setSelectedIndex(-1);
+        }
+      } catch (err: any) {
+        if (err.name !== 'AbortError') {
+          setLiveResults([]);
+          setSelectedIndex(-1);
+        }
+      } finally {
+        setIsSearching(false);
+      }
+    }, 180);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [searchQuery, searchModalOpen]);
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -327,6 +379,27 @@ export default function Navbar() {
     setSearchModalOpen(false);
   }
 
+  function handleSearchInputKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const maxIndex = liveResults.length;
+      if (liveResults.length === 0) return;
+      setSelectedIndex((prev) => (prev < maxIndex ? prev + 1 : 0));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const maxIndex = liveResults.length;
+      if (liveResults.length === 0) return;
+      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : maxIndex));
+    } else if (e.key === 'Enter') {
+      if (selectedIndex >= 0 && selectedIndex < liveResults.length) {
+        e.preventDefault();
+        const item = liveResults[selectedIndex];
+        router.push(`/products/${item.id}`);
+        setSearchModalOpen(false);
+      }
+    }
+  }
+
   return (
     <header className={`fixed top-0 left-0 right-0 z-header w-full font-sans ${navGlassClass}`}>
       <div className="w-full max-w-[1700px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-20 flex items-center justify-between h-16 gap-4">
@@ -403,31 +476,21 @@ export default function Navbar() {
 
         {/* Right: Actions */}
         <div className="flex items-center justify-end gap-2 sm:gap-3 shrink-0 z-10">
-          {/* Desktop Search Trigger (>= 1024px) */}
+          {/* Desktop & Tablet Search Trigger (>= 640px) */}
           <button
             type="button"
             onClick={() => setSearchModalOpen(true)}
-            className={`hidden lg:flex items-center gap-2 h-10 px-3.5 rounded-xl transition-all ${
-              isDarkSection
-                ? 'bg-white/10 hover:bg-white/15 text-white/90 border border-white/20'
-                : 'bg-black/[0.04] hover:bg-black/[0.08] text-[#4B5563] hover:text-[#111315] border border-black/[0.06]'
-            }`}
-            title="Search products (Ctrl+K)"
+            className={`hidden sm:flex ${iconClass}`}
+            title="Search products (⌘K / Ctrl+K)"
             aria-label="Search products"
           >
-            <Search className="w-3.5 h-3.5" />
-            <span className="text-xs font-normal">Search…</span>
-            <kbd className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
-              isDarkSection ? 'bg-white/15 text-white/80' : 'bg-black/5 text-gray-500'
-            }`}>
-              ⌘K
-            </kbd>
+            <Search className="w-4 h-4" />
           </button>
 
-          {/* Mobile Search Trigger (< 1024px) */}
+          {/* Mobile Search Trigger (< 640px) */}
           <button
             type="button"
-            className={`lg:hidden ${iconClass}`}
+            className={`sm:hidden ${iconClass}`}
             title="Search products"
             aria-label="Search products"
             onClick={openMobileSearch}
@@ -654,72 +717,315 @@ export default function Navbar() {
           </div>
       </OverlayPortal>
 
-      {/* ── Desktop Command / Search Modal (>= 1024px) ── */}
+      {/* ── Desktop & Tablet Command / Search Modal (>= sm) ── */}
       <OverlayPortal
         open={searchModalOpen}
         layer="modal"
         onEscape={() => setSearchModalOpen(false)}
-        className="flex items-start justify-center pt-24 px-4"
+        className="flex items-start justify-center pt-20 sm:pt-28 px-4"
       >
         <OverlayBackdrop
-          className="bg-black/60 backdrop-blur-xs"
+          className="bg-black/50 backdrop-blur-xs"
           onClick={() => setSearchModalOpen(false)}
         />
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Search catalog products"
-            className="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden animate-in fade-in duration-150"
-            onClick={(e) => e.stopPropagation()}
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Search products and catalog"
+          className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-gray-200/90 overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Top Search Input Bar */}
+          <form
+            onSubmit={handleSearchSubmit}
+            className="relative flex items-center px-4 py-3.5 border-b border-gray-100 bg-white"
           >
-            <form onSubmit={handleSearchSubmit} className="relative flex items-center px-4 py-3.5 border-b border-gray-100">
+            {isSearching ? (
+              <Loader2 className="w-5 h-5 text-gray-400 animate-spin mr-3 shrink-0" />
+            ) : (
               <Search className="w-5 h-5 text-gray-400 mr-3 shrink-0" />
-              <input
-                ref={desktopSearchInputRef}
-                type="search"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search products, fasteners, CNC parts, materials..."
-                className="flex-1 text-sm sm:text-base text-gray-900 placeholder:text-gray-400 bg-transparent outline-none border-none"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="p-1 text-gray-400 hover:text-gray-600 mr-1.5"
-                  aria-label="Clear search input"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
+            )}
+            <input
+              ref={desktopSearchInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={handleSearchInputKeyDown}
+              placeholder="Search products, fasteners, CNC parts, materials..."
+              className="flex-1 text-[15px] text-gray-900 placeholder:text-gray-400 bg-transparent outline-none border-none pr-3"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            {searchQuery && (
               <button
                 type="button"
-                onClick={() => setSearchModalOpen(false)}
-                className="px-2 py-1 text-xs font-medium text-gray-500 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+                onClick={() => {
+                  setSearchQuery('');
+                  setLiveResults([]);
+                  setSelectedIndex(-1);
+                  desktopSearchInputRef.current?.focus();
+                }}
+                className="p-1 text-gray-400 hover:text-gray-700 mr-2 rounded-md hover:bg-gray-100 transition-colors"
+                aria-label="Clear search input"
               >
-                Esc
+                <X className="w-4 h-4" />
               </button>
-            </form>
-            <div className="p-4 bg-gray-50/70">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Popular Inquiries</p>
-              <div className="flex flex-wrap gap-2">
-                {['Fasteners', 'Titanium Bolts', 'CNC Turned', 'Hydraulic Valves', 'Hex Nuts', 'Couplings'].map((tag) => (
+            )}
+            <button
+              type="button"
+              onClick={() => setSearchModalOpen(false)}
+              className="px-2 py-0.5 text-[11px] font-mono font-medium text-gray-500 bg-gray-100 hover:bg-gray-200 rounded-md border border-gray-200 transition-colors"
+              title="Close (Esc)"
+            >
+              ESC
+            </button>
+          </form>
+
+          {/* Panel Scrollable Body */}
+          <div className="max-h-[min(55vh,480px)] overflow-y-auto divide-y divide-gray-100/80 bg-white">
+            {searchQuery.trim() ? (
+              /* Live Results View */
+              liveResults.length > 0 ? (
+                <div className="p-2 space-y-1">
+                  <div className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                    Products ({liveResults.length})
+                  </div>
+                  {liveResults.map((item, idx) => {
+                    const isSelected = selectedIndex === idx;
+                    const primaryImage = item.images?.[0]?.image_url;
+                    return (
+                      <Link
+                        key={item.id}
+                        href={`/products/${item.id}`}
+                        onClick={() => setSearchModalOpen(false)}
+                        onMouseEnter={() => setSelectedIndex(idx)}
+                        className={`flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 ${
+                          isSelected
+                            ? 'bg-gray-100/90 text-gray-900'
+                            : 'text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className="w-10 h-10 rounded-lg bg-gray-100 border border-gray-200/80 flex items-center justify-center shrink-0 overflow-hidden">
+                            {primaryImage ? (
+                              <img
+                                src={primaryImage}
+                                alt={item.name}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <Package className="w-5 h-5 text-gray-400" />
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium text-gray-900 truncate">
+                                {item.name}
+                              </span>
+                              {item.category?.name && (
+                                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 border border-gray-200/60 shrink-0">
+                                  {item.category.name}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500">
+                              {item.sku && <span className="font-mono text-[11px]">SKU: {item.sku}</span>}
+                              {item.moq ? <span>· MOQ: {item.moq}</span> : null}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {item.selling_price > 0 && (
+                            <span className="text-xs font-semibold text-gray-900">
+                              ₹{Number(item.selling_price).toLocaleString('en-IN')}
+                            </span>
+                          )}
+                          <ChevronRight
+                            className={`w-4 h-4 text-gray-400 ${
+                              isSelected ? 'translate-x-0.5 text-gray-700' : ''
+                            } transition-transform`}
+                          />
+                        </div>
+                      </Link>
+                    );
+                  })}
+
+                  {/* View all in catalog row */}
                   <button
-                    key={tag}
                     type="button"
-                    onClick={() => {
-                      setSearchQuery(tag);
-                      router.push(`/products?search=${encodeURIComponent(tag)}`);
-                      setSearchModalOpen(false);
-                    }}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-gray-700 hover:border-gray-900 hover:text-gray-900 transition-colors shadow-2xs"
+                    onClick={handleSearchSubmit}
+                    onMouseEnter={() => setSelectedIndex(liveResults.length)}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left transition-all duration-150 ${
+                      selectedIndex === liveResults.length
+                        ? 'bg-gray-100/90 text-gray-900'
+                        : 'text-gray-600 hover:bg-gray-50'
+                    }`}
                   >
-                    {tag}
+                    <div className="flex items-center gap-2 text-sm font-medium text-gray-900">
+                      <Search className="w-4 h-4 text-gray-400" />
+                      <span>
+                        Search all catalog for <span className="font-semibold text-black">"{searchQuery.trim()}"</span>
+                      </span>
+                    </div>
+                    <CornerDownLeft className="w-4 h-4 text-gray-400" />
                   </button>
-                ))}
-              </div>
-            </div>
+                </div>
+              ) : !isSearching ? (
+                <div className="py-10 px-6 text-center">
+                  <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-3 text-gray-400">
+                    <Search className="w-5 h-5" />
+                  </div>
+                  <p className="text-sm font-medium text-gray-900">No products found for "{searchQuery}"</p>
+                  <p className="text-xs text-gray-500 mt-1 max-w-xs mx-auto">
+                    Try searching by material, standard (DIN/ISO), SKU, or generic part type.
+                  </p>
+                  <div className="mt-4 flex items-center justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSearchSubmit}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-gray-900 text-white font-medium hover:bg-black transition-colors"
+                    >
+                      Search in full catalog
+                    </button>
+                    <Link
+                      href="/enquiry"
+                      onClick={() => setSearchModalOpen(false)}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 font-medium hover:bg-gray-200 transition-colors"
+                    >
+                      Submit Custom RFQ
+                    </Link>
+                  </div>
+                </div>
+              ) : (
+                <div className="py-12 px-6 flex flex-col items-center justify-center gap-2 text-gray-400">
+                  <Loader2 className="w-6 h-6 animate-spin text-gray-500" />
+                  <span className="text-xs text-gray-500">Searching catalog...</span>
+                </div>
+              )
+            ) : (
+              /* Idle / Empty Input State */
+              <>
+                <div className="p-4 bg-gray-50/50">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2.5">
+                    Popular Inquiries
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      'Fasteners',
+                      'Titanium Bolts',
+                      'CNC Turned',
+                      'Hex Nuts',
+                      'Hydraulic Valves',
+                      'High-Temp Alloys',
+                      'Flanges',
+                      'Couplings',
+                    ].map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => {
+                          setSearchQuery(tag);
+                          router.push(`/products?search=${encodeURIComponent(tag)}`);
+                          setSearchModalOpen(false);
+                        }}
+                        className="text-xs px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-gray-700 hover:border-gray-900 hover:text-gray-900 hover:bg-gray-50 transition-colors shadow-2xs"
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="p-2 space-y-0.5">
+                  <p className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                    Quick Navigation
+                  </p>
+                  <Link
+                    href="/products"
+                    onClick={() => setSearchModalOpen(false)}
+                    className="flex items-center justify-between px-3 py-2 rounded-xl text-gray-700 hover:bg-gray-100/80 hover:text-gray-900 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-gray-100 text-gray-600">
+                        <Boxes className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">All Products Catalog</p>
+                        <p className="text-xs text-gray-500">Explore fasteners, raw materials, CNC precision components</p>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-400" />
+                  </Link>
+                  <Link
+                    href="/enquiry"
+                    onClick={() => setSearchModalOpen(false)}
+                    className="flex items-center justify-between px-3 py-2 rounded-xl text-gray-700 hover:bg-gray-100/80 hover:text-gray-900 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-gray-100 text-gray-600">
+                        <FileText className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Request for Quote (RFQ)</p>
+                        <p className="text-xs text-gray-500">Upload technical drawings and get precision quotes</p>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-400" />
+                  </Link>
+                  <Link
+                    href="/services"
+                    onClick={() => setSearchModalOpen(false)}
+                    className="flex items-center justify-between px-3 py-2 rounded-xl text-gray-700 hover:bg-gray-100/80 hover:text-gray-900 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-gray-100 text-gray-600">
+                        <Layers className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Manufacturing & CNC Services</p>
+                        <p className="text-xs text-gray-500">Precision turning, milling, plating & testing</p>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-400" />
+                  </Link>
+                </div>
+              </>
+            )}
           </div>
+
+          {/* Clean SaaS Shortcuts Footer */}
+          <div className="px-4 py-2.5 bg-gray-50 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-500">
+            <div className="flex items-center gap-3">
+              <span className="flex items-center gap-1">
+                <kbd className="px-1.5 py-0.5 rounded bg-white border border-gray-200 font-mono text-[10px] text-gray-700 shadow-2xs">
+                  ↑
+                </kbd>
+                <kbd className="px-1.5 py-0.5 rounded bg-white border border-gray-200 font-mono text-[10px] text-gray-700 shadow-2xs">
+                  ↓
+                </kbd>
+                <span>Navigate</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <kbd className="px-1.5 py-0.5 rounded bg-white border border-gray-200 font-mono text-[10px] text-gray-700 shadow-2xs">
+                  ↵
+                </kbd>
+                <span>Select</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <kbd className="px-1.5 py-0.5 rounded bg-white border border-gray-200 font-mono text-[10px] text-gray-700 shadow-2xs">
+                  esc
+                </kbd>
+                <span>Close</span>
+              </span>
+            </div>
+            <span className="hidden sm:inline-flex items-center gap-1 text-gray-400">
+              <kbd className="px-1.5 py-0.5 rounded bg-white border border-gray-200 font-mono text-[10px] text-gray-500 shadow-2xs">
+                ⌘K
+              </kbd>
+              <span>to open</span>
+            </span>
+          </div>
+        </div>
       </OverlayPortal>
     </header>
   );

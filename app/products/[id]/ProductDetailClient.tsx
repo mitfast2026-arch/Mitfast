@@ -752,15 +752,23 @@ export default function ProductDetailClient({
             </div>
 
             {(() => {
-              const htmlContent = product.descriptionHtml || product.description || '';
-              if (!isEmptyRichText(htmlContent)) {
+              if (product.descriptionHtml && !isEmptyRichText(product.descriptionHtml)) {
                 return (
                   <div
                     className="pdp-desc"
                     dangerouslySetInnerHTML={{
-                      __html: htmlContent,
+                      __html: product.descriptionHtml,
                     }}
                   />
+                );
+              }
+              if (product.description && !isEmptyRichText(product.description)) {
+                return (
+                  <div className="pdp-desc">
+                    {product.description.split('\n').map((paragraph, idx) => (
+                      <p key={idx}>{paragraph}</p>
+                    ))}
+                  </div>
                 );
               }
               return <p className="pdp-desc">No description provided.</p>;

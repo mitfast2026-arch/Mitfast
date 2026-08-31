@@ -170,12 +170,12 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error: any) {
-    console.error('[POST /api/ai/refine-description] Error:', error);
+    console.error('[POST /api/ai/refine-description] Error:', error instanceof Error ? error.message : 'UnknownError');
     return NextResponse.json(
       {
         success: false,
         error: {
-          message: error?.message || 'Failed to refine description with AI',
+          message: 'Failed to refine description with AI. Please try again later.',
           code: 'AI_REFINEMENT_FAILED',
         },
       },

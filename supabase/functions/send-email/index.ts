@@ -88,7 +88,7 @@ async function sendOtpEmail(to: string, emailData: EmailData): Promise<void> {
   try {
     await sendWithResend(to, subject, html);
   } catch (primaryError) {
-    console.error('[send-email] Resend failed, trying Brevo:', primaryError);
+    console.error('[send-email] Resend delivery failed, trying Brevo');
     await sendWithBrevo(to, subject, html);
   }
 }
@@ -117,13 +117,13 @@ Deno.serve(async (req) => {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    console.error('[send-email] error:', error);
-    const message = error instanceof Error ? error.message : 'Unknown error';
+    const errorType = error instanceof Error ? error.name : 'UnknownError';
+    console.error(`[send-email] Hook verification/send failed (${errorType})`);
     return new Response(
       JSON.stringify({
         error: {
           http_code: 500,
-          message,
+          message: 'Unable to process email delivery',
         },
       }),
       {

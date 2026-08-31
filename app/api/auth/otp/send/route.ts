@@ -226,7 +226,6 @@ export async function POST(request: NextRequest) {
       const status = sendResult.code === 'NOT_CONFIGURED' ? 503 : 502;
       console.error('[POST /api/auth/otp/send] delivery failed', {
         code: sendResult.code,
-        errorDetails: sendResult.errorDetails,
         providers: configured,
       });
 

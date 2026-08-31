@@ -4,6 +4,7 @@ import React, { useRef } from 'react';
 import { Upload, X, GripVertical, Loader2, ChevronUp, ChevronDown } from 'lucide-react';
 import { RemoteImage } from '@/components/ui/RemoteImage';
 import { createIdempotencyKey } from '@/lib/client/idempotency-key';
+import { compressProductImageInBrowser } from '@/lib/client/compress-product-image';
 import type { ProductImageItem } from './product-form.types';
 
 const UUID_RE =
@@ -56,30 +57,51 @@ export default function ProductImageManager({
 }: ProductImageManagerProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = React.useState(false);
+  const [compressing, setCompressing] = React.useState<{ done: number; total: number } | null>(null);
   const [dragIdx, setDragIdx] = React.useState<number | null>(null);
   const reorderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reorderPendingRef = useRef<string[] | null>(null);
 
   const totalCount = images.length + pendingFiles.length;
   const canAdd = !disabled && totalCount < maxImages;
-  const isBusy = uploading || (uploadProgress != null && uploadProgress.total > 0);
+  const isBusy = uploading || Boolean(compressing) || (uploadProgress != null && uploadProgress.total > 0);
 
   function reportError(message: string) {
     onUploadError?.(message);
   }
 
-  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || []);
+    e.target.value = '';
     if (!files.length) return;
-    const oversized = files.find((f) => f.size > PRODUCT_IMAGE_MAX_BYTES);
-    if (oversized) {
-      reportError(`${oversized.name} exceeds 4 MB limit`);
-      e.target.value = '';
+
+    const availableSlots = maxImages - totalCount;
+    if (availableSlots <= 0) {
+      reportError(`Maximum ${maxImages} images allowed per product`);
       return;
     }
-    const allowed = files.slice(0, maxImages - totalCount);
-    onPendingFilesChange([...pendingFiles, ...allowed]);
-    e.target.value = '';
+
+    const allowed = files.slice(0, availableSlots);
+    setCompressing({ done: 0, total: allowed.length });
+
+    const compressedFiles: File[] = [];
+
+    for (let i = 0; i < allowed.length; i++) {
+      const file = allowed[i];
+      try {
+        const compressed = await compressProductImageInBrowser(file);
+        compressedFiles.push(compressed);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : `Failed to compress ${file.name}`;
+        reportError(msg);
+      }
+      setCompressing({ done: i + 1, total: allowed.length });
+    }
+
+    setCompressing(null);
+    if (compressedFiles.length > 0) {
+      onPendingFilesChange([...pendingFiles, ...compressedFiles]);
+    }
   }
 
   async function removeImage(img: ProductImageItem, idx: number) {
@@ -158,6 +180,19 @@ export default function ProductImageManager({
 
   return (
     <div className="space-y-2">
+      {compressing && (
+        <div className="rounded-md border border-portal-border bg-portal-inset px-3 py-2 text-[12px] text-portal-muted">
+          Optimizing & compressing images in browser {compressing.done}/{compressing.total}…
+          <div className="mt-1 h-1.5 rounded-full bg-portal-border overflow-hidden">
+            <div
+              className="h-full bg-portal-hero transition-all duration-300"
+              style={{
+                width: `${Math.min(100, Math.round((compressing.done / compressing.total) * 100))}%`,
+              }}
+            />
+          </div>
+        </div>
+      )}
       {uploadProgress && uploadProgress.total > 0 && (
         <div className="rounded-md border border-portal-border bg-portal-inset px-3 py-2 text-[12px] text-portal-muted">
           Uploading images {uploadProgress.done}/{uploadProgress.total}…
@@ -254,7 +289,7 @@ export default function ProductImageManager({
             onClick={() => inputRef.current?.click()}
             className="aspect-square rounded-md border border-dashed border-portal-border flex flex-col items-center justify-center gap-1 text-portal-muted hover:border-portal-text hover:text-portal-text transition-colors"
           >
-            {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+            {uploading || Boolean(compressing) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
             <span className="text-[10px]">Upload</span>
           </button>
         )}
@@ -268,7 +303,7 @@ export default function ProductImageManager({
         onChange={handleFileSelect}
       />
       <p className="text-[11px] text-portal-muted">
-        {totalCount}/{maxImages} images · Preferred: WebP · JPEG/PNG ok · max 4 MB · auto-compressed &lt;300 KB WebP
+        {totalCount}/{maxImages} images · WebP · JPEG/PNG auto-converted · compressed in browser (300–400 KB)
       </p>
     </div>
   );

@@ -132,8 +132,8 @@ function assertSafeBaseUrl(url: string) {
   }
 }
 
-/** Small valid JPEG generated with Sharp (realistic upload payload). */
-async function tinyJpeg(): Promise<Buffer> {
+/** Small valid WebP generated with Sharp (realistic upload payload). */
+async function tinyWebp(): Promise<Buffer> {
   return sharp({
     create: {
       width: 64,
@@ -142,7 +142,7 @@ async function tinyJpeg(): Promise<Buffer> {
       background: { r: 40, g: 120, b: 200 },
     },
   })
-    .jpeg({ quality: 80 })
+    .webp({ quality: 80 })
     .toBuffer();
 }
 
@@ -163,10 +163,10 @@ async function uploadImage(
   productId: string,
   fileName: string,
   isPrimary: boolean,
-  jpeg: Buffer
+  webp: Buffer
 ) {
   const fd = new FormData();
-  const blob = new Blob([jpeg], { type: 'image/jpeg' });
+  const blob = new Blob([new Uint8Array(webp)], { type: 'image/webp' });
   fd.append('file', blob, fileName);
   fd.append('isPrimary', isPrimary ? 'true' : 'false');
   const uploadId = randomUUID();
@@ -306,7 +306,7 @@ async function main() {
       });
     }
 
-    const sampleJpeg = await tinyJpeg();
+    const sampleWebp = await tinyWebp();
 
     // Concurrent uploads within max images
     const jobs: { agent: Agent; idx: number }[] = [];
@@ -319,7 +319,7 @@ async function main() {
     const wall = performance.now();
     const timings = await mapPool(jobs, MAX_CONCURRENCY, async ({ agent, idx }) => {
       return timed('upload', () =>
-        uploadImage(agent.cookie, agent.productId, `lt-${idx}.jpg`, idx === 0, sampleJpeg)
+        uploadImage(agent.cookie, agent.productId, `lt-${idx}.webp`, idx === 0, sampleWebp)
       );
     });
     printSummary({
@@ -339,7 +339,7 @@ async function main() {
     const overTimings = await mapPool(overJobs, Math.min(MAX_CONCURRENCY, overJobs.length), async ({ agent }) => {
       return timed('over-limit', async () => {
         try {
-          await uploadImage(agent.cookie, agent.productId, 'over.jpg', false, sampleJpeg);
+          await uploadImage(agent.cookie, agent.productId, 'over.webp', false, sampleWebp);
           // If max is > IMAGES_PER_PRODUCT this may succeed — that's ok
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);

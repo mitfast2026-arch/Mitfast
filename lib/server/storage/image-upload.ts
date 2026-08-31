@@ -46,10 +46,10 @@ type ProfileConfig = {
 
 const PROFILE_CONFIG: Record<ImageUploadProfile, ProfileConfig> = {
   product: {
-    maxInputBytes: 5 * 1024 * 1024,
-    maxStoredBytes: 300 * 1024,
-    maxDimension: 1600,
-    quality: 82,
+    maxInputBytes: 450 * 1024,
+    maxStoredBytes: 450 * 1024,
+    maxDimension: 4096,
+    quality: 85,
     fit: 'inside',
   },
   category: {
@@ -146,6 +146,61 @@ export async function processImageForUpload(
   const config = PROFILE_CONFIG[profile];
   const mime = normalizeMime(contentType);
 
+  if (profile === 'product') {
+    if (mime !== 'image/webp') {
+      return {
+        success: false,
+        error: {
+          message: 'Product images must be uploaded as WebP format.',
+          code: 'VALIDATION_ERROR',
+        },
+      };
+    }
+
+    if (input.byteLength > config.maxInputBytes) {
+      return {
+        success: false,
+        error: {
+          message: `Product image exceeds ${(config.maxInputBytes / 1024).toFixed(0)} KB limit. Please compress before upload.`,
+          code: 'PAYLOAD_TOO_LARGE',
+        },
+      };
+    }
+
+    try {
+      const meta = await sharp(input, { animated: false }).metadata();
+      const width = meta.width ?? 0;
+      const height = meta.height ?? 0;
+
+      if (!width || !height || meta.format !== 'webp') {
+        return {
+          success: false,
+          error: { message: 'Invalid or corrupt WebP product image', code: 'VALIDATION_ERROR' },
+        };
+      }
+
+      const processingMs = Date.now() - started;
+      return {
+        success: true,
+        data: {
+          buffer: input,
+          contentType: 'image/webp',
+          fileName: webpFileName(originalFileName),
+          width,
+          height,
+          bytes: input.byteLength,
+          passThrough: true,
+          processingMs,
+        },
+      };
+    } catch {
+      return {
+        success: false,
+        error: { message: 'Failed to validate product image data', code: 'VALIDATION_ERROR' },
+      };
+    }
+  }
+
   if (!ALLOWED_INPUT_MIME.has(mime)) {
     return {
       success: false,
@@ -219,7 +274,7 @@ export async function processImageForUpload(
       });
     }
 
-    const encodeEffort = profile === 'product' ? 2 : 4;
+    const encodeEffort = 4;
     let encoded = await encodeWebp(pipeline, config.quality, encodeEffort);
 
     if (encoded.buffer.byteLength > config.maxStoredBytes) {
@@ -233,34 +288,12 @@ export async function processImageForUpload(
       );
     }
 
-    if (encoded.buffer.byteLength > config.maxStoredBytes && profile === 'product') {
-      encoded = await encodeWebp(
-        sharp(input, { animated: false }).rotate().resize(1200, 1200, {
-          fit: 'inside',
-          withoutEnlargement: true,
-        }),
-        60,
-        encodeEffort
-      );
-    }
-
-    if (encoded.buffer.byteLength > config.maxStoredBytes && profile === 'product') {
-      encoded = await encodeWebp(
-        sharp(input, { animated: false }).rotate().resize(960, 960, {
-          fit: 'inside',
-          withoutEnlargement: true,
-        }),
-        50,
-        encodeEffort
-      );
-    }
-
-    const hardCap = profile === 'product' ? 300 * 1024 : 2 * 1024 * 1024;
+    const hardCap = 2 * 1024 * 1024;
     if (encoded.buffer.byteLength > hardCap) {
       return {
         success: false,
         error: {
-          message: 'Image too large after optimization (max 300 KB); use a smaller source file',
+          message: 'Image too large after optimization; use a smaller source file',
           code: 'PAYLOAD_TOO_LARGE',
         },
       };

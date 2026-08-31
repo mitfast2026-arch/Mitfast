@@ -95,13 +95,13 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
       );
     }
 
-    // Align with Vercel ~4.5 MB body limit
-    if (file.size > 4 * 1024 * 1024) {
+    // Validate file size for product images (must be compressed in browser to <= 450 KB WebP)
+    if (file.size > 450 * 1024) {
       return NextResponse.json(
         {
           success: false,
           error: {
-            message: 'Image exceeds 4 MB upload limit (compress or use WebP)',
+            message: 'Product image exceeds 450 KB limit. Images must be compressed in browser before upload.',
             code: 'VALIDATION_ERROR',
           },
         },
